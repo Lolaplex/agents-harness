@@ -1,0 +1,8 @@
+{
+  "name": "memory_distill_auto",
+  "verb": "python -m agents_memory distill --auto",
+  "cadence": "daily",
+  "rests_on": "agents-memory distill --auto, verified on live staging (promotes durables, discards noise), exit 0 = pass complete",
+  "expected_exit": 0,
+  "timeout_sec": 300
+}

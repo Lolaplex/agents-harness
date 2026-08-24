@@ -1,0 +1,8 @@
+{
+  "name": "memory_inventory",
+  "verb": "python -m agents_memory inventory",
+  "cadence": "hourly",
+  "rests_on": "agents-memory inventory, verified in agents-bench, exit 0 = healthy",
+  "expected_exit": 0,
+  "timeout_sec": 30
+}

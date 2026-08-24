@@ -1,0 +1,8 @@
+{
+  "name": "memory_rebuild_index",
+  "verb": "python -m agents_memory rebuild-index",
+  "cadence": "daily",
+  "rests_on": "agents-memory rebuild-index, verified in agents-memory test suite, exit 0 = index fresh",
+  "expected_exit": 0,
+  "timeout_sec": 120
+}

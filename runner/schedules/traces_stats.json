@@ -1,0 +1,8 @@
+{
+  "name": "traces_stats",
+  "verb": "python -m agents_traces stats",
+  "cadence": "hourly",
+  "rests_on": "agents-traces stats, verified in agents-traces test suite, exit 0 = healthy",
+  "expected_exit": 0,
+  "timeout_sec": 30
+}

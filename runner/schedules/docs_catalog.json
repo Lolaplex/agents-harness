@@ -1,0 +1,8 @@
+{
+  "name": "docs_catalog",
+  "verb": "python -m agents_docs catalog",
+  "cadence": "daily",
+  "rests_on": "agents-docs catalog, verified in agents-docs test suite, exit 0 = healthy",
+  "expected_exit": 0,
+  "timeout_sec": 30
+}

@@ -1,0 +1,8 @@
+{
+  "name": "memory_check",
+  "verb": "python -m agents_memory check",
+  "cadence": "daily",
+  "rests_on": "agents-memory check, verified against the live store in agents-bench (all green), exit 0 = healthy store",
+  "expected_exit": 0,
+  "timeout_sec": 120
+}
