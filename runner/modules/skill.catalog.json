@@ -1,0 +1,10 @@
+{
+  "name": "skill.catalog",
+  "kind": "skill",
+  "when": "on_request",
+  "cadence": "on_request",
+  "verb": "python -c \"print('skill catalog')\"",
+  "rests_on": "SKILL.md files on disk, injected into per-request system context when named, not executed as shell",
+  "expected_exit": 0,
+  "timeout_sec": 10
+}

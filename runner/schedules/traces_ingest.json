@@ -1,0 +1,8 @@
+{
+  "name": "traces_ingest",
+  "verb": "python -m agents_traces ingest",
+  "cadence": "hourly",
+  "rests_on": "agents-traces ingest (Cursor/Antigravity/Claude product jsonl -> ~/.agents/traces), verified in agents-traces test suite, exit 0 = healthy",
+  "expected_exit": 0,
+  "timeout_sec": 180
+}

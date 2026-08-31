@@ -1,0 +1,10 @@
+{
+  "name": "a2a.peer",
+  "kind": "a2a",
+  "when": "later",
+  "cadence": "later",
+  "verb": "python -c \"print('a2a not wired')\"",
+  "rests_on": "Agent-to-agent peer call, stub until a protocol is chosen; exists so the loop can name it",
+  "expected_exit": 0,
+  "timeout_sec": 10
+}

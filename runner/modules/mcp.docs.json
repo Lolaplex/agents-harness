@@ -1,0 +1,10 @@
+{
+  "name": "mcp.docs",
+  "kind": "mcp",
+  "when": "on_request",
+  "cadence": "on_request",
+  "verb": "python -m agents_docs --help-json",
+  "rests_on": "agents-docs catalog/search CLI, exit 0 = module present",
+  "expected_exit": 0,
+  "timeout_sec": 30
+}

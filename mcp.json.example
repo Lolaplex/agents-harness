@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "agents-harness": {
+      "command": "python",
+      "args": ["-m", "runner.mcp_server"]
+    }
+  }
+}

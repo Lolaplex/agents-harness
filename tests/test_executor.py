@@ -89,6 +89,7 @@ class TestHarnessExecutor(unittest.TestCase):
         self.assertIn("memory_inventory", names)
         self.assertIn("docs_catalog", names)
         self.assertIn("traces_stats", names)
+        self.assertIn("traces_ingest", names)
         self.assertIn("plexus_verify", names)
 
 

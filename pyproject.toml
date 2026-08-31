@@ -10,5 +10,11 @@ readme = "AGENTS.md"
 requires-python = ">=3.10"
 dependencies = []
 
+[project.optional-dependencies]
+mcp = ["mcp>=1.0.0,<2"]
+
 [project.scripts]
 agents-harness = "runner.executor:main"
+agents-harness-loop = "runner.loop:main"
+agents-harness-mcp = "runner.mcp_server:main"
+agents-harness-kernel = "runner.kernel:main"

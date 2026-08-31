@@ -1,0 +1,10 @@
+{
+  "name": "mcp.memory",
+  "kind": "mcp",
+  "when": "on_request",
+  "cadence": "on_request",
+  "verb": "python -m agents_memory --help-json",
+  "rests_on": "agents-memory MCP/CLI, typed markdown SoT, exit 0 = module present",
+  "expected_exit": 0,
+  "timeout_sec": 30
+}

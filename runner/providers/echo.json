@@ -1,0 +1,10 @@
+{
+  "name": "echo",
+  "kind": "echo",
+  "when": "on_request",
+  "cadence": "on_request",
+  "verb": "chat.completions",
+  "rests_on": "In-process echo provider for tests; same complete() interface as openai_compat",
+  "expected_exit": 0,
+  "timeout_sec": 5
+}

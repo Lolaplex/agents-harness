@@ -1,0 +1,13 @@
+{
+  "name": "openai.default",
+  "kind": "openai_compat",
+  "when": "on_request",
+  "cadence": "on_request",
+  "verb": "chat.completions",
+  "rests_on": "OpenAI-compatible POST /chat/completions via LLM_BASE_URL, LLM_API_KEY, LLM_MODEL",
+  "expected_exit": 0,
+  "timeout_sec": 60,
+  "url_env": "LLM_BASE_URL",
+  "key_env": "LLM_API_KEY",
+  "model_env": "LLM_MODEL"
+}
