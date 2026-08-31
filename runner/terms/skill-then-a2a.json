@@ -1,0 +1,7 @@
+{
+  "op": "seq",
+  "steps": [
+    {"op": "atom", "name": "skill.catalog"},
+    {"op": "atom", "name": "a2a.peer"}
+  ]
+}

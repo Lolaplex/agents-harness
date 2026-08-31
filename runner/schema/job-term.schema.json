@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "job-term.schema.json",
+  "title": "Harness job term",
+  "description": "ISAR ITerm view. Atoms are catalog verbs. Combinators: norm, konst, comp, app. seq is sugar. dyn is the dynamic hole for mix.",
+  "oneOf": [
+    { "type": "string", "minLength": 1 },
+    {
+      "type": "object",
+      "required": ["op"],
+      "properties": {
+        "op": {
+          "enum": ["atom", "dyn", "norm", "konst", "comp", "app", "seq"]
+        },
+        "name": { "type": "string" },
+        "f": { "$ref": "#" },
+        "g": { "$ref": "#" },
+        "x": { "$ref": "#" },
+        "keep": { "$ref": "#" },
+        "steps": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#" }
+        }
+      },
+      "additionalProperties": false
+    }
+  ]
+}
