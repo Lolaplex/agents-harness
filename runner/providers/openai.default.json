@@ -4,9 +4,10 @@
   "when": "on_request",
   "cadence": "on_request",
   "verb": "chat.completions",
-  "rests_on": "OpenAI-compatible POST /chat/completions via LLM_BASE_URL, LLM_API_KEY, LLM_MODEL",
+  "rests_on": "OpenAI-compatible POST /chat/completions via LLM_BASE_URL, LLM_API_KEY, LLM_MODEL. Streams; idle_sec is silence between tokens, not a generation cap.",
   "expected_exit": 0,
-  "timeout_sec": 60,
+  "first_byte_sec": 90,
+  "idle_sec": 20,
   "url_env": "LLM_BASE_URL",
   "key_env": "LLM_API_KEY",
   "model_env": "LLM_MODEL"

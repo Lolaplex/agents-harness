@@ -14,6 +14,7 @@ import os
 import sys
 from typing import Any
 
+from .delivery import bind_delivery
 from .executor import execute_job, list_schedules
 from .modules import find_module, list_modules
 from .providers import CompletionRequest, get_provider, list_providers
@@ -122,6 +123,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--provider", default="", help="Provider name (openai.default, echo, …)")
     parser.add_argument("--assemble-only", action="store_true", help="Print reconstructed payload, no HTTP")
     parser.add_argument("--complete", action="store_true", help="Complete via the selected provider and record")
+    parser.add_argument(
+        "--deliver",
+        default="",
+        help="stream (TTY tokens) or buffered (one answer; thinking on stderr). Default from --channel.",
+    )
     parser.add_argument("--list-modules", action="store_true", help="List MCP/skill/A2A/schedule modules")
     parser.add_argument("--list-providers", action="store_true", help="List completion providers")
     parser.add_argument("--call", metavar="NAME", help="Run one module or schedule by name (Cordis)")
@@ -211,12 +217,19 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     provider = get_provider(args.provider)
+    mode, on_status, on_delta, emit = bind_delivery(args.channel, override=args.deliver)
     if user_text:
         _record(session, "user", user_text, args.channel, args.user, resolved.user.id)
-    result = provider.complete(CompletionRequest(messages=messages))
+    result = provider.complete(
+        CompletionRequest(
+            messages=messages,
+            on_status=on_status,
+            on_delta=on_delta,
+        )
+    )
     if result.text:
         _record(session, "assistant", result.text, args.channel, args.user, resolved.user.id)
-    print(result.text)
+    emit(result.text)
     return 0
 
 

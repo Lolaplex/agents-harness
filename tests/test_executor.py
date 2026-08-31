@@ -3,10 +3,12 @@
 import json
 import os
 import tempfile
+import time
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
-from runner.executor import execute_job, list_schedules, load_manifest
+from runner.executor import execute_job, list_schedules, load_manifest, traces_dir
 
 
 class TestHarnessExecutor(unittest.TestCase):
@@ -91,6 +93,33 @@ class TestHarnessExecutor(unittest.TestCase):
         self.assertIn("traces_stats", names)
         self.assertIn("traces_ingest", names)
         self.assertIn("plexus_verify", names)
+
+    def test_execute_job_honors_agents_traces_dir(self):
+        unique = f"env_traces_{os.getpid()}_{time.time_ns()}"
+        live_dir = Path.home() / ".agents" / "traces"
+        live_file = live_dir / "runner.jsonl"
+        manifest = {
+            "name": unique,
+            "verb": "python -c \"print('traces-env')\"",
+            "cadence": "on_boot",
+            "rests_on": "cheap python print, exit 0 = healthy",
+            "expected_exit": 0,
+            "timeout_sec": 10,
+            "cwd": None,
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            sandbox = Path(tmp) / "sandbox-traces"
+            with patch.dict(os.environ, {"AGENTS_TRACES_DIR": str(sandbox)}):
+                got = traces_dir()
+                self.assertEqual(got, sandbox.expanduser().resolve())
+                self.assertNotEqual(got, live_dir.resolve())
+                res = execute_job(manifest, log_path=None)
+            dest = sandbox / "runner.jsonl"
+            self.assertEqual(res["status"], "SUCCESS")
+            self.assertTrue(dest.is_file())
+            self.assertIn(unique, dest.read_text(encoding="utf-8"))
+        if live_file.exists():
+            self.assertNotIn(unique, live_file.read_text(encoding="utf-8"))
 
 
 if __name__ == "__main__":

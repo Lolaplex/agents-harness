@@ -26,7 +26,26 @@ if hasattr(sys.stdout, "reconfigure"):
 
 SCHEDULES_DIR = Path(__file__).parent / "schedules"
 DEFAULT_LOG_FILE = Path(__file__).parent.parent / "logs" / "runner.jsonl"
-TRACES_DIR = Path.home() / ".agents" / "traces"
+
+
+def traces_dir() -> Path:
+    """Cordis job-log directory. Same override as agents-traces.
+
+    AGENTS_TRACES_DIR wins. Otherwise ~/.agents/traces. Read at call time so
+    a sandbox env cannot leak into a module-level Path.home() capture.
+    agents-traces does not map AGENTS_HOME onto traces, so neither do we.
+    """
+    env_dir = os.environ.get("AGENTS_TRACES_DIR", "").strip()
+    if env_dir:
+        return Path(env_dir).expanduser().resolve()
+    return Path.home() / ".agents" / "traces"
+
+
+def traces_logging_enabled() -> bool:
+    """Match agents-traces interceptor: env set, or default dir already exists."""
+    if os.environ.get("AGENTS_TRACES_DIR", "").strip():
+        return True
+    return traces_dir().is_dir()
 
 
 def load_manifest(path: Path) -> Dict[str, Any]:
@@ -116,10 +135,10 @@ def execute_job(manifest: Dict[str, Any], log_path: Optional[Path] = DEFAULT_LOG
         "stderr_tail": stderr_text[-1000:] if stderr_text else "",
     }
 
-    # Append to local and user agent trace log
+    # Local repo log, plus user-agent traces when enabled (env or existing dir)
     append_log(record, log_path)
-    if TRACES_DIR.exists():
-        append_log(record, TRACES_DIR / "runner.jsonl")
+    if traces_logging_enabled():
+        append_log(record, traces_dir() / "runner.jsonl")
 
     return record
 

@@ -12,7 +12,7 @@ import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, Callable, Iterable, Protocol
 
 from .executor import load_manifest
 
@@ -40,6 +40,8 @@ class CompletionRequest:
     model: str = ""
     tools: list[dict[str, Any]] | None = None
     extra: dict[str, Any] = field(default_factory=dict)
+    on_status: Callable[[str], None] | None = None
+    on_delta: Callable[[str], None] | None = None
 
 
 @dataclass
@@ -98,7 +100,91 @@ class EchoProvider:
                 content = msg.get("content") or ""
                 text = content if isinstance(content, str) else str(content)
                 break
-        return CompletionResult(text=text or "(echo)")
+        text = text or "(echo)"
+        if req.on_status:
+            req.on_status("thinking...")
+        if req.on_delta:
+            req.on_delta(text)
+        return CompletionResult(text=text)
+
+
+def consume_sse(
+    lines: Iterable[bytes | str],
+    *,
+    on_delta: Callable[[str], None] | None = None,
+) -> tuple[str, list[Any] | None, dict[str, Any]]:
+    """Fold an OpenAI-compat SSE stream into text + tool_calls.
+
+    Hang detection is the caller's socket idle timeout between lines, not a
+    wall-clock budget for the whole generation.
+    """
+    text_parts: list[str] = []
+    tools: dict[int, dict[str, Any]] = {}
+    n = 0
+    for raw in lines:
+        line = raw.decode("utf-8", errors="replace") if isinstance(raw, bytes) else raw
+        line = line.strip()
+        if not line or line.startswith(":"):
+            continue
+        if not line.startswith("data:"):
+            continue
+        payload = line[5:].strip()
+        if payload == "[DONE]":
+            break
+        try:
+            chunk = json.loads(payload)
+        except json.JSONDecodeError:
+            continue
+        n += 1
+        choice = (chunk.get("choices") or [{}])[0]
+        delta = choice.get("delta") or {}
+        piece = delta.get("content")
+        if piece:
+            text_parts.append(str(piece))
+            if on_delta:
+                on_delta(str(piece))
+        for tc in delta.get("tool_calls") or []:
+            idx = int(tc.get("index") or 0)
+            slot = tools.setdefault(
+                idx,
+                {
+                    "id": "",
+                    "type": "function",
+                    "function": {"name": "", "arguments": ""},
+                },
+            )
+            if tc.get("id"):
+                slot["id"] = tc["id"]
+            fn = tc.get("function") or {}
+            if fn.get("name"):
+                slot["function"]["name"] = fn["name"]
+            if "arguments" in fn and fn["arguments"] is not None:
+                slot["function"]["arguments"] += str(fn["arguments"])
+        msg = choice.get("message") or {}
+        if msg.get("content") and not text_parts:
+            text_parts.append(str(msg["content"]))
+    tool_list = [tools[i] for i in sorted(tools)] or None
+    return "".join(text_parts).strip(), tool_list, {"sse_chunks": n}
+
+
+def _set_socket_timeout(resp: Any, seconds: float) -> None:
+    fp = getattr(resp, "fp", None)
+    raw = getattr(fp, "raw", None) if fp is not None else None
+    sock = getattr(raw, "_sock", None) if raw is not None else None
+    if sock is not None:
+        sock.settimeout(seconds)
+
+
+def _iter_sse_lines(resp: Any, idle_sec: float):
+    first = True
+    while True:
+        line = resp.readline()
+        if not line:
+            break
+        if first:
+            first = False
+            _set_socket_timeout(resp, idle_sec)
+        yield line
 
 
 class OpenAICompatProvider:
@@ -125,11 +211,16 @@ class OpenAICompatProvider:
             raise RuntimeError("LLM_BASE_URL required (or provider manifest url)")
         if not model:
             raise RuntimeError("LLM_MODEL required (or provider manifest model)")
-        body: dict[str, Any] = {"model": model, "messages": req.messages}
+        stream = True
+        if req.extra and "stream" in req.extra:
+            stream = bool(req.extra["stream"])
+        body: dict[str, Any] = {"model": model, "messages": req.messages, "stream": stream}
         if req.tools:
             body["tools"] = req.tools
-        if req.extra:
-            body.update(req.extra)
+        extra = dict(req.extra or {})
+        extra.pop("stream", None)
+        if extra:
+            body.update(extra)
         payload = json.dumps(body).encode("utf-8")
         headers = {"Content-Type": "application/json"}
         if key:
@@ -137,12 +228,33 @@ class OpenAICompatProvider:
         http_req = urllib.request.Request(
             url, data=payload, headers=headers, method="POST"
         )
+        first_byte = float(
+            self.manifest.get("first_byte_sec") or self.manifest.get("timeout_sec") or 90
+        )
+        idle = float(self.manifest.get("idle_sec") or 20)
+        if req.on_status:
+            req.on_status("thinking...")
         try:
-            with urllib.request.urlopen(http_req, timeout=60) as resp:
+            with urllib.request.urlopen(http_req, timeout=first_byte) as resp:
+                ctype = (resp.headers.get("Content-Type") or "").lower()
+                if stream or "text/event-stream" in ctype:
+                    text, tool_calls, meta = consume_sse(
+                        _iter_sse_lines(resp, idle),
+                        on_delta=req.on_delta,
+                    )
+                    return CompletionResult(text=text, tool_calls=tool_calls, raw=meta)
                 data = json.loads(resp.read().decode("utf-8"))
         except urllib.error.HTTPError as e:
             err = e.read().decode("utf-8", errors="replace")[:400]
             raise RuntimeError(f"chat completions HTTP {e.code}: {err}") from e
+        except (TimeoutError, urllib.error.URLError) as e:
+            reason = getattr(e, "reason", e)
+            if not isinstance(reason, TimeoutError) and "timed out" not in str(e).lower():
+                raise
+            raise RuntimeError(
+                f"LLM idle/first-byte timeout ({idle}s idle, {first_byte}s first byte); "
+                "generation is not wall-clock capped"
+            ) from e
         choice = (data.get("choices") or [{}])[0]
         msg = choice.get("message") or {}
         return CompletionResult(
