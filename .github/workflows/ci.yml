@@ -33,6 +33,7 @@ jobs:
           repository: Lolaplex/agents-traces
           ref: main
           path: _deps/agents-traces
+          token: ${{ secrets.REPO_READ_TOKEN }}
 
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v5
