@@ -1,0 +1,21 @@
+{
+  "name": "mcp.terminal",
+  "kind": "mcp",
+  "when": "on_request",
+  "cadence": "on_request",
+  "verb": "python -m agents_terminal --help-json",
+  "rests_on": "agents-terminal jailed CLI; extra argv is run -- <command>; exit 0 = present",
+  "expected_exit": 0,
+  "timeout_sec": 60,
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "argv": {
+        "type": "array",
+        "items": {"type": "string"},
+        "description": "Command argv to run under terminal policy (e.g. [\"echo\", \"hi\"])"
+      }
+    },
+    "required": ["argv"]
+  }
+}
