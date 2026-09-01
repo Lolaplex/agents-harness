@@ -108,6 +108,83 @@ class EchoProvider:
         return CompletionResult(text=text)
 
 
+class ScriptedToolProvider:
+    """First complete() is a tool call. After a tool result, echo that stdout.
+
+    Used by agents-sandbox to prove a skill/tool turn through the loop without
+    an LLM. Overlay JSON may set tool_name and tool_arguments.query.
+    """
+
+    kind = "scripted"
+
+    def __init__(self, manifest: dict[str, Any]):
+        self.name = str(manifest.get("name") or "scripted.tool")
+        self.tool_name = str(manifest.get("tool_name") or "mcp.memory.search")
+        self.tool_arguments = dict(manifest.get("tool_arguments") or {})
+
+    def complete(self, req: CompletionRequest) -> CompletionResult:
+        if req.on_status:
+            req.on_status("thinking...")
+        for msg in reversed(req.messages):
+            if msg.get("role") == "tool":
+                text = str(msg.get("content") or "")
+                if req.on_delta:
+                    req.on_delta(text)
+                return CompletionResult(text=text)
+        query = str(self.tool_arguments.get("query") or "").strip()
+        if not query:
+            for msg in reversed(req.messages):
+                if msg.get("role") == "user":
+                    content = msg.get("content") or ""
+                    query = content if isinstance(content, str) else str(content)
+                    break
+        job_name = str(self.tool_arguments.get("name") or "mcp.memory.search")
+        job_args = dict(self.tool_arguments.get("arguments") or {})
+        if "query" not in job_args:
+            job_args["query"] = query.strip()
+        payload = {"name": job_name, "arguments": job_args}
+        return CompletionResult(
+            text="",
+            tool_calls=[
+                {
+                    "id": "scripted_1",
+                    "type": "function",
+                    "function": {
+                        "name": self.tool_name,
+                        "arguments": json.dumps(payload, ensure_ascii=False),
+                    },
+                }
+            ],
+        )
+
+
+def _accumulate_tool_calls(tools: dict[int, dict[str, Any]], calls: Any) -> None:
+    if not calls:
+        return
+    for i, tc in enumerate(calls):
+        if not isinstance(tc, dict):
+            continue
+        idx = int(tc["index"]) if tc.get("index") is not None else i
+        slot = tools.setdefault(
+            idx,
+            {
+                "id": "",
+                "type": "function",
+                "function": {"name": "", "arguments": ""},
+            },
+        )
+        if tc.get("id"):
+            slot["id"] = tc["id"]
+        fn = tc.get("function") or {}
+        if fn.get("name"):
+            slot["function"]["name"] = fn["name"]
+        if "arguments" in fn and fn["arguments"] is not None:
+            args = fn["arguments"]
+            slot["function"]["arguments"] += (
+                args if isinstance(args, str) else json.dumps(args, ensure_ascii=False)
+            )
+
+
 def consume_sse(
     lines: Iterable[bytes | str],
     *,
@@ -143,26 +220,11 @@ def consume_sse(
             text_parts.append(str(piece))
             if on_delta:
                 on_delta(str(piece))
-        for tc in delta.get("tool_calls") or []:
-            idx = int(tc.get("index") or 0)
-            slot = tools.setdefault(
-                idx,
-                {
-                    "id": "",
-                    "type": "function",
-                    "function": {"name": "", "arguments": ""},
-                },
-            )
-            if tc.get("id"):
-                slot["id"] = tc["id"]
-            fn = tc.get("function") or {}
-            if fn.get("name"):
-                slot["function"]["name"] = fn["name"]
-            if "arguments" in fn and fn["arguments"] is not None:
-                slot["function"]["arguments"] += str(fn["arguments"])
+        _accumulate_tool_calls(tools, delta.get("tool_calls"))
         msg = choice.get("message") or {}
         if msg.get("content") and not text_parts:
             text_parts.append(str(msg["content"]))
+        _accumulate_tool_calls(tools, msg.get("tool_calls"))
     tool_list = [tools[i] for i in sorted(tools)] or None
     return "".join(text_parts).strip(), tool_list, {"sse_chunks": n}
 
@@ -215,10 +277,13 @@ class OpenAICompatProvider:
         if req.extra and "stream" in req.extra:
             stream = bool(req.extra["stream"])
         body: dict[str, Any] = {"model": model, "messages": req.messages, "stream": stream}
-        if req.tools:
-            body["tools"] = req.tools
         extra = dict(req.extra or {})
         extra.pop("stream", None)
+        if req.tools:
+            body["tools"] = req.tools
+            if "tool_choice" not in extra:
+                choice = self.manifest.get("tool_choice")
+                body["tool_choice"] = "auto" if choice is None else choice
         if extra:
             body.update(extra)
         payload = json.dumps(body).encode("utf-8")
@@ -266,6 +331,7 @@ class OpenAICompatProvider:
 
 _KINDS = {
     "echo": lambda _m: EchoProvider(),
+    "scripted": ScriptedToolProvider,
     "openai_compat": OpenAICompatProvider,
 }
 

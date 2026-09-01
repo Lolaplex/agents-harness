@@ -1,0 +1,12 @@
+{
+  "name": "scripted.tool",
+  "kind": "scripted",
+  "when": "on_request",
+  "cadence": "on_request",
+  "verb": "chat.completions",
+  "rests_on": "Fixture provider: first complete is a Cordis tool call, second echoes the tool stdout. Overlay may set tool_name and tool_arguments.",
+  "tool_name": "call_job",
+  "tool_arguments": {"name": "mcp.memory.search"},
+  "expected_exit": 0,
+  "timeout_sec": 30
+}

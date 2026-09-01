@@ -26,6 +26,16 @@ class TestConsumeSse(unittest.TestCase):
         self.assertEqual(tools[0]["function"]["name"], "search_memory")
         self.assertEqual(tools[0]["function"]["arguments"], "{}")
 
+    def test_folds_message_tool_calls(self):
+        lines = [
+            'data: {"choices":[{"message":{"tool_calls":[{"id":"c1","function":{"name":"mcp_memory_search","arguments":"{\\"query\\":\\"canary\\"}"}}]}}]}',
+            "data: [DONE]",
+        ]
+        text, tools, _ = consume_sse(lines)
+        self.assertEqual(text, "")
+        self.assertEqual(tools[0]["function"]["name"], "mcp_memory_search")
+        self.assertIn("canary", tools[0]["function"]["arguments"])
+
 
 if __name__ == "__main__":
     unittest.main()
