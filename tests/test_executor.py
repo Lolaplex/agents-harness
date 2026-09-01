@@ -84,6 +84,12 @@ class TestHarnessExecutor(unittest.TestCase):
         self.assertEqual(res["status"], "FAILED")
         self.assertEqual(res["exit_code"], 42)
 
+    def test_bundled_schedules_disabled(self):
+        with patch.dict(os.environ, {"AGENTS_BUNDLED_SCHEDULES": "0"}, clear=False):
+            manifests = list_schedules()
+        names = {m["name"] for m in manifests}
+        self.assertNotIn("traces_ingest", names)
+
     def test_all_bundled_manifests_valid(self):
         manifests = list_schedules()
         self.assertGreaterEqual(len(manifests), 4)

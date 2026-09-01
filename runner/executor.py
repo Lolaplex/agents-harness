@@ -10,12 +10,15 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shlex
 import subprocess
 import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+
+from .redact import redact_tool_output
 
 if hasattr(sys.stdout, "reconfigure"):
     try:
@@ -26,6 +29,37 @@ if hasattr(sys.stdout, "reconfigure"):
 
 SCHEDULES_DIR = Path(__file__).parent / "schedules"
 DEFAULT_LOG_FILE = Path(__file__).parent.parent / "logs" / "runner.jsonl"
+
+
+def _schedule_dirs() -> list[Path]:
+    dirs: list[Path] = []
+    bundled = os.environ.get("AGENTS_BUNDLED_SCHEDULES", "1").strip().lower()
+    if bundled not in ("0", "false", "no", "off"):
+        dirs.append(SCHEDULES_DIR)
+    extra = os.environ.get("AGENTS_SCHEDULES_DIR", "").strip()
+    if extra:
+        overlay = Path(extra)
+        if overlay.resolve() not in {d.resolve() for d in dirs}:
+            dirs.append(overlay)
+    return dirs
+
+
+def list_schedules(schedules_dir: Path | None = None) -> List[Dict[str, Any]]:
+    if schedules_dir is not None:
+        dirs = [schedules_dir]
+    else:
+        dirs = _schedule_dirs()
+    seen: dict[str, Dict[str, Any]] = {}
+    for folder in dirs:
+        if not folder.exists():
+            continue
+        for p in sorted(folder.glob("*.json")):
+            try:
+                row = load_manifest(p)
+                seen[str(row["name"])] = row
+            except Exception as e:
+                print(f"[!] Error loading {p.name}: {e}", file=sys.stderr)
+    return list(seen.values())
 
 
 def traces_dir() -> Path:
@@ -48,6 +82,16 @@ def traces_logging_enabled() -> bool:
     return traces_dir().is_dir()
 
 
+def verb_to_argv(verb: str, extra_argv: List[str] | None = None) -> List[str]:
+    """Parse a Cordis verb into an argv list. Never uses a shell."""
+    parts = shlex.split(str(verb), posix=True)
+    if parts and parts[0] in ("python", "python3", "py"):
+        parts[0] = sys.executable
+    if extra_argv:
+        parts.extend(str(a) for a in extra_argv)
+    return parts
+
+
 def load_manifest(path: Path) -> Dict[str, Any]:
     with open(path, "r", encoding="utf-8") as f:
         data = json.load(f)
@@ -61,30 +105,23 @@ def load_manifest(path: Path) -> Dict[str, Any]:
     return data
 
 
-def list_schedules(schedules_dir: Path = SCHEDULES_DIR) -> List[Dict[str, Any]]:
-    if not schedules_dir.exists():
-        return []
-    manifests = []
-    for p in sorted(schedules_dir.glob("*.json")):
-        try:
-            manifests.append(load_manifest(p))
-        except Exception as e:
-            print(f"[!] Error loading {p.name}: {e}", file=sys.stderr)
-    return manifests
-
-
-def execute_job(manifest: Dict[str, Any], log_path: Optional[Path] = DEFAULT_LOG_FILE) -> Dict[str, Any]:
+def execute_job(
+    manifest: Dict[str, Any],
+    log_path: Optional[Path] = DEFAULT_LOG_FILE,
+    extra_argv: Optional[List[str]] = None,
+) -> Dict[str, Any]:
     name = manifest["name"]
     verb = manifest["verb"]
     expected_exit = manifest.get("expected_exit", 0)
     timeout_sec = manifest.get("timeout_sec", 60)
     cwd = manifest.get("cwd")
+    extra_argv = [str(a) for a in extra_argv] if extra_argv else None
 
     start_time = time.time()
     iso_timestamp = datetime.now(timezone.utc).isoformat()
 
-    print(f"[*] Running '{name}' (rests on: {manifest['rests_on']})...")
-    print(f"    CMD: {verb}")
+    print(f"[*] Running '{name}' (rests on: {manifest['rests_on']})...", file=sys.stderr)
+    print(f"    CMD: {verb}" + (f" {extra_argv}" if extra_argv else ""), file=sys.stderr)
 
     status = "SUCCESS"
     exit_code = -1
@@ -92,16 +129,17 @@ def execute_job(manifest: Dict[str, Any], log_path: Optional[Path] = DEFAULT_LOG
     stderr_text = ""
 
     try:
+        cmd = verb_to_argv(verb, extra_argv)
         proc = subprocess.run(
-            verb,
-            shell=True,
+            cmd,
+            shell=False,
             capture_output=True,
             text=True,
             timeout=timeout_sec,
             cwd=cwd,
         )
         exit_code = proc.returncode
-        stdout_text = proc.stdout.strip()
+        stdout_text = redact_tool_output(proc.stdout.strip())
         stderr_text = proc.stderr.strip()
 
         if exit_code != expected_exit:
@@ -110,7 +148,10 @@ def execute_job(manifest: Dict[str, Any], log_path: Optional[Path] = DEFAULT_LOG
             if stderr_text:
                 print(f"    STDERR: {stderr_text[:500]}", file=sys.stderr)
         else:
-            print(f"[+] '{name}' OK (exit {exit_code}) in {time.time() - start_time:.2f}s")
+            print(
+                f"[+] '{name}' OK (exit {exit_code}) in {time.time() - start_time:.2f}s",
+                file=sys.stderr,
+            )
 
     except subprocess.TimeoutExpired:
         status = "TIMEOUT"
@@ -133,6 +174,7 @@ def execute_job(manifest: Dict[str, Any], log_path: Optional[Path] = DEFAULT_LOG
         "duration_ms": round(duration_ms, 2),
         "stdout_tail": stdout_text[-1000:] if stdout_text else "",
         "stderr_tail": stderr_text[-1000:] if stderr_text else "",
+        "extra_argv": extra_argv or [],
     }
 
     # Local repo log, plus user-agent traces when enabled (env or existing dir)
