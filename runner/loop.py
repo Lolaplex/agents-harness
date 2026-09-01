@@ -10,14 +10,20 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
+import re
 import sys
 from typing import Any
 
+from .cordis_tools import handle_cordis_tool, is_cordis_tool
 from .delivery import bind_delivery
 from .executor import execute_job, list_schedules
-from .modules import find_module, list_modules
-from .providers import CompletionRequest, get_provider, list_providers
+from .modules import (
+    find_module,
+    list_modules,
+    openai_tool_name,
+    openai_tools,
+)
+from .providers import CompletionRequest, CompletionResult, get_provider, list_providers
 
 
 def _assemble(session: str, limit: int) -> list[dict[str, Any]]:
@@ -39,6 +45,99 @@ def _record(
     record_message(
         session, role, content, channel=channel, user=user, user_id=user_id
     )
+
+
+LOOP_TRAILER_MARKER = "---agents-loop-trailer---"
+
+
+def _emit_trailer(
+    emit: Any,
+    *,
+    session: str,
+    user_id: str,
+    alias: str,
+    mode: str,
+) -> None:
+    if mode != "buffered":
+        return
+    trailer = json.dumps(
+        {"session": session, "user_id": user_id, "alias": alias},
+        ensure_ascii=False,
+    )
+    print(f"{LOOP_TRAILER_MARKER}\n{trailer}", file=sys.stdout, flush=True)
+
+
+def _run_tool_calls(calls: list[Any]) -> list[dict[str, Any]]:
+    """Route tool_calls through the three Cordis tools (closed carrier)."""
+    messages: list[dict[str, Any]] = []
+    for i, call in enumerate(calls):
+        if not isinstance(call, dict):
+            continue
+        fn = call.get("function") if isinstance(call.get("function"), dict) else call
+        name = str(fn.get("name") or call.get("name") or "").strip()
+        call_id = str(call.get("id") or f"call_{i}")
+        if is_cordis_tool(name):
+            content = handle_cordis_tool(name, call)
+        else:
+            content = f"refused: unknown tool {name} (use call_job with a catalog name)"
+        messages.append(
+            {"role": "tool", "tool_call_id": call_id, "content": content}
+        )
+    return messages
+
+
+_TOOL_TAG = re.compile(r"<tool_call>\s*(\{.*?\})\s*</tool_call>", re.DOTALL)
+_TOOL_FENCE = re.compile(
+    r"```(?:json|tool)?\s*(\{.*?\})\s*```",
+    re.DOTALL,
+)
+
+
+def _json_tool_call(blob: str, call_id: str) -> dict[str, Any] | None:
+    try:
+        obj = json.loads(blob)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(obj, dict):
+        return None
+    name = str(obj.get("name") or "").strip()
+    args = obj.get("arguments") if "arguments" in obj else obj.get("parameters")
+    if not name:
+        return None
+    if args is None:
+        args = {}
+    if not isinstance(args, str):
+        args = json.dumps(args, ensure_ascii=False)
+    return {
+        "id": call_id,
+        "type": "function",
+        "function": {"name": name, "arguments": args},
+    }
+
+
+def _parse_text_tool_calls(text: str) -> tuple[list[dict[str, Any]] | None, str]:
+    """Local models sometimes emit a tool call as XML/JSON in content."""
+    if not text:
+        return None, text
+    match = _TOOL_TAG.search(text) or _TOOL_FENCE.search(text)
+    if not match:
+        return None, text
+    parsed = _json_tool_call(match.group(1), "text_1")
+    if parsed is None:
+        return None, text
+    rest = (text[: match.start()] + text[match.end() :]).strip()
+    return [parsed], rest
+
+
+def _coerce_tool_calls(result: CompletionResult) -> CompletionResult:
+    if result.tool_calls:
+        return result
+    parsed, rest = _parse_text_tool_calls(result.text or "")
+    if not parsed:
+        return result
+    result.tool_calls = parsed
+    result.text = rest
+    return result
 
 
 def _skills_for_prompt() -> list[tuple[str, str]]:
@@ -107,6 +206,10 @@ def _resolve_identity(args: argparse.Namespace):
     )
 
 
+def _complete_once(provider: Any, req: CompletionRequest) -> CompletionResult:
+    return _coerce_tool_calls(provider.complete(req))
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Per-request loop: assemble trace, complete, or call a Cordis module"
@@ -129,6 +232,11 @@ def main(argv: list[str] | None = None) -> int:
         help="stream (TTY tokens) or buffered (one answer; thinking on stderr). Default from --channel.",
     )
     parser.add_argument("--list-modules", action="store_true", help="List MCP/skill/A2A/schedule modules")
+    parser.add_argument(
+        "--list-tools",
+        action="store_true",
+        help="List OpenAI tools advertised from as_tool modules",
+    )
     parser.add_argument("--list-providers", action="store_true", help="List completion providers")
     parser.add_argument("--call", metavar="NAME", help="Run one module or schedule by name (Cordis)")
     parser.add_argument("--check-term", metavar="FILE", help="Check a job-term JSON against the catalog")
@@ -144,16 +252,30 @@ def main(argv: list[str] | None = None) -> int:
 
         return kernel_main([args.reduce_term, "--reduce"])
 
+    if args.list_tools:
+        print("tools:")
+        for t in openai_tools():
+            fn = t["function"]
+            print(f"  {fn['name']:<24} {fn.get('description', '')}")
+        return 0
+
     if args.list_modules:
         print("modules:")
         for m in list_modules():
-            print(f"  {m['name']:<20} kind={m['kind']:<8} when={m['when']:<12} {m['verb']}")
+            tool = openai_tool_name(m) if m.get("as_tool") else ""
+            extra = f" tool={tool}" if tool else ""
+            print(
+                f"  {m['name']:<20} kind={m['kind']:<8} when={m['when']:<12} {m['verb']}{extra}"
+            )
         print("schedules:")
         for s in list_schedules():
             print(f"  {s['name']:<20} cadence={s['cadence']:<8} {s['verb']}")
         print("providers:")
         for p in list_providers():
             print(f"  {p['name']:<20} kind={p['kind']:<14} {p['verb']}")
+        print("tools:")
+        for t in openai_tools():
+            print(f"  {t['function']['name']}")
         return 0
 
     if args.list_providers:
@@ -204,6 +326,7 @@ def main(argv: list[str] | None = None) -> int:
                     "alias": resolved.alias,
                     "start_date": resolved.session.start_date,
                     "messages": messages,
+                    "tools": openai_tools(),
                 },
                 ensure_ascii=False,
                 indent=2,
@@ -220,16 +343,53 @@ def main(argv: list[str] | None = None) -> int:
     mode, on_status, on_delta, emit = bind_delivery(args.channel, override=args.deliver)
     if user_text:
         _record(session, "user", user_text, args.channel, args.user, resolved.user.id)
-    result = provider.complete(
-        CompletionRequest(
-            messages=messages,
-            on_status=on_status,
-            on_delta=on_delta,
-        )
+    tools = openai_tools()
+    req = CompletionRequest(
+        messages=messages,
+        tools=tools or None,
+        on_status=on_status,
+        on_delta=on_delta,
     )
+    max_tool_rounds = 3
+    result = _complete_once(provider, req)
+    for _round in range(max_tool_rounds):
+        if not result.tool_calls:
+            break
+        tool_msgs = _run_tool_calls(result.tool_calls)
+        messages.append(
+            {
+                "role": "assistant",
+                "content": result.text or None,
+                "tool_calls": result.tool_calls,
+            }
+        )
+        messages.extend(tool_msgs)
+        result = _complete_once(
+            provider,
+            CompletionRequest(
+                messages=messages,
+                tools=tools or None,
+                on_status=on_status,
+                on_delta=on_delta,
+            ),
+        )
+    else:
+        if result.tool_calls:
+            print(
+                f"Error: still requested tools after {max_tool_rounds} rounds",
+                file=sys.stderr,
+            )
+            return 1
     if result.text:
         _record(session, "assistant", result.text, args.channel, args.user, resolved.user.id)
     emit(result.text)
+    _emit_trailer(
+        emit,
+        session=session,
+        user_id=resolved.user.id,
+        alias=resolved.alias,
+        mode=mode,
+    )
     return 0
 
 

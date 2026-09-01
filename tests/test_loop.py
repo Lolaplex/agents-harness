@@ -1,4 +1,5 @@
 import io
+import json
 import os
 import tempfile
 import unittest
@@ -6,9 +7,9 @@ from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from unittest.mock import patch
 
-from runner.loop import build_payload, main as loop_main
-from runner.modules import list_modules
-from runner.providers import CompletionRequest, get_provider, list_providers
+from runner.loop import LOOP_TRAILER_MARKER, _parse_text_tool_calls, build_payload, main as loop_main
+from runner.modules import list_modules, openai_tools
+from runner.providers import CompletionRequest, CompletionResult, get_provider, list_providers
 
 
 class TestModulesAndLoop(unittest.TestCase):
@@ -16,6 +17,7 @@ class TestModulesAndLoop(unittest.TestCase):
         mods = list_modules()
         names = {m["name"] for m in mods}
         self.assertIn("mcp.memory", names)
+        self.assertIn("mcp.memory.search", names)
         self.assertIn("mcp.traces", names)
         self.assertIn("a2a.peer", names)
         self.assertIn("skill.catalog", names)
@@ -28,6 +30,7 @@ class TestModulesAndLoop(unittest.TestCase):
             names = {p["name"] for p in list_providers()}
             self.assertIn("openai.default", names)
             self.assertIn("echo", names)
+            self.assertIn("scripted.tool", names)
             self.assertNotIn("lmstudio.local", names)
             for p in list_providers():
                 self.assertIn("kind", p)
@@ -133,13 +136,171 @@ class TestModulesAndLoop(unittest.TestCase):
     def test_echo_complete_telegram_buffered_prints_ping(self):
         rc, out, err = self._echo_complete("buffered", channel="telegram")
         self.assertEqual(rc, 0)
-        self.assertEqual(out.strip(), "ping")
+        self.assertIn("ping", out)
+        self.assertIn(LOOP_TRAILER_MARKER, out)
+        trailer_line = out.split(LOOP_TRAILER_MARKER, 1)[1].strip().splitlines()[-1]
+        meta = json.loads(trailer_line)
+        self.assertTrue(meta.get("session", "").startswith("ses_"))
         self.assertIn("thinking", err.lower())
 
     def test_echo_complete_stream_writes_ping(self):
         rc, out, _err = self._echo_complete("stream", channel="telegram")
         self.assertEqual(rc, 0)
         self.assertIn("ping", out)
+
+
+    def test_scripted_tool_turn_searches_memory(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            memory = root / "memory"
+            note = memory / "notes" / "programming"
+            note.mkdir(parents=True)
+            (note / "canary.md").write_text(
+                "The sandbox canary is amber-47.\n", encoding="utf-8"
+            )
+            traces = root / "traces"
+            traces.mkdir()
+            ident = root / "identity.json"
+            out, err = io.StringIO(), io.StringIO()
+            with patch.dict(
+                os.environ,
+                {
+                    "AGENTS_IDENTITY_PATH": str(ident),
+                    "AGENTS_TRACES_DIR": str(traces),
+                    "AGENTS_MEMORY_PATH": str(memory),
+                    "AGENTS_HOME": str(root / "home"),
+                },
+            ):
+                with redirect_stdout(out), redirect_stderr(err):
+                    rc = loop_main(
+                        [
+                            "--channel",
+                            "telegram",
+                            "--user",
+                            "tooltest",
+                            "--new-session",
+                            "--message",
+                            "canary",
+                            "--complete",
+                            "--provider",
+                            "scripted.tool",
+                            "--deliver",
+                            "buffered",
+                        ]
+                    )
+            self.assertEqual(rc, 0, err.getvalue())
+            self.assertIn("amber-47", out.getvalue())
+            self.assertIn("thinking", err.getvalue().lower())
+
+    def test_openai_tools_maps_cordis_surface(self):
+        env = {k: v for k, v in os.environ.items() if k != "AGENTS_MODULES_DIR"}
+        with patch.dict(os.environ, env, clear=True):
+            names = {t["function"]["name"] for t in openai_tools()}
+            self.assertEqual(names, {"list_catalog", "load_schema", "call_job"})
+
+    def test_enabled_json_filters_tools(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            overlay = Path(tmp)
+            (overlay / "enabled.json").write_text("[]", encoding="utf-8")
+            with patch.dict(os.environ, {"AGENTS_MODULES_DIR": str(overlay)}):
+                self.assertEqual(openai_tools(), [])
+
+    def test_parse_text_tool_call_xml(self):
+        parsed, rest = _parse_text_tool_calls(
+            'thinking\n<tool_call>{"name":"call_job","arguments":{"name":"mcp.memory.search","arguments":{"query":"canary"}}}</tool_call>\n'
+        )
+        self.assertEqual(parsed[0]["function"]["name"], "call_job")
+        self.assertIn("canary", parsed[0]["function"]["arguments"])
+        self.assertEqual(rest, "thinking")
+
+    def test_complete_passes_tools_and_tool_results(self):
+        seen: list[CompletionRequest] = []
+
+        class Fake:
+            name = "fake"
+            kind = "openai_compat"
+
+            def complete(self, req: CompletionRequest) -> CompletionResult:
+                seen.append(req)
+                if any(m.get("role") == "tool" for m in req.messages):
+                    return CompletionResult(text="the token is amber-47")
+                return CompletionResult(
+                    text="",
+                    tool_calls=[
+                        {
+                            "id": "c1",
+                            "type": "function",
+                            "function": {
+                                "name": "call_job",
+                                "arguments": json.dumps(
+                                    {
+                                        "name": "mcp.memory.search",
+                                        "arguments": {"query": "canary"},
+                                    }
+                                ),
+                            },
+                        }
+                    ],
+                )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            memory = root / "memory"
+            note = memory / "notes" / "programming"
+            note.mkdir(parents=True)
+            (note / "canary.md").write_text(
+                "The sandbox canary is amber-47.\n", encoding="utf-8"
+            )
+            traces = root / "traces"
+            traces.mkdir()
+            ident = root / "identity.json"
+            out, err = io.StringIO(), io.StringIO()
+            env = {
+                k: v
+                for k, v in os.environ.items()
+                if k not in ("AGENTS_MODULES_DIR", "AGENTS_PROVIDERS_DIR")
+            }
+            env.update(
+                {
+                    "AGENTS_IDENTITY_PATH": str(ident),
+                    "AGENTS_TRACES_DIR": str(traces),
+                    "AGENTS_MEMORY_PATH": str(memory),
+                    "AGENTS_HOME": str(root / "home"),
+                }
+            )
+            with patch.dict(os.environ, env, clear=True):
+                with patch("runner.loop.get_provider", return_value=Fake()):
+                    with redirect_stdout(out), redirect_stderr(err):
+                        rc = loop_main(
+                            [
+                                "--channel",
+                                "telegram",
+                                "--user",
+                                "faketool",
+                                "--new-session",
+                                "--message",
+                                "what is the canary",
+                                "--complete",
+                                "--provider",
+                                "fake",
+                                "--deliver",
+                                "buffered",
+                            ]
+                        )
+            self.assertEqual(rc, 0, err.getvalue())
+            self.assertIn("amber-47", out.getvalue())
+            self.assertTrue(seen)
+            first = seen[0]
+            names = {t["function"]["name"] for t in (first.tools or [])}
+            self.assertIn("call_job", names)
+            self.assertEqual(len(seen), 2)
+            tool_msgs = [m for m in seen[1].messages if m.get("role") == "tool"]
+            self.assertEqual(tool_msgs[0]["tool_call_id"], "c1")
+            self.assertIn("amber-47", tool_msgs[0]["content"])
+
+    def test_loop_list_tools_exits_zero(self):
+        rc = loop_main(["--list-tools"])
+        self.assertEqual(rc, 0)
 
 
 if __name__ == "__main__":
