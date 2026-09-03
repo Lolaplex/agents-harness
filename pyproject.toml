@@ -1,14 +1,36 @@
 [build-system]
-requires = ["setuptools>=61.0"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "agents-harness"
-version = "0.1.0"
-description = "Declarative scheduled flow runner and test harness for local agent services"
-readme = "AGENTS.md"
+version = "0.0.1"
+description = "Declarative scheduled flow runner, per-request agent loop, and job kernel for local agent services"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [
+    { name = "Felix Kempf" },
+]
 requires-python = ">=3.10"
 dependencies = []
+keywords = ["agents", "harness", "runner", "executor", "kernel", "mcp", "cordis", "loop"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+[project.urls]
+Homepage = "https://github.com/Lolaplex/agents-harness"
+Repository = "https://github.com/Lolaplex/agents-harness"
+"Bug Tracker" = "https://github.com/Lolaplex/agents-harness/issues"
 
 [project.optional-dependencies]
 mcp = ["mcp>=1.0.0,<2"]
@@ -21,3 +43,13 @@ agents-harness-kernel = "runner.kernel:main"
 
 [tool.setuptools.packages.find]
 include = ["runner*"]
+
+[tool.setuptools.package-data]
+"runner" = [
+    "modules/*.json",
+    "providers/*.json",
+    "schedules/*.json",
+    "schema/*.json",
+    "terms/*.json",
+]
+
