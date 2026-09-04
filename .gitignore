@@ -7,3 +7,6 @@ logs/
 .venv/
 .env
 *.log
+build/
+dist/
+
