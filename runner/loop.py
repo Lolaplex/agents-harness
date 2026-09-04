@@ -304,11 +304,22 @@ def main(argv: list[str] | None = None) -> int:
     session = resolved.session.id
     user_text = args.message or ""
 
+    system_text = args.system
+    if system_text:
+        import os
+        from pathlib import Path
+        try:
+            p = Path(system_text)
+            if p.is_file():
+                system_text = p.read_text(encoding="utf-8")
+        except Exception:
+            pass
+
     messages = build_payload(
         session,
         user_text,
         limit=args.limit,
-        system=args.system,
+        system=system_text,
         user_id=resolved.user.id,
         user_display=resolved.user.display,
         work=resolved.user.work,
