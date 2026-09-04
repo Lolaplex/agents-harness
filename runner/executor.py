@@ -193,13 +193,13 @@ def append_log(record: Dict[str, Any], path: Optional[Path]) -> None:
         f.write(json.dumps(record, ensure_ascii=False) + "\n")
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="agents-harness declarative scheduled flow runner")
     parser.add_argument("--list", action="store_true", help="List all discovered schedule manifests")
     parser.add_argument("--validate", action="store_true", help="Validate manifest syntax and requirements")
     parser.add_argument("--all", action="store_true", help="Run all scheduled flows sequentially")
     parser.add_argument("--run", type=str, help="Run a specific flow by name")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     schedules = list_schedules()
 
