@@ -1,0 +1,41 @@
+{
+  "name": "mcp.schedule.add",
+  "kind": "mcp",
+  "when": "on_request",
+  "cadence": "on_request",
+  "verb": "python -m runner.schedule add",
+  "rests_on": "agents-harness CLI add dynamic schedule or reminder; exit 0 = added",
+  "expected_exit": 0,
+  "timeout_sec": 30,
+  "as_tool": true,
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "text": {
+        "type": "string",
+        "description": "Reminder text or message content to deliver"
+      },
+      "at": {
+        "type": "string",
+        "description": "Due time: relative like '+10m', '+1h', '+2d', or ISO datetime '2026-09-05T20:00:00Z'"
+      },
+      "name": {
+        "type": "string",
+        "description": "Optional short slug/identifier for the schedule"
+      },
+      "cron": {
+        "type": "string",
+        "description": "Optional standard 5-part cron expression (e.g. '0 8 * * *')"
+      },
+      "channel": {
+        "type": "string",
+        "description": "Target channel (default: 'telegram')"
+      },
+      "user": {
+        "type": "string",
+        "description": "Target user or chat ID"
+      }
+    },
+    "required": ["at"]
+  }
+}

@@ -95,13 +95,22 @@ def _parse_arguments(call: dict[str, Any]) -> dict[str, Any]:
 def _arguments_to_argv(mod: dict[str, Any], arguments: dict[str, Any]) -> list[str]:
     if not arguments:
         return []
-    if "argv" in arguments and isinstance(arguments["argv"], list):
-        argv = [str(a) for a in arguments["argv"]]
-        name = str(mod.get("name") or "")
-        if name == "mcp.terminal" and argv and argv[0] != "run":
-            return ["run", "--"] + argv
-        return argv
     name = str(mod.get("name") or "")
+    if name == "mcp.terminal":
+        raw_cmd = arguments.get("argv") or arguments.get("command") or arguments.get("cmd") or []
+        if isinstance(raw_cmd, str):
+            import shlex
+            cmd_list = shlex.split(raw_cmd)
+        elif isinstance(raw_cmd, list):
+            cmd_list = [str(a) for a in raw_cmd]
+        else:
+            cmd_list = []
+        # Strip leading 'run' or '--' if LLM repeated them
+        while cmd_list and cmd_list[0] in ("run", "--"):
+            cmd_list.pop(0)
+        return ["run", "--"] + cmd_list if cmd_list else []
+    if "argv" in arguments and isinstance(arguments["argv"], list):
+        return [str(a) for a in arguments["argv"]]
     if name == "mcp.memory.add" and "fact" in arguments:
         out = [str(arguments["fact"])]
         for k in ("kind", "name", "project", "collection"):
@@ -109,6 +118,20 @@ def _arguments_to_argv(mod: dict[str, Any], arguments: dict[str, Any]) -> list[s
             if val not in (None, ""):
                 out.extend([f"--{k}", str(val)])
         return out
+    if name == "mcp.schedule.add":
+        out = []
+        for k in ("at", "text", "name", "cron", "cadence", "channel", "user", "verb"):
+            val = arguments.get(k)
+            if val not in (None, ""):
+                out.extend([f"--{k}", str(val)])
+        if arguments.get("one_shot"):
+            out.append("--one-shot")
+        return out
+    if name == "mcp.schedule.remove":
+        target = arguments.get("name") or arguments.get("slug") or arguments.get("id") or ""
+        return [str(target)] if target else []
+    if name == "mcp.schedule.list":
+        return []
     query = str(arguments.get("query") or arguments.get("q") or "").strip()
     if query:
         return [query]
