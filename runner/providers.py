@@ -329,10 +329,33 @@ class OpenAICompatProvider:
         )
 
 
+class AcpProvider:
+    """Stub ACP peer completer; full Cursor/Antigravity wiring lands later."""
+
+    kind = "acp"
+
+    def __init__(self, manifest: dict[str, Any]):
+        self.name = str(manifest.get("name") or "acp.stub")
+        self.manifest = manifest
+        self.agent = str(manifest.get("agent") or "peer")
+
+    def complete(self, req: CompletionRequest) -> CompletionResult:
+        if req.on_status:
+            req.on_status("thinking...")
+        text = (
+            f"[acp stub: {self.name}] peer completer '{self.agent}' is not wired; "
+            "configure ACP endpoint or use openai_compat provider."
+        )
+        if req.on_delta:
+            req.on_delta(text)
+        return CompletionResult(text=text)
+
+
 _KINDS = {
     "echo": lambda _m: EchoProvider(),
     "scripted": ScriptedToolProvider,
     "openai_compat": OpenAICompatProvider,
+    "acp": AcpProvider,
 }
 
 
