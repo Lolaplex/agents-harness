@@ -302,6 +302,63 @@ class TestModulesAndLoop(unittest.TestCase):
         rc = loop_main(["--list-tools"])
         self.assertEqual(rc, 0)
 
+    def test_max_tool_rounds_forces_synthesis(self):
+        seen_requests = []
+
+        class EndlessToolProvider:
+            def complete(self, req):
+                seen_requests.append(req)
+                if req.tools:
+                    # Model asks for another tool call
+                    return CompletionResult(
+                        text="",
+                        tool_calls=[
+                            {
+                                "id": f"c_{len(seen_requests)}",
+                                "name": "call_job",
+                                "arguments": '{"catalog": "skill.catalog"}',
+                            }
+                        ],
+                    )
+                # Forced synthesis turn (tools=None)
+                return CompletionResult(text="Synthesized answer after tools.", tool_calls=None)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            env = dict(os.environ)
+            env.update(
+                {
+                    "AGENTS_HOME": tmp,
+                    "AGENTS_TRACES_DIR": str(Path(tmp) / "traces"),
+                    "AGENTS_IDENTITY_PATH": str(Path(tmp) / "identity.json"),
+                }
+            )
+            out = io.StringIO()
+            err = io.StringIO()
+            with patch.dict(os.environ, env, clear=True):
+                with patch("runner.loop.get_provider", return_value=EndlessToolProvider()):
+                    with redirect_stdout(out), redirect_stderr(err):
+                        rc = loop_main(
+                            [
+                                "--channel",
+                                "telegram",
+                                "--user",
+                                "endlesstool",
+                                "--new-session",
+                                "--message",
+                                "search everything",
+                                "--complete",
+                                "--provider",
+                                "fake",
+                                "--deliver",
+                                "buffered",
+                            ]
+                        )
+            self.assertEqual(rc, 0, err.getvalue())
+            self.assertIn("Synthesized answer after tools.", out.getvalue())
+            # The final request must have had tools=None to force synthesis
+            self.assertIsNone(seen_requests[-1].tools)
+
 
 if __name__ == "__main__":
     unittest.main()
+

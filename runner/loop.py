@@ -400,22 +400,35 @@ def main(argv: list[str] | None = None) -> int:
             }
         )
         messages.extend(tool_msgs)
+        round_tools = tools if _round < (max_tool_rounds - 1) else None
         result = _complete_once(
             provider,
             CompletionRequest(
                 messages=messages,
-                tools=tools or None,
+                tools=round_tools,
                 on_status=on_status,
                 on_delta=on_delta,
             ),
         )
-    else:
-        if result.tool_calls:
-            print(
-                f"Error: still requested tools after {max_tool_rounds} rounds",
-                file=sys.stderr,
-            )
-            return 1
+    if result.tool_calls and not (result.text or "").strip():
+        tool_msgs = _run_tool_calls(result.tool_calls)
+        messages.append(
+            {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": result.tool_calls,
+            }
+        )
+        messages.extend(tool_msgs)
+        result = _complete_once(
+            provider,
+            CompletionRequest(
+                messages=messages,
+                tools=None,
+                on_status=on_status,
+                on_delta=on_delta,
+            ),
+        )
     if result.text:
         _record(
             session,
