@@ -28,7 +28,16 @@ if hasattr(sys.stdout, "reconfigure"):
         pass
 
 SCHEDULES_DIR = Path(__file__).parent / "schedules"
-DEFAULT_LOG_FILE = Path(__file__).parent.parent / "logs" / "runner.jsonl"
+
+
+def _default_log_file() -> Optional[Path]:
+    repo_root = Path(__file__).parent.parent
+    if (repo_root / ".git").is_dir():
+        return repo_root / "logs" / "runner.jsonl"
+    return None
+
+
+DEFAULT_LOG_FILE = _default_log_file()
 
 
 def _schedule_dirs() -> list[Path]:
@@ -188,9 +197,12 @@ def execute_job(
 def append_log(record: Dict[str, Any], path: Optional[Path]) -> None:
     if not path:
         return
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "a", encoding="utf-8") as f:
-        f.write(json.dumps(record, ensure_ascii=False) + "\n")
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "a", encoding="utf-8") as f:
+            f.write(json.dumps(record, ensure_ascii=False) + "\n")
+    except OSError:
+        pass
 
 
 def main(argv: list[str] | None = None) -> int:
