@@ -257,6 +257,12 @@ def main(argv: list[str] | None = None) -> int:
         help="Max tool call rounds before forced answer synthesis (default: 12)",
     )
     args = parser.parse_args(argv)
+    try:
+        from . import __version__
+        from .updates import check_for_updates
+        check_for_updates("agents-harness", __version__)
+    except Exception:
+        pass
 
     if args.check_term:
         from .kernel import main as kernel_main
