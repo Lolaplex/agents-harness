@@ -101,6 +101,14 @@ def _arguments_to_argv(mod: dict[str, Any], arguments: dict[str, Any]) -> list[s
         if name == "mcp.terminal" and argv and argv[0] != "run":
             return ["run", "--"] + argv
         return argv
+    name = str(mod.get("name") or "")
+    if name == "mcp.memory.add" and "fact" in arguments:
+        out = [str(arguments["fact"])]
+        for k in ("kind", "name", "project", "collection"):
+            val = arguments.get(k)
+            if val not in (None, ""):
+                out.extend([f"--{k}", str(val)])
+        return out
     query = str(arguments.get("query") or arguments.get("q") or "").strip()
     if query:
         return [query]
