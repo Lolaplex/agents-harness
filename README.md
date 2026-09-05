@@ -52,4 +52,4 @@ python -m runner.kernel --alphabet
 
 ## License
 
-MIT License. Copyright (c) 2026 Felix Kempf.
+MIT License. Copyright (c) 2026 Lolaplex.
