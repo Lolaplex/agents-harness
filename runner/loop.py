@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import sys
 from typing import Any
@@ -249,6 +250,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--call", metavar="NAME", help="Run one module or schedule by name (Cordis)")
     parser.add_argument("--check-term", metavar="FILE", help="Check a job-term JSON against the catalog")
     parser.add_argument("--reduce-term", metavar="FILE", help="Check, mix, and reduce a job-term JSON")
+    parser.add_argument(
+        "--max-tool-rounds",
+        type=int,
+        default=int(os.environ.get("AGENTS_MAX_TOOL_ROUNDS", "12")),
+        help="Max tool call rounds before forced answer synthesis (default: 12)",
+    )
     args = parser.parse_args(argv)
 
     if args.check_term:
@@ -318,7 +325,6 @@ def main(argv: list[str] | None = None) -> int:
 
     system = args.system
     if system:
-        import os
         from pathlib import Path
         try:
             p = Path(system)
@@ -386,7 +392,7 @@ def main(argv: list[str] | None = None) -> int:
         on_status=on_status,
         on_delta=on_delta,
     )
-    max_tool_rounds = 3
+    max_tool_rounds = max(1, getattr(args, "max_tool_rounds", 12))
     result = _complete_once(provider, req)
     for _round in range(max_tool_rounds):
         if not result.tool_calls:
