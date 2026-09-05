@@ -39,11 +39,18 @@ def _record(
     channel: str,
     user: str,
     user_id: str = "",
+    project: str = "",
 ) -> None:
     from agents_traces.assemble import record_message
 
     record_message(
-        session, role, content, channel=channel, user=user, user_id=user_id
+        session,
+        role,
+        content,
+        channel=channel,
+        user=user,
+        user_id=user_id,
+        project=project,
     )
 
 
@@ -224,6 +231,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--limit", type=int, default=24, help="History turns to rebuild")
     parser.add_argument("--system", default="", help="Optional instructions blob (stable prefix)")
     parser.add_argument("--provider", default="", help="Provider name (openai.default, echo, …)")
+    parser.add_argument("--persona", default="", help="Persona manifest name (runner/personas/)")
     parser.add_argument("--assemble-only", action="store_true", help="Print reconstructed payload, no HTTP")
     parser.add_argument("--complete", action="store_true", help="Complete via the selected provider and record")
     parser.add_argument(
@@ -300,20 +308,40 @@ def main(argv: list[str] | None = None) -> int:
         print("Error: --session, --user, or --user-id is required", file=sys.stderr)
         return 1
 
+    from .user_profile import load_user_profile
+
     resolved = _resolve_identity(args)
     session = resolved.session.id
     user_text = args.message or ""
+    profile = load_user_profile()
+    project = (args.project or "").strip()
+
+    system = args.system
+    if system:
+        import os
+        from pathlib import Path
+        try:
+            p = Path(system)
+            if p.is_file():
+                system = p.read_text(encoding="utf-8")
+        except Exception:
+            pass
+
+    if args.persona:
+        from .personas import persona_system_append
+
+        system = persona_system_append(args.persona, base=system)
 
     messages = build_payload(
         session,
         user_text,
         limit=args.limit,
-        system=args.system,
+        system=system,
         user_id=resolved.user.id,
-        user_display=resolved.user.display,
-        work=resolved.user.work,
-        project=args.project or resolved.user.project,
-        timezone_name=resolved.user.timezone,
+        user_display=profile.get("display", ""),
+        work=profile.get("work", ""),
+        project=project,
+        timezone_name=profile.get("timezone", ""),
         aliases=resolved.user.aliases,
         start_date=resolved.session.start_date,
     )
@@ -342,7 +370,15 @@ def main(argv: list[str] | None = None) -> int:
     provider = get_provider(args.provider)
     mode, on_status, on_delta, emit = bind_delivery(args.channel, override=args.deliver)
     if user_text:
-        _record(session, "user", user_text, args.channel, args.user, resolved.user.id)
+        _record(
+            session,
+            "user",
+            user_text,
+            args.channel,
+            args.user,
+            resolved.user.id,
+            project=project,
+        )
     tools = openai_tools()
     req = CompletionRequest(
         messages=messages,
@@ -381,7 +417,15 @@ def main(argv: list[str] | None = None) -> int:
             )
             return 1
     if result.text:
-        _record(session, "assistant", result.text, args.channel, args.user, resolved.user.id)
+        _record(
+            session,
+            "assistant",
+            result.text,
+            args.channel,
+            args.user,
+            resolved.user.id,
+            project=project,
+        )
     emit(result.text)
     _emit_trailer(
         emit,
