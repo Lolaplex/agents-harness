@@ -29,11 +29,15 @@
       },
       "channel": {
         "type": "string",
-        "description": "Target channel (default: 'telegram')"
+        "description": "Target channel. Required with text unless verb is set."
       },
       "user": {
         "type": "string",
-        "description": "Target user or chat ID"
+        "description": "Target user or chat ID. Inherited from the current turn when omitted."
+      },
+      "timezone": {
+        "type": "string",
+        "description": "IANA timezone for naive ISO datetimes (e.g. Europe/Berlin). Inherited from the current user when omitted."
       }
     },
     "required": ["at"]

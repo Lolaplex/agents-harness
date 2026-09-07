@@ -1,3 +1,4 @@
+import importlib.util
 import io
 import json
 import os
@@ -149,6 +150,7 @@ class TestModulesAndLoop(unittest.TestCase):
         self.assertIn("ping", out)
 
 
+    @unittest.skipUnless(importlib.util.find_spec("agents_memory"), "agents-memory not installed")
     def test_scripted_tool_turn_searches_memory(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -213,6 +215,7 @@ class TestModulesAndLoop(unittest.TestCase):
         self.assertIn("canary", parsed[0]["function"]["arguments"])
         self.assertEqual(rest, "thinking")
 
+    @unittest.skipUnless(importlib.util.find_spec("agents_memory"), "agents-memory not installed")
     def test_complete_passes_tools_and_tool_results(self):
         seen: list[CompletionRequest] = []
 

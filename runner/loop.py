@@ -13,6 +13,7 @@ import json
 import os
 import re
 import sys
+import uuid
 from typing import Any
 
 from .cordis_tools import handle_cordis_tool, is_cordis_tool
@@ -28,8 +29,10 @@ from .providers import CompletionRequest, CompletionResult, get_provider, list_p
 
 
 def _assemble(session: str, limit: int) -> list[dict[str, Any]]:
-    from agents_traces.assemble import assemble_messages
-
+    try:
+        from agents_traces.assemble import assemble_messages
+    except ImportError:
+        return []
     return assemble_messages(session, limit=limit)
 
 
@@ -42,8 +45,10 @@ def _record(
     user_id: str = "",
     project: str = "",
 ) -> None:
-    from agents_traces.assemble import record_message
-
+    try:
+        from agents_traces.assemble import record_message
+    except ImportError:
+        return
     record_message(
         session,
         role,
@@ -75,7 +80,12 @@ def _emit_trailer(
     print(f"{LOOP_TRAILER_MARKER}\n{trailer}", file=sys.stdout, flush=True)
 
 
-def _run_tool_calls(calls: list[Any]) -> list[dict[str, Any]]:
+def _run_tool_calls(
+    calls: list[Any],
+    *,
+    default_user: str = "",
+    default_timezone: str = "",
+) -> list[dict[str, Any]]:
     """Route tool_calls through the three Cordis tools (closed carrier)."""
     messages: list[dict[str, Any]] = []
     for i, call in enumerate(calls):
@@ -85,7 +95,12 @@ def _run_tool_calls(calls: list[Any]) -> list[dict[str, Any]]:
         name = str(fn.get("name") or call.get("name") or "").strip()
         call_id = str(call.get("id") or f"call_{i}")
         if is_cordis_tool(name):
-            content = handle_cordis_tool(name, call)
+            content = handle_cordis_tool(
+                name,
+                call,
+                default_user=default_user,
+                default_timezone=default_timezone,
+            )
         else:
             content = f"refused: unknown tool {name} (use call_job with a catalog name)"
         messages.append(
@@ -176,7 +191,43 @@ def build_payload(
 
     Clock is last-before-user so it cannot invalidate the system prefix.
     """
-    from agents_traces.prompt import PromptParts, clock_message, system_messages
+    try:
+        from agents_traces.prompt import PromptParts, clock_message, system_messages
+    except ImportError:
+        messages: list[dict[str, Any]] = []
+        sess_attr = f'id="{session}"'
+        if start_date:
+            sess_attr += f' start_date="{start_date}"'
+        messages.append(
+            {
+                "role": "system",
+                "content": (
+                    "<system_prompt>\n"
+                    f"  <instructions>\n    <text>{system}</text>\n  </instructions>\n"
+                    f"  <runtime_context>\n    <session {sess_attr}/>\n  </runtime_context>\n"
+                    "</system_prompt>"
+                ),
+            }
+        )
+        messages.extend(_assemble(session, limit=limit))
+        if include_clock:
+            from datetime import datetime, timezone as utc_tz
+            from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+            now = datetime.now(utc_tz.utc)
+            if timezone_name:
+                try:
+                    now = now.astimezone(ZoneInfo(timezone_name))
+                except ZoneInfoNotFoundError:
+                    pass
+            weekday = now.strftime("%A")
+            stamp = now.isoformat(timespec="seconds")
+            messages.append(
+                {"role": "system", "content": f"<clock>{weekday} {stamp}</clock>"}
+            )
+        if user_message:
+            messages.append({"role": "user", "content": user_message})
+        return messages
 
     parts = PromptParts(
         instructions=system,
@@ -200,7 +251,28 @@ def build_payload(
 
 
 def _resolve_identity(args: argparse.Namespace):
-    from agents_traces.identity import IdentityStore, session_has_events
+    try:
+        from agents_traces.identity import IdentityStore, session_has_events
+    except ImportError:
+        from types import SimpleNamespace
+
+        uid = (args.user_id or args.user or "").strip()
+        sid = (args.session or "").strip()
+        if not sid:
+            sid = "ses_" + uuid.uuid4().hex[:12]
+        alias = f"{args.channel}:{args.user}" if args.user else ""
+        return SimpleNamespace(
+            alias=alias,
+            user=SimpleNamespace(
+                id=uid,
+                display="",
+                work="",
+                project="",
+                timezone="",
+                aliases=[],
+            ),
+            session=SimpleNamespace(id=sid, start_date=""),
+        )
 
     ident = IdentityStore()
     return ident.resolve(
@@ -328,6 +400,7 @@ def main(argv: list[str] | None = None) -> int:
     user_text = args.message or ""
     profile = load_user_profile()
     project = (args.project or "").strip()
+    timezone_name = (resolved.user.timezone or profile.get("timezone") or "").strip()
 
     system = args.system
     if system:
@@ -353,7 +426,7 @@ def main(argv: list[str] | None = None) -> int:
         user_display=profile.get("display", ""),
         work=profile.get("work", ""),
         project=project,
-        timezone_name=profile.get("timezone", ""),
+        timezone_name=timezone_name,
         aliases=resolved.user.aliases,
         start_date=resolved.session.start_date,
     )
@@ -403,7 +476,11 @@ def main(argv: list[str] | None = None) -> int:
     for _round in range(max_tool_rounds):
         if not result.tool_calls:
             break
-        tool_msgs = _run_tool_calls(result.tool_calls)
+        tool_msgs = _run_tool_calls(
+            result.tool_calls,
+            default_user=args.user,
+            default_timezone=timezone_name,
+        )
         messages.append(
             {
                 "role": "assistant",
@@ -423,7 +500,11 @@ def main(argv: list[str] | None = None) -> int:
             ),
         )
     if result.tool_calls and not (result.text or "").strip():
-        tool_msgs = _run_tool_calls(result.tool_calls)
+        tool_msgs = _run_tool_calls(
+            result.tool_calls,
+            default_user=args.user,
+            default_timezone=timezone_name,
+        )
         messages.append(
             {
                 "role": "assistant",

@@ -27,5 +27,6 @@
 - Reduce a job term: `python -m runner.kernel --reduce runner/terms/skill-then-a2a.json`
 - Alphabet: `python -m runner.kernel --alphabet`
 - Run all scheduled flows once: `python -m runner.executor --all`
+- Tick due dynamic reminders: `python -m runner.schedule tick` (host cron / Coolify scheduled task; no in-process daemon)
 - Run specific flow: `python -m runner.executor --run <name>`
 - Run test suite: `python -m unittest discover tests`
