@@ -75,7 +75,12 @@ def _emit_trailer(
     print(f"{LOOP_TRAILER_MARKER}\n{trailer}", file=sys.stdout, flush=True)
 
 
-def _run_tool_calls(calls: list[Any]) -> list[dict[str, Any]]:
+def _run_tool_calls(
+    calls: list[Any],
+    *,
+    default_user: str = "",
+    default_timezone: str = "",
+) -> list[dict[str, Any]]:
     """Route tool_calls through the three Cordis tools (closed carrier)."""
     messages: list[dict[str, Any]] = []
     for i, call in enumerate(calls):
@@ -85,7 +90,12 @@ def _run_tool_calls(calls: list[Any]) -> list[dict[str, Any]]:
         name = str(fn.get("name") or call.get("name") or "").strip()
         call_id = str(call.get("id") or f"call_{i}")
         if is_cordis_tool(name):
-            content = handle_cordis_tool(name, call)
+            content = handle_cordis_tool(
+                name,
+                call,
+                default_user=default_user,
+                default_timezone=default_timezone,
+            )
         else:
             content = f"refused: unknown tool {name} (use call_job with a catalog name)"
         messages.append(
@@ -328,6 +338,7 @@ def main(argv: list[str] | None = None) -> int:
     user_text = args.message or ""
     profile = load_user_profile()
     project = (args.project or "").strip()
+    timezone_name = (resolved.user.timezone or profile.get("timezone") or "").strip()
 
     system = args.system
     if system:
@@ -353,7 +364,7 @@ def main(argv: list[str] | None = None) -> int:
         user_display=profile.get("display", ""),
         work=profile.get("work", ""),
         project=project,
-        timezone_name=profile.get("timezone", ""),
+        timezone_name=timezone_name,
         aliases=resolved.user.aliases,
         start_date=resolved.session.start_date,
     )
@@ -403,7 +414,11 @@ def main(argv: list[str] | None = None) -> int:
     for _round in range(max_tool_rounds):
         if not result.tool_calls:
             break
-        tool_msgs = _run_tool_calls(result.tool_calls)
+        tool_msgs = _run_tool_calls(
+            result.tool_calls,
+            default_user=args.user,
+            default_timezone=timezone_name,
+        )
         messages.append(
             {
                 "role": "assistant",
@@ -423,7 +438,11 @@ def main(argv: list[str] | None = None) -> int:
             ),
         )
     if result.tool_calls and not (result.text or "").strip():
-        tool_msgs = _run_tool_calls(result.tool_calls)
+        tool_msgs = _run_tool_calls(
+            result.tool_calls,
+            default_user=args.user,
+            default_timezone=timezone_name,
+        )
         messages.append(
             {
                 "role": "assistant",

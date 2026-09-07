@@ -7,8 +7,7 @@ Pure Python standard library. Stores dynamic schedule manifests in ~/.agents/sch
 from __future__ import annotations
 
 import argparse
-import datetime as dt
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone, tzinfo
 import json
 import os
 from pathlib import Path
@@ -16,6 +15,7 @@ import re
 import sys
 import uuid
 from typing import Any, Dict, List, Optional
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from .executor import execute_job, load_manifest
 
@@ -31,10 +31,30 @@ def dynamic_schedules_dir() -> Path:
     return p
 
 
-def parse_due_time(val: str, base_time: Optional[datetime] = None) -> datetime:
-    """Parse relative (+10m, +1h, +2d) or ISO-8601 datetime strings to UTC."""
+def _iana_zone(timezone_name: str) -> tzinfo:
+    name = (timezone_name or "").strip()
+    if not name:
+        return timezone.utc
+    try:
+        return ZoneInfo(name)
+    except (ZoneInfoNotFoundError, ValueError, OSError, KeyError):
+        return timezone.utc
+
+
+def parse_due_time(
+    val: str,
+    base_time: Optional[datetime] = None,
+    timezone_name: str = "",
+) -> datetime:
+    """Parse relative (+10m, +1h, +2d) or ISO-8601 datetime strings to UTC.
+
+    Naive ISO (no offset) uses timezone_name when set, otherwise UTC.
+    Explicit Z / offsets stay as written.
+    """
     val = val.strip()
     now = base_time or datetime.now(timezone.utc)
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=timezone.utc)
     m = re.match(r"^\+?(\d+)\s*([smhd])$", val, re.IGNORECASE)
     if m:
         num = int(m.group(1))
@@ -52,7 +72,7 @@ def parse_due_time(val: str, base_time: Optional[datetime] = None) -> datetime:
     try:
         parsed = datetime.fromisoformat(val_iso)
         if parsed.tzinfo is None:
-            parsed = parsed.replace(tzinfo=timezone.utc)
+            parsed = parsed.replace(tzinfo=_iana_zone(timezone_name))
         return parsed.astimezone(timezone.utc)
     except Exception as exc:
         raise ValueError(
@@ -112,8 +132,9 @@ def add_schedule(
     cadence: Optional[str] = None,
     verb: Optional[str] = None,
     text: Optional[str] = None,
-    channel: str = "telegram",
+    channel: str = "",
     user: str = "",
+    timezone_name: str = "",
     one_shot: Optional[bool] = None,
 ) -> Dict[str, Any]:
     """Add a dynamic schedule or reminder manifest."""
@@ -123,12 +144,16 @@ def add_schedule(
         slug = f"rem_{int(datetime.now(timezone.utc).timestamp())}_{uuid.uuid4().hex[:6]}"
     slug = re.sub(r"[^a-zA-Z0-9_\-\.]", "_", slug)
 
+    channel = (channel or "").strip()
+    user = (user or "").strip()
+    timezone_name = (timezone_name or "").strip()
+
     if not verb:
         if not text:
             raise ValueError("Either 'verb' or 'text' must be provided.")
-        parts = ["python", "-m", "runner.loop", "--channel", channel]
-        if user:
-            parts.extend(["--user", str(user)])
+        if not channel or not user:
+            raise ValueError("text without verb requires --channel and --user")
+        parts = ["python", "-m", "runner.loop", "--channel", channel, "--user", str(user)]
         clean_text = str(text).replace('"', '\\"')
         parts.extend(["--message", f'"{clean_text}"', "--complete"])
         verb = " ".join(parts)
@@ -142,7 +167,7 @@ def add_schedule(
     }
 
     if at:
-        due_dt = parse_due_time(at)
+        due_dt = parse_due_time(at, timezone_name=timezone_name)
         manifest["at"] = due_dt.isoformat()
         manifest["cadence"] = "one_shot"
         manifest["one_shot"] = True if one_shot is None else bool(one_shot)
@@ -165,6 +190,8 @@ def add_schedule(
         manifest["channel"] = str(channel)
     if user:
         manifest["user"] = str(user)
+    if timezone_name:
+        manifest["timezone"] = timezone_name
 
     out_file = target_dir / f"{slug}.json"
     with open(out_file, "w", encoding="utf-8") as f:
@@ -242,8 +269,14 @@ def main(argv: Optional[List[str]] = None) -> int:
     add_p.add_argument("--cadence", help="Cadence name (e.g. hourly, daily)")
     add_p.add_argument("--verb", help="Direct command to execute")
     add_p.add_argument("--text", help="Reminder text message")
-    add_p.add_argument("--channel", default="telegram", help="Channel for message (default: telegram)")
-    add_p.add_argument("--user", default="", help="Target user/chat ID")
+    add_p.add_argument("--channel", default="", help="Target channel (required with --text unless --verb is set)")
+    add_p.add_argument("--user", default="", help="Target user/chat ID (required with --text unless --verb is set)")
+    add_p.add_argument(
+        "--timezone",
+        default="",
+        dest="timezone_name",
+        help="IANA timezone for naive ISO datetimes (e.g. Europe/Berlin)",
+    )
     add_p.add_argument("--one-shot", action="store_true", help="Delete manifest after execution")
 
     sub.add_parser("list", help="List dynamic schedules")
@@ -267,6 +300,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                 text=args.text,
                 channel=args.channel,
                 user=args.user,
+                timezone_name=getattr(args, "timezone_name", "") or "",
                 one_shot=args.one_shot if args.one_shot else None,
             )
             print(json.dumps(res, indent=2, ensure_ascii=False))

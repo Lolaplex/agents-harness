@@ -120,7 +120,7 @@ def _arguments_to_argv(mod: dict[str, Any], arguments: dict[str, Any]) -> list[s
         return out
     if name == "mcp.schedule.add":
         out = []
-        for k in ("at", "text", "name", "cron", "cadence", "channel", "user", "verb"):
+        for k in ("at", "text", "name", "cron", "cadence", "channel", "user", "verb", "timezone"):
             val = arguments.get(k)
             if val not in (None, ""):
                 out.extend([f"--{k}", str(val)])
@@ -147,7 +147,13 @@ def _arguments_to_argv(mod: dict[str, Any], arguments: dict[str, Any]) -> list[s
     return []
 
 
-def handle_cordis_tool(name: str, call: dict[str, Any]) -> str:
+def handle_cordis_tool(
+    name: str,
+    call: dict[str, Any],
+    *,
+    default_user: str = "",
+    default_timezone: str = "",
+) -> str:
     tool = name.strip().lower()
     args = _parse_arguments(call)
     if tool == "list_catalog":
@@ -190,6 +196,12 @@ def handle_cordis_tool(name: str, call: dict[str, Any]) -> str:
         job_args = args.get("arguments")
         if not isinstance(job_args, dict):
             job_args = {k: v for k, v in args.items() if k != "name"}
+        if str(mod.get("name") or "") == "mcp.schedule.add":
+            job_args = dict(job_args)
+            if not job_args.get("user") and default_user:
+                job_args["user"] = default_user
+            if not job_args.get("timezone") and default_timezone:
+                job_args["timezone"] = default_timezone
         extra = _arguments_to_argv(mod, job_args)
         rec = execute_job(mod, extra_argv=extra or None)
         if rec.get("status") != "SUCCESS":
