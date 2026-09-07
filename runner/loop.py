@@ -28,8 +28,10 @@ from .providers import CompletionRequest, CompletionResult, get_provider, list_p
 
 
 def _assemble(session: str, limit: int) -> list[dict[str, Any]]:
-    from agents_traces.assemble import assemble_messages
-
+    try:
+        from agents_traces.assemble import assemble_messages
+    except ImportError:
+        return []
     return assemble_messages(session, limit=limit)
 
 
@@ -42,8 +44,10 @@ def _record(
     user_id: str = "",
     project: str = "",
 ) -> None:
-    from agents_traces.assemble import record_message
-
+    try:
+        from agents_traces.assemble import record_message
+    except ImportError:
+        return
     record_message(
         session,
         role,
@@ -186,7 +190,43 @@ def build_payload(
 
     Clock is last-before-user so it cannot invalidate the system prefix.
     """
-    from agents_traces.prompt import PromptParts, clock_message, system_messages
+    try:
+        from agents_traces.prompt import PromptParts, clock_message, system_messages
+    except ImportError:
+        messages: list[dict[str, Any]] = []
+        sess_attr = f'id="{session}"'
+        if start_date:
+            sess_attr += f' start_date="{start_date}"'
+        messages.append(
+            {
+                "role": "system",
+                "content": (
+                    "<system_prompt>\n"
+                    f"  <instructions>\n    <text>{system}</text>\n  </instructions>\n"
+                    f"  <runtime_context>\n    <session {sess_attr}/>\n  </runtime_context>\n"
+                    "</system_prompt>"
+                ),
+            }
+        )
+        messages.extend(_assemble(session, limit=limit))
+        if include_clock:
+            from datetime import datetime, timezone as utc_tz
+            from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+            now = datetime.now(utc_tz.utc)
+            if timezone_name:
+                try:
+                    now = now.astimezone(ZoneInfo(timezone_name))
+                except ZoneInfoNotFoundError:
+                    pass
+            weekday = now.strftime("%A")
+            stamp = now.isoformat(timespec="seconds")
+            messages.append(
+                {"role": "system", "content": f"<clock>{weekday} {stamp}</clock>"}
+            )
+        if user_message:
+            messages.append({"role": "user", "content": user_message})
+        return messages
 
     parts = PromptParts(
         instructions=system,
@@ -210,7 +250,26 @@ def build_payload(
 
 
 def _resolve_identity(args: argparse.Namespace):
-    from agents_traces.identity import IdentityStore, session_has_events
+    try:
+        from agents_traces.identity import IdentityStore, session_has_events
+    except ImportError:
+        from types import SimpleNamespace
+
+        uid = (args.user_id or args.user or "").strip()
+        sid = (args.session or "").strip() or f"{args.channel}-{uid or 'local'}"
+        alias = f"{args.channel}:{args.user}" if args.user else ""
+        return SimpleNamespace(
+            alias=alias,
+            user=SimpleNamespace(
+                id=uid,
+                display="",
+                work="",
+                project="",
+                timezone="",
+                aliases=[],
+            ),
+            session=SimpleNamespace(id=sid, start_date=""),
+        )
 
     ident = IdentityStore()
     return ident.resolve(
