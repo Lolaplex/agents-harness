@@ -13,6 +13,7 @@ import json
 import os
 import re
 import sys
+import uuid
 from typing import Any
 
 from .cordis_tools import handle_cordis_tool, is_cordis_tool
@@ -256,7 +257,9 @@ def _resolve_identity(args: argparse.Namespace):
         from types import SimpleNamespace
 
         uid = (args.user_id or args.user or "").strip()
-        sid = (args.session or "").strip() or f"{args.channel}-{uid or 'local'}"
+        sid = (args.session or "").strip()
+        if not sid:
+            sid = "ses_" + uuid.uuid4().hex[:12]
         alias = f"{args.channel}:{args.user}" if args.user else ""
         return SimpleNamespace(
             alias=alias,
