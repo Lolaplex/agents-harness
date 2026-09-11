@@ -190,6 +190,9 @@ def handle_cordis_tool(
         )
     if tool == "call_job":
         mod_name = str(args.get("name") or "").strip()
+        if is_cordis_tool(mod_name) and mod_name != "call_job":
+            inner_call = {"function": {"arguments": args.get("arguments") or args}}
+            return handle_cordis_tool(mod_name, inner_call, default_user=default_user, default_timezone=default_timezone)
         mod = find_module(mod_name)
         if mod is None:
             return f"refused: unknown module {mod_name}"

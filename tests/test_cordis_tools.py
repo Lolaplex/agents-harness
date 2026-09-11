@@ -24,6 +24,17 @@ class TestCordisTools(unittest.TestCase):
         out = handle_cordis_tool("list_catalog", {"function": {"arguments": "{}"}})
         self.assertIn("mcp.terminal", out)
 
+    def test_call_job_routes_list_catalog(self):
+        out = handle_cordis_tool(
+            "call_job",
+            {
+                "function": {
+                    "arguments": json.dumps({"name": "list_catalog"}),
+                }
+            },
+        )
+        self.assertIn("mcp.terminal", out)
+
     def test_unknown_call_job_refused(self):
         out = handle_cordis_tool(
             "call_job",
