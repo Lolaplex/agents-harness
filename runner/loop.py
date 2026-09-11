@@ -85,6 +85,7 @@ def _run_tool_calls(
     *,
     default_user: str = "",
     default_timezone: str = "",
+    on_status: Callable[[str], None] | None = None,
 ) -> list[dict[str, Any]]:
     """Route tool_calls through the three Cordis tools (closed carrier)."""
     messages: list[dict[str, Any]] = []
@@ -94,6 +95,19 @@ def _run_tool_calls(
         fn = call.get("function") if isinstance(call.get("function"), dict) else call
         name = str(fn.get("name") or call.get("name") or "").strip()
         call_id = str(call.get("id") or f"call_{i}")
+        if on_status:
+            args_hint = ""
+            if isinstance(fn.get("arguments"), dict):
+                args_hint = str(fn["arguments"].get("name") or fn["arguments"].get("command") or "")
+            elif isinstance(fn.get("arguments"), str) and fn["arguments"].strip():
+                try:
+                    p = json.loads(fn["arguments"])
+                    if isinstance(p, dict):
+                        args_hint = str(p.get("name") or p.get("command") or "")
+                except Exception:
+                    pass
+            label = f"{name} ({args_hint[:30]})" if args_hint else name
+            on_status(f"running {label}...")
         if is_cordis_tool(name):
             content = handle_cordis_tool(
                 name,
@@ -472,7 +486,11 @@ def main(argv: list[str] | None = None) -> int:
         on_delta=on_delta,
     )
     max_tool_rounds = max(1, getattr(args, "max_tool_rounds", 12))
+    texts: list[str] = []
     result = _complete_once(provider, req)
+    if (result.text or "").strip():
+        texts.append(result.text.strip())
+
     for _round in range(max_tool_rounds):
         if not result.tool_calls:
             break
@@ -480,6 +498,7 @@ def main(argv: list[str] | None = None) -> int:
             result.tool_calls,
             default_user=args.user,
             default_timezone=timezone_name,
+            on_status=on_status,
         )
         messages.append(
             {
@@ -499,11 +518,15 @@ def main(argv: list[str] | None = None) -> int:
                 on_delta=on_delta,
             ),
         )
+        if (result.text or "").strip():
+            texts.append(result.text.strip())
+
     if result.tool_calls and not (result.text or "").strip():
         tool_msgs = _run_tool_calls(
             result.tool_calls,
             default_user=args.user,
             default_timezone=timezone_name,
+            on_status=on_status,
         )
         messages.append(
             {
@@ -522,17 +545,21 @@ def main(argv: list[str] | None = None) -> int:
                 on_delta=on_delta,
             ),
         )
-    if result.text:
+        if (result.text or "").strip():
+            texts.append(result.text.strip())
+
+    final_text = "\n\n".join(texts) if texts else (result.text or "")
+    if final_text:
         _record(
             session,
             "assistant",
-            result.text,
+            final_text,
             args.channel,
             args.user,
             resolved.user.id,
             project=project,
         )
-    emit(result.text)
+    emit(final_text)
     _emit_trailer(
         emit,
         session=session,
