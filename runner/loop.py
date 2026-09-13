@@ -508,7 +508,15 @@ def main(argv: list[str] | None = None) -> int:
             }
         )
         messages.extend(tool_msgs)
-        round_tools = tools if _round < (max_tool_rounds - 1) else None
+        is_last_round = (_round >= max_tool_rounds - 1)
+        round_tools = None if is_last_round else tools
+        if is_last_round:
+            messages.append(
+                {
+                    "role": "user",
+                    "content": "[System Notice: Tool execution round limit reached. Please synthesize your final response now: summarize what was completed, note any tool issues, and answer the user.]",
+                }
+            )
         result = _complete_once(
             provider,
             CompletionRequest(
@@ -536,6 +544,12 @@ def main(argv: list[str] | None = None) -> int:
             }
         )
         messages.extend(tool_msgs)
+        messages.append(
+            {
+                "role": "user",
+                "content": "[System Notice: Provide your final summary to the user now.]",
+            }
+        )
         result = _complete_once(
             provider,
             CompletionRequest(

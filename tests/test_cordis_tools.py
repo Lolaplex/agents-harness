@@ -95,6 +95,26 @@ class TestCordisTools(unittest.TestCase):
         tools = openai_cordis_tools()
         self.assertEqual(len(tools), 3)
 
+    def test_arguments_to_argv_memory_add_strips_duplicate_add(self):
+        from runner.cordis_tools import _arguments_to_argv
+
+        mod = {"name": "mcp.memory.add", "verb": "python -m agents_memory add"}
+        argv = _arguments_to_argv(mod, {"argv": ["add", "New fact content", "--kind", "fact"]})
+        self.assertEqual(argv, ["New fact content", "--kind", "fact"])
+
+    def test_arguments_to_argv_terminal_wraps_shell_vars(self):
+        from runner.cordis_tools import _arguments_to_argv
+        import sys
+
+        mod = {"name": "mcp.terminal", "verb": "python -m agents_terminal"}
+        argv = _arguments_to_argv(mod, {"command": "echo $GITHUB_TOKEN"})
+        self.assertEqual(argv[0:2], ["run", "--"])
+        if sys.platform == "win32":
+            self.assertIn("powershell", argv[2])
+        else:
+            self.assertEqual(argv[2:4], ["sh", "-c"])
+
 
 if __name__ == "__main__":
     unittest.main()
+

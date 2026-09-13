@@ -99,8 +99,16 @@ def _arguments_to_argv(mod: dict[str, Any], arguments: dict[str, Any]) -> list[s
     if name == "mcp.terminal":
         raw_cmd = arguments.get("argv") or arguments.get("command") or arguments.get("cmd") or []
         if isinstance(raw_cmd, str):
+            cmd_str = raw_cmd.strip()
+            # If command uses shell features ($VAR, |, &&, ;, >, <, `), wrap in shell
+            has_shell_chars = any(ch in cmd_str for ch in ("$", "|", "&&", ";", ">", "<", "`"))
+            if has_shell_chars:
+                import sys
+                if sys.platform == "win32":
+                    return ["run", "--", "powershell", "-NoProfile", "-Command", cmd_str]
+                return ["run", "--", "sh", "-c", cmd_str]
             import shlex
-            cmd_list = shlex.split(raw_cmd)
+            cmd_list = shlex.split(cmd_str)
         elif isinstance(raw_cmd, list):
             cmd_list = [str(a) for a in raw_cmd]
         else:
@@ -109,15 +117,22 @@ def _arguments_to_argv(mod: dict[str, Any], arguments: dict[str, Any]) -> list[s
         while cmd_list and cmd_list[0] in ("run", "--"):
             cmd_list.pop(0)
         return ["run", "--"] + cmd_list if cmd_list else []
+    if name == "mcp.memory.add":
+        if "argv" in arguments and isinstance(arguments["argv"], list):
+            arg_list = [str(a) for a in arguments["argv"]]
+            while arg_list and arg_list[0] == "add":
+                arg_list.pop(0)
+            return arg_list
+        if "fact" in arguments:
+            out = [str(arguments["fact"])]
+            for k in ("kind", "name", "project", "collection"):
+                val = arguments.get(k)
+                if val not in (None, ""):
+                    out.extend([f"--{k}", str(val)])
+            return out
     if "argv" in arguments and isinstance(arguments["argv"], list):
         return [str(a) for a in arguments["argv"]]
-    if name == "mcp.memory.add" and "fact" in arguments:
-        out = [str(arguments["fact"])]
-        for k in ("kind", "name", "project", "collection"):
-            val = arguments.get(k)
-            if val not in (None, ""):
-                out.extend([f"--{k}", str(val)])
-        return out
+
     if name == "mcp.schedule.add":
         out = []
         for k in ("at", "text", "name", "cron", "cadence", "channel", "user", "verb", "timezone"):
