@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- CI runs only on pull requests to `main`.
 - Dynamic `schedule.add` no longer defaults to Telegram. Text without a verb requires `--channel` and `--user`; naive ISO datetimes use an optional IANA `--timezone`.
 - Assistant texts across multi-round tool loops are preserved and joined in the final response.
 - `on_status` emits continuous status lines to stderr during tool runs.
