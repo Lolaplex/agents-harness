@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Cordis modules `mcp.docs.search` and `mcp.docs.write` (`as_tool`), parallel to `mcp.memory.search` / `mcp.memory.add`. Hard tech facts go to docs; user facts stay in memory.
+
 ### Changed
 - CI runs only on pull requests to `main`.
 - Dynamic `schedule.add` no longer defaults to Telegram. Text without a verb requires `--channel` and `--user`; naive ISO datetimes use an optional IANA `--timezone`.

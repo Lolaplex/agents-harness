@@ -114,6 +114,27 @@ class TestCordisTools(unittest.TestCase):
         else:
             self.assertEqual(argv[2:4], ["sh", "-c"])
 
+    def test_arguments_to_argv_docs_write_positionals(self):
+        from runner.cordis_tools import _arguments_to_argv
+
+        mod = {
+            "name": "mcp.docs.write",
+            "verb": "python -m agents_docs write",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string"},
+                    "content": {"type": "string"},
+                    "category": {"type": "string"},
+                },
+            },
+        }
+        argv = _arguments_to_argv(
+            mod,
+            {"name": "coolify-db", "content": "port 5432", "category": "platforms"},
+        )
+        self.assertEqual(argv, ["coolify-db", "port 5432", "platforms"])
+
 
 if __name__ == "__main__":
     unittest.main()
