@@ -13,6 +13,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `on_status` emits continuous status lines to stderr during tool runs.
 - Loop inserts a clean synthesis turn upon reaching `max_tool_rounds` to prevent abrupt cutoffs.
 
+### Removed
+- GitHub Release is no longer cut automatically on `v*.*.*` tags (manual `gh release create` from CHANGELOG instead).
+
 ### Fixed
 - Loop clock timezone prefers the identity user zone over the global USER.md profile. `mcp.schedule.add` inherits the current turn `--user` and timezone when the model omits them.
 - Loop still assembles when `agents-traces` is not installed (CI / thin hosts). Memory-search loop tests skip when `agents-memory` is missing.
