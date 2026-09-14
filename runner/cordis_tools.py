@@ -123,8 +123,11 @@ def _arguments_to_argv(mod: dict[str, Any], arguments: dict[str, Any]) -> list[s
             while arg_list and arg_list[0] == "add":
                 arg_list.pop(0)
             return arg_list
-        if "fact" in arguments:
-            out = [str(arguments["fact"])]
+        fact = arguments.get("fact")
+        if fact in (None, "") and arguments.get("text") not in (None, ""):
+            fact = arguments.get("text")
+        if fact not in (None, ""):
+            out = [str(fact)]
             for k in ("kind", "name", "project", "collection"):
                 val = arguments.get(k)
                 if val not in (None, ""):

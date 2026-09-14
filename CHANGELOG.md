@@ -13,9 +13,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - CI runs only on pull requests to `main`.
 - Dynamic `schedule.add` no longer defaults to Telegram. Text without a verb requires `--channel` and `--user`; naive ISO datetimes use an optional IANA `--timezone`.
-- Assistant texts across multi-round tool loops are preserved and joined in the final response.
 - `on_status` emits continuous status lines to stderr during tool runs.
 - Loop inserts a clean synthesis turn upon reaching `max_tool_rounds` so the answer is not cut off.
+- Tool-round budget is a soft cap (`AGENTS_MAX_TOOL_ROUNDS` / `--max-tool-rounds`, default 12) that auto-extends while the model still emits `tool_calls`, up to a hard cap (`AGENTS_MAX_TOOL_ROUNDS_HARD` / `--max-tool-rounds-hard`, default 24). Synthesis is forced only at the hard cap.
 
 ### Removed
 - GitHub Release is no longer cut automatically on `v*.*.*` tags (manual `gh release create` from CHANGELOG instead).
@@ -25,6 +25,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Loop still assembles when `agents-traces` is not installed (CI / thin hosts). Memory-search loop tests skip when `agents-memory` is missing.
 - `call_job` routes built-in cordis tools (`list_catalog`, `load_schema`) when invoked by name instead of failing closed.
 - `cordis_tools` strips a redundant `add` subcommand in `mcp.memory.add` and wraps shell-operator commands in `mcp.terminal`.
+- `mcp.memory.add` accepts `text` as an alias for `fact` so a missing positional no longer exits 2.
+- Loop emits only the last user-facing completion, not a join of mid-tool-round drafts (Telegram 4096 was cutting the real ending).
 
 ## [0.0.1] - 2026-09-05
 
