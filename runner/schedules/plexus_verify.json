@@ -1,9 +1,0 @@
-{
-  "name": "plexus_verify",
-  "verb": "cargo test --workspace",
-  "cadence": "daily",
-  "rests_on": "plexus substrate 60/60 native unit and integration test suite, exit 0 = healthy",
-  "expected_exit": 0,
-  "timeout_sec": 120,
-  "cwd": "C:\\Users\\fabi0\\repos\\plexus"
-}
