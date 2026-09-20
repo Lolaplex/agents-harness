@@ -102,6 +102,13 @@ class TestCordisTools(unittest.TestCase):
         argv = _arguments_to_argv(mod, {"argv": ["add", "New fact content", "--kind", "fact"]})
         self.assertEqual(argv, ["New fact content", "--kind", "fact"])
 
+    def test_arguments_to_argv_memory_add_text_alias(self):
+        from runner.cordis_tools import _arguments_to_argv
+
+        mod = {"name": "mcp.memory.add", "verb": "python -m agents_memory add"}
+        argv = _arguments_to_argv(mod, {"text": "Birthday missing from list", "kind": "fact"})
+        self.assertEqual(argv, ["Birthday missing from list", "--kind", "fact"])
+
     def test_arguments_to_argv_terminal_wraps_shell_vars(self):
         from runner.cordis_tools import _arguments_to_argv
         import sys
