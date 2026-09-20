@@ -98,7 +98,6 @@ class TestHarnessExecutor(unittest.TestCase):
         self.assertIn("docs_catalog", names)
         self.assertIn("traces_stats", names)
         self.assertIn("traces_ingest", names)
-        self.assertIn("plexus_verify", names)
 
     def test_execute_job_honors_agents_traces_dir(self):
         unique = f"env_traces_{os.getpid()}_{time.time_ns()}"
