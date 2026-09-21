@@ -340,13 +340,7 @@ def main(argv: list[str] | None = None) -> int:
         "--max-tool-rounds",
         type=int,
         default=int(os.environ.get("AGENTS_MAX_TOOL_ROUNDS", "12")),
-        help="Soft cap on tool-call rounds (default: 12). Extends to the hard cap while the model still calls tools.",
-    )
-    parser.add_argument(
-        "--max-tool-rounds-hard",
-        type=int,
-        default=int(os.environ.get("AGENTS_MAX_TOOL_ROUNDS_HARD", "24")),
-        help="Hard cap on tool-call rounds; forces synthesis (default: 24).",
+        help="Cap on tool-call rounds. The last round strips tools and asks for a final answer (default: 12).",
     )
     args = parser.parse_args(argv)
     try:
@@ -491,14 +485,13 @@ def main(argv: list[str] | None = None) -> int:
         on_status=on_status,
         on_delta=on_delta,
     )
-    soft_rounds = max(1, getattr(args, "max_tool_rounds", 12))
-    hard_rounds = max(soft_rounds, getattr(args, "max_tool_rounds_hard", 24) or soft_rounds)
+    max_rounds = max(1, getattr(args, "max_tool_rounds", 12))
     last_scratch = ""
     result = _complete_once(provider, req)
     if (result.text or "").strip():
         last_scratch = result.text.strip()
 
-    for _round in range(hard_rounds):
+    for _round in range(max_rounds):
         if not result.tool_calls:
             break
         tool_msgs = _run_tool_calls(
@@ -515,23 +508,13 @@ def main(argv: list[str] | None = None) -> int:
             }
         )
         messages.extend(tool_msgs)
-        is_hard_last = _round >= hard_rounds - 1
-        round_tools = None if is_hard_last else tools
-        if is_hard_last:
+        is_last = _round >= max_rounds - 1
+        round_tools = None if is_last else tools
+        if is_last:
             messages.append(
                 {
                     "role": "user",
                     "content": "[System Notice: Tool execution round limit reached. Please synthesize your final response now: summarize what was completed, note any tool issues, and answer the user.]",
-                }
-            )
-        elif _round == soft_rounds - 1 and hard_rounds > soft_rounds:
-            messages.append(
-                {
-                    "role": "user",
-                    "content": (
-                        f"[System Notice: Soft tool-round cap ({soft_rounds}) reached. "
-                        f"Answer now if you can; otherwise continue. Hard cap is {hard_rounds}.]"
-                    ),
                 }
             )
         result = _complete_once(

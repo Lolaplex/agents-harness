@@ -15,11 +15,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dynamic `schedule.add` no longer defaults to Telegram. Text without a verb requires `--channel` and `--user`; naive ISO datetimes use an optional IANA `--timezone`.
 - `on_status` emits continuous status lines to stderr during tool runs.
 - Loop inserts a clean synthesis turn upon reaching `max_tool_rounds` so the answer is not cut off.
-- Tool-round budget is a soft cap (`AGENTS_MAX_TOOL_ROUNDS` / `--max-tool-rounds`, default 12) that auto-extends while the model still emits `tool_calls`, up to a hard cap (`AGENTS_MAX_TOOL_ROUNDS_HARD` / `--max-tool-rounds-hard`, default 24). Synthesis is forced only at the hard cap.
 
 ### Removed
 - GitHub Release is no longer cut automatically on `v*.*.*` tags (manual `gh release create` from CHANGELOG instead).
 - Bundled `plexus_verify` schedule (hardcoded foreign machine path; plexus is unreleased).
+- Soft tool-round notice and the second cap (`AGENTS_MAX_TOOL_ROUNDS_HARD`, `--max-tool-rounds-hard`). One cap remains (`AGENTS_MAX_TOOL_ROUNDS` / `--max-tool-rounds`, default 12); the last round still forces a final answer.
 
 ### Fixed
 - Loop clock timezone prefers the identity user zone over the global USER.md profile. `mcp.schedule.add` inherits the current turn `--user` and timezone when the model omits them.

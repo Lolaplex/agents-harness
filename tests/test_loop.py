@@ -356,80 +356,19 @@ class TestModulesAndLoop(unittest.TestCase):
                                 "buffered",
                                 "--max-tool-rounds",
                                 "2",
-                                "--max-tool-rounds-hard",
-                                "2",
                             ]
                         )
             self.assertEqual(rc, 0, err.getvalue())
             self.assertIn("Synthesized answer after tools.", out.getvalue())
             # The final request must have had tools=None to force synthesis
             self.assertIsNone(seen_requests[-1].tools)
-
-    def test_soft_cap_extends_while_tool_calls(self):
-        seen_requests = []
-
-        class EndlessToolProvider:
-            def complete(self, req):
-                seen_requests.append(req)
-                if req.tools:
-                    return CompletionResult(
-                        text="",
-                        tool_calls=[
-                            {
-                                "id": f"c_{len(seen_requests)}",
-                                "name": "call_job",
-                                "arguments": '{"catalog": "skill.catalog"}',
-                            }
-                        ],
-                    )
-                return CompletionResult(text="Extended then synthesized.", tool_calls=None)
-
-        with tempfile.TemporaryDirectory() as tmp:
-            env = dict(os.environ)
-            env.update(
-                {
-                    "AGENTS_HOME": tmp,
-                    "AGENTS_TRACES_DIR": str(Path(tmp) / "traces"),
-                    "AGENTS_IDENTITY_PATH": str(Path(tmp) / "identity.json"),
-                }
-            )
-            out = io.StringIO()
-            err = io.StringIO()
-            with patch.dict(os.environ, env, clear=True):
-                with patch("runner.loop.get_provider", return_value=EndlessToolProvider()):
-                    with redirect_stdout(out), redirect_stderr(err):
-                        rc = loop_main(
-                            [
-                                "--channel",
-                                "telegram",
-                                "--user",
-                                "softextend",
-                                "--new-session",
-                                "--message",
-                                "keep going",
-                                "--complete",
-                                "--provider",
-                                "fake",
-                                "--deliver",
-                                "buffered",
-                                "--max-tool-rounds",
-                                "2",
-                                "--max-tool-rounds-hard",
-                                "4",
-                            ]
-                        )
-            self.assertEqual(rc, 0, err.getvalue())
-            self.assertIn("Extended then synthesized.", out.getvalue())
-            self.assertIsNone(seen_requests[-1].tools)
-            with_tools = [r for r in seen_requests if r.tools]
-            self.assertGreater(len(with_tools), 2)
             notices = [
                 m.get("content", "")
                 for r in seen_requests
                 for m in (r.messages or [])
                 if m.get("role") == "user" and "Soft tool-round cap" in str(m.get("content") or "")
             ]
-            self.assertTrue(notices)
+            self.assertFalse(notices)
 
     def test_loop_emits_last_answer_not_scratch_join(self):
         class DraftThenFinal:
