@@ -70,24 +70,62 @@ def _emit_trailer(
     user_id: str,
     alias: str,
     mode: str,
+    seal_digest: str = "",
 ) -> None:
     if mode != "buffered":
         return
-    trailer = json.dumps(
-        {"session": session, "user_id": user_id, "alias": alias},
-        ensure_ascii=False,
-    )
+    data = {"session": session, "user_id": user_id, "alias": alias}
+    if seal_digest:
+        data["seal"] = seal_digest
+    trailer = json.dumps(data, ensure_ascii=False)
     print(f"{LOOP_TRAILER_MARKER}\n{trailer}", file=sys.stdout, flush=True)
+
+
+def _record_tool(
+    session: str,
+    tool: str,
+    args: Any,
+    result: Any,
+    status: str = "ok",
+) -> None:
+    if not session:
+        return
+    try:
+        from agents_traces.models import TraceEvent
+        from agents_traces.store import TraceStore
+
+        parsed_args = args
+        if isinstance(args, str):
+            try:
+                parsed_args = json.loads(args)
+            except Exception:
+                parsed_args = {"raw": args}
+        elif not isinstance(args, dict):
+            parsed_args = {"raw": args}
+
+        event = TraceEvent(
+            session=session,
+            type="tool_call",
+            tool=tool,
+            args=parsed_args,
+            result=result,
+            status=status,
+        )
+        TraceStore().append(event)
+    except Exception:
+        pass
 
 
 def _run_tool_calls(
     calls: list[Any],
     *,
+    session: str = "",
     default_user: str = "",
     default_timezone: str = "",
     on_status: Callable[[str], None] | None = None,
+    turn_cache: dict[tuple[str, str], str] | None = None,
 ) -> list[dict[str, Any]]:
-    """Route tool_calls through the three Cordis tools (closed carrier)."""
+    """Route tool_calls through the three Cordis tools (closed carrier) with loop protection and trace recording."""
     messages: list[dict[str, Any]] = []
     for i, call in enumerate(calls):
         if not isinstance(call, dict):
@@ -95,28 +133,61 @@ def _run_tool_calls(
         fn = call.get("function") if isinstance(call.get("function"), dict) else call
         name = str(fn.get("name") or call.get("name") or "").strip()
         call_id = str(call.get("id") or f"call_{i}")
+        raw_args = fn.get("arguments") or {}
+
         if on_status:
             args_hint = ""
-            if isinstance(fn.get("arguments"), dict):
-                args_hint = str(fn["arguments"].get("name") or fn["arguments"].get("command") or "")
-            elif isinstance(fn.get("arguments"), str) and fn["arguments"].strip():
+            if isinstance(raw_args, dict):
+                args_hint = str(raw_args.get("name") or raw_args.get("command") or "")
+            elif isinstance(raw_args, str) and raw_args.strip():
                 try:
-                    p = json.loads(fn["arguments"])
+                    p = json.loads(raw_args)
                     if isinstance(p, dict):
                         args_hint = str(p.get("name") or p.get("command") or "")
                 except Exception:
                     pass
             label = f"{name} ({args_hint[:30]})" if args_hint else name
             on_status(f"running {label}...")
+
         if is_cordis_tool(name):
-            content = handle_cordis_tool(
-                name,
-                call,
-                default_user=default_user,
-                default_timezone=default_timezone,
+            # Loop protection: check identical call in same turn without mutators
+            args_str = ""
+            if isinstance(raw_args, dict):
+                args_str = json.dumps(raw_args, sort_keys=True)
+            elif isinstance(raw_args, str):
+                args_str = raw_args.strip()
+
+            call_key = (name, args_str)
+            is_mutator = (
+                name in ("mcp_docs_write", "mcp_memory_add", "mcp_schedule_add", "mcp_schedule_remove", "mcp_terminal")
+                or (name == "call_job" and any(m in args_str for m in ("write", "add", "remove", "terminal", "delete")))
             )
+
+            if turn_cache is not None and not is_mutator and call_key in turn_cache:
+                prev_out = turn_cache[call_key]
+                content = f"[Notice: '{name}' was already called with identical arguments earlier in this turn. State has not changed. Output was: {prev_out[:200]}]"
+            else:
+                content = handle_cordis_tool(
+                    name,
+                    call,
+                    default_user=default_user,
+                    default_timezone=default_timezone,
+                )
+                if turn_cache is not None:
+                    if is_mutator:
+                        turn_cache.clear()
+                    else:
+                        turn_cache[call_key] = content
         else:
             content = f"refused: unknown tool {name} (use call_job with a catalog name)"
+
+        _record_tool(
+            session=session,
+            tool=name,
+            args=raw_args,
+            result=content,
+            status="ok" if not content.startswith("refused") else "error",
+        )
         messages.append(
             {"role": "tool", "tool_call_id": call_id, "content": content}
         )
@@ -342,6 +413,11 @@ def main(argv: list[str] | None = None) -> int:
         default=int(os.environ.get("AGENTS_MAX_TOOL_ROUNDS", "12")),
         help="Cap on tool-call rounds. The last round strips tools and asks for a final answer (default: 12).",
     )
+    parser.add_argument(
+        "--seal",
+        action="store_true",
+        help="Cryptographically seal session tool calls and emit seal digest in trailer",
+    )
     args = parser.parse_args(argv)
     try:
         from . import __version__
@@ -491,14 +567,18 @@ def main(argv: list[str] | None = None) -> int:
     if (result.text or "").strip():
         last_scratch = result.text.strip()
 
+    turn_cache: dict[tuple[str, str], str] = {}
+
     for _round in range(max_rounds):
         if not result.tool_calls:
             break
         tool_msgs = _run_tool_calls(
             result.tool_calls,
+            session=session,
             default_user=args.user,
             default_timezone=timezone_name,
             on_status=on_status,
+            turn_cache=turn_cache,
         )
         messages.append(
             {
@@ -532,9 +612,11 @@ def main(argv: list[str] | None = None) -> int:
     if result.tool_calls and not (result.text or "").strip():
         tool_msgs = _run_tool_calls(
             result.tool_calls,
+            session=session,
             default_user=args.user,
             default_timezone=timezone_name,
             on_status=on_status,
+            turn_cache=turn_cache,
         )
         messages.append(
             {
@@ -573,6 +655,24 @@ def main(argv: list[str] | None = None) -> int:
             resolved.user.id,
             project=project,
         )
+
+    seal_digest = ""
+    if getattr(args, "seal", False):
+        try:
+            from agents_traces.audit import events_to_records, seal_records
+            from agents_traces.store import TraceStore
+
+            st = TraceStore()
+            evs = st.get_events_for_session(session)
+            recs = events_to_records(evs)
+            if recs:
+                links = seal_records(recs)
+                seal_digest = links[-1].digest if links else ""
+                if on_status and seal_digest:
+                    on_status(f"trace sealed ({seal_digest[:16]}...)")
+        except Exception:
+            pass
+
     emit(final_text)
     _emit_trailer(
         emit,
@@ -580,6 +680,7 @@ def main(argv: list[str] | None = None) -> int:
         user_id=resolved.user.id,
         alias=resolved.alias,
         mode=mode,
+        seal_digest=seal_digest,
     )
     return 0
 

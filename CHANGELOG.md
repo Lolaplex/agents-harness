@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Cordis modules `mcp.traces.audit` and `mcp.traces.seal` (`as_tool`) for autonomous integrity checks and cryptographic session sealing.
+- Hourly audit schedule `runner/schedules/traces_audit.json` to monitor trace file integrity and detect execution drift.
+- `--seal` flag on `runner.loop` emitting root digest in the stream trailer (`seal: <sha256>`).
+- Trace recording of tool executions into `TraceStore` (`tool_call`).
+- In-turn repeated read detection in `runner.loop` to avoid redundant loop cycles.
+
 ## [0.0.2] - 2026-09-27
 
 ### Added

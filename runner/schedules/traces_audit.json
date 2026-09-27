@@ -1,0 +1,8 @@
+{
+  "name": "traces_audit",
+  "verb": "python -m agents_traces audit",
+  "cadence": "hourly",
+  "rests_on": "agents-traces replay audit over latest session to detect non-determinism and redundant tool calls; exit 0 = healthy",
+  "expected_exit": 0,
+  "timeout_sec": 60
+}

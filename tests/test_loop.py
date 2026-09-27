@@ -422,6 +422,64 @@ class TestModulesAndLoop(unittest.TestCase):
             self.assertNotIn("Erste Runde", body)
             self.assertNotIn("Forensik-Modus. Erste Runde...\n\nForensik final.", body)
 
+    def test_loop_protection_and_trace_sealing(self):
+        class RepeatThenAnswer:
+            def __init__(self):
+                self.round = 0
+
+            def complete(self, req: CompletionRequest) -> CompletionResult:
+                self.round += 1
+                if self.round in (1, 2):
+                    return CompletionResult(
+                        text="",
+                        tool_calls=[
+                            {
+                                "id": f"call_{self.round}",
+                                "name": "call_job",
+                                "arguments": '{"name": "skill.catalog"}',
+                            }
+                        ],
+                    )
+                return CompletionResult(text="Done repeating.", tool_calls=[])
+
+        with tempfile.TemporaryDirectory() as tmp:
+            env = dict(os.environ)
+            traces_dir = Path(tmp) / "traces"
+            env.update(
+                {
+                    "AGENTS_HOME": tmp,
+                    "AGENTS_TRACES_DIR": str(traces_dir),
+                    "AGENTS_IDENTITY_PATH": str(Path(tmp) / "identity.json"),
+                }
+            )
+            out = io.StringIO()
+            err = io.StringIO()
+            with patch.dict(os.environ, env, clear=True):
+                with patch("runner.loop.get_provider", return_value=RepeatThenAnswer()):
+                    with redirect_stdout(out), redirect_stderr(err):
+                        rc = loop_main(
+                            [
+                                "--channel",
+                                "local",
+                                "--user",
+                                "looptest",
+                                "--new-session",
+                                "--message",
+                                "repeat test",
+                                "--complete",
+                                "--provider",
+                                "fake",
+                                "--deliver",
+                                "buffered",
+                                "--seal",
+                            ]
+                        )
+            self.assertEqual(rc, 0, err.getvalue())
+            raw = out.getvalue()
+            trailer = json.loads(raw.split(LOOP_TRAILER_MARKER)[1].strip())
+            self.assertIn("seal", trailer)
+            self.assertEqual(len(trailer["seal"]), 64)
+
 
 if __name__ == "__main__":
     unittest.main()

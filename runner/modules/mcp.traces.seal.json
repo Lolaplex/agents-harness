@@ -1,0 +1,28 @@
+{
+  "name": "mcp.traces.seal",
+  "kind": "mcp",
+  "when": "on_request",
+  "cadence": "on_request",
+  "verb": "python -m agents_traces seal",
+  "rests_on": "agents-traces CLI cryptographic SHA-256 hash sealing of session tool calls; exit 0 = sealed",
+  "expected_exit": 0,
+  "timeout_sec": 30,
+  "as_tool": true,
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "session": {
+        "type": "string",
+        "description": "Session ID to seal (optional, defaults to active session)"
+      },
+      "output": {
+        "type": "string",
+        "description": "File path to save the sealed JSONL chain"
+      },
+      "json": {
+        "type": "boolean",
+        "description": "Output structured JSON result"
+      }
+    }
+  }
+}
