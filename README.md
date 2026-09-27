@@ -50,6 +50,29 @@ pip install "agents-harness[mcp]"
 
 ---
 
+## Capabilities & Roadmap
+
+### Core Capabilities (Implemented)
+
+- [x] **Per-turn Execution Loop (`runner.loop`)**: Stateless reconstructed conversation trace per turn.
+- [x] **Cordis CLI Tool Round**: Declared CLI verbs (`runner/modules/*.json`) mapped as OpenAI-compatible function tools.
+- [x] **Job Kernel (`runner.kernel`)**: Declarative AST checking, mixing, and deterministic term reduction (`norm`, `konst`, `comp`, `app`).
+- [x] **Koru Schedules (`runner.executor`)**: Declarative scheduled flow manifests (`runner/schedules/*.json`) with exit code health semantics (`exit 0 = healthy`).
+- [x] **Dynamic Reminders (`runner.schedule`)**: Dynamic one-shot & recurring due tasks ticked via cron / task runners.
+- [x] **Provider Streaming**: Streaming completions with prefill (`first_byte_sec`) and stall (`idle_sec`) hang detection.
+- [x] **Decoupled Identity**: Decoupled alias (`telegram:123`), user (`u_...`), and session (`ses_...`) directory.
+- [x] **FastMCP Interface (`runner.mcp_server`)**: Exposes `list_catalog`, `load_schema`, and `call_job` for MCP hosts.
+- [x] **Zero Bloat Runtime**: Pure Python standard library only (no Celery, no Redis, no cron daemons).
+
+### Planned (Roadmap)
+
+- [ ] **Formal Kernel Verification**: Lean 4 formalization export of Cordis job combinators.
+- [ ] **Decentralized Identity (DID)**: Native Ed25519 `did:key` resolution and proof exchange.
+- [ ] **Multi-Agent Orchestration**: A2A peer execution mesh with cryptographically signed task mailboxes.
+- [ ] **Adaptive Cadence**: Self-tuning care flow intervals based on host execution history.
+
+---
+
 ## CLI & Modules
 
 | Command / Entrypoint | Description |
