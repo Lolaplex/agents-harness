@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.2] - 2026-09-27
+
 ### Added
 - Cordis modules `mcp.docs.search` and `mcp.docs.write` (`as_tool`), parallel to `mcp.memory.search` / `mcp.memory.add`. Hard tech facts go to docs; user facts stay in memory.
 
@@ -34,5 +36,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Agent runtime engine and scheduled task runner (`python -m runner.loop`, Cordis job kernel, MCP tool round).
 
-[Unreleased]: https://github.com/Lolaplex/agents-harness/compare/v0.0.1...HEAD
+[Unreleased]: https://github.com/Lolaplex/agents-harness/compare/v0.0.2...HEAD
+[0.0.2]: https://github.com/Lolaplex/agents-harness/compare/v0.0.1...v0.0.2
 [0.0.1]: https://github.com/Lolaplex/agents-harness/releases/tag/v0.0.1
