@@ -35,35 +35,17 @@ pip install "agents-harness[mcp]"
 
 ## Architecture
 
-```
-                  +---------------------------+
-                  |   Inbound Request / Turn  |
-                  +-------------+-------------+
-                                |
-                                v
-                   +-------------------------+
-                   |  runner.loop (Loop API) |
-                   +------------+------------+
-                                |
-        +-----------------------+-----------------------+
-        |                                               |
-        v                                               v
-+---------------+                               +---------------+
-| Providers     |                               | Cordis Kernel |
-| (LLM Stream)  |                               | (Job Catalog) |
-+-------+-------+                               +-------+-------+
-        |                                               |
-        v                                               v
-+---------------+                               +---------------+
-|  Synthesize   |<====== Tool Calls / Results ==| runner.modules|
-|    Answer     |                               | (CLI Verbs)   |
-+---------------+                               +---------------+
-```
+| Layer | Responsibility | Components |
+| :--- | :--- | :--- |
+| **Agent Loop** | Per-request reconstructed trace & tool turns | `runner.loop` |
+| **Job Kernel** | Declarative Cordis catalog & deterministic execution | `runner.kernel`, `runner.cordis_tools` |
+| **Schedules** | Manifest-defined care flows & dynamic reminders | `runner.executor`, `runner.schedule` |
+| **Providers** | Streaming completions & OpenAI-compatible tools | `runner.providers` |
+| **Identity** | Decoupled alias, user, and session directory | `~/.agents/identity.json` |
 
-- **Per-request loop (`runner.loop`)**: Reconstructed conversation trace per turn. Cordis verbs (`runner/modules/*.json`) mapped as tools into OpenAI-compatible tool calling rounds.
+- **Per-request loop (`runner.loop`)**: Reconstructs conversation traces on demand. Cordis modules (`runner/modules/*.json`) map as tools into OpenAI-compatible tool calling rounds.
 - **Strict Layering (Cordis Principle)**: The executor owns no domain state or complex semantics. It strictly executes declared CLI verbs and inspects exit codes (`0 = healthy`).
-- **Durable Manifests**: Scheduled jobs declared in `runner/schedules/*.json`. Dynamic reminders managed via `runner.schedule`.
-- **Identity Directory**: Decoupled alias (`telegram:123`), user (`u_...`), and session (`ses_...`) mapped via `~/.agents/identity.json`.
+- **Durable Manifests (Koru Principle)**: Scheduled tasks are declared in `runner/schedules/*.json`. Dynamic reminders are managed via `runner.schedule`.
 - **Zero Bloat**: Pure Python standard library (`subprocess`, `json`, `pathlib`, `urllib`).
 
 ---
