@@ -95,12 +95,61 @@ def _parse_arguments(call: dict[str, Any]) -> dict[str, Any]:
 def _arguments_to_argv(mod: dict[str, Any], arguments: dict[str, Any]) -> list[str]:
     if not arguments:
         return []
+    name = str(mod.get("name") or "")
+    if name == "mcp.terminal":
+        raw_cmd = arguments.get("argv") or arguments.get("command") or arguments.get("cmd") or []
+        if isinstance(raw_cmd, str):
+            cmd_str = raw_cmd.strip()
+            # If command uses shell features ($VAR, |, &&, ;, >, <, `), wrap in shell
+            has_shell_chars = any(ch in cmd_str for ch in ("$", "|", "&&", ";", ">", "<", "`"))
+            if has_shell_chars:
+                import sys
+                if sys.platform == "win32":
+                    return ["run", "--", "powershell", "-NoProfile", "-Command", cmd_str]
+                return ["run", "--", "sh", "-c", cmd_str]
+            import shlex
+            cmd_list = shlex.split(cmd_str)
+        elif isinstance(raw_cmd, list):
+            cmd_list = [str(a) for a in raw_cmd]
+        else:
+            cmd_list = []
+        # Strip leading 'run' or '--' if LLM repeated them
+        while cmd_list and cmd_list[0] in ("run", "--"):
+            cmd_list.pop(0)
+        return ["run", "--"] + cmd_list if cmd_list else []
+    if name == "mcp.memory.add":
+        if "argv" in arguments and isinstance(arguments["argv"], list):
+            arg_list = [str(a) for a in arguments["argv"]]
+            while arg_list and arg_list[0] == "add":
+                arg_list.pop(0)
+            return arg_list
+        fact = arguments.get("fact")
+        if fact in (None, "") and arguments.get("text") not in (None, ""):
+            fact = arguments.get("text")
+        if fact not in (None, ""):
+            out = [str(fact)]
+            for k in ("kind", "name", "project", "collection"):
+                val = arguments.get(k)
+                if val not in (None, ""):
+                    out.extend([f"--{k}", str(val)])
+            return out
     if "argv" in arguments and isinstance(arguments["argv"], list):
-        argv = [str(a) for a in arguments["argv"]]
-        name = str(mod.get("name") or "")
-        if name == "mcp.terminal" and argv and argv[0] != "run":
-            return ["run", "--"] + argv
-        return argv
+        return [str(a) for a in arguments["argv"]]
+
+    if name == "mcp.schedule.add":
+        out = []
+        for k in ("at", "text", "name", "cron", "cadence", "channel", "user", "verb", "timezone"):
+            val = arguments.get(k)
+            if val not in (None, ""):
+                out.extend([f"--{k}", str(val)])
+        if arguments.get("one_shot"):
+            out.append("--one-shot")
+        return out
+    if name == "mcp.schedule.remove":
+        target = arguments.get("name") or arguments.get("slug") or arguments.get("id") or ""
+        return [str(target)] if target else []
+    if name == "mcp.schedule.list":
+        return []
     query = str(arguments.get("query") or arguments.get("q") or "").strip()
     if query:
         return [query]
@@ -116,7 +165,13 @@ def _arguments_to_argv(mod: dict[str, Any], arguments: dict[str, Any]) -> list[s
     return []
 
 
-def handle_cordis_tool(name: str, call: dict[str, Any]) -> str:
+def handle_cordis_tool(
+    name: str,
+    call: dict[str, Any],
+    *,
+    default_user: str = "",
+    default_timezone: str = "",
+) -> str:
     tool = name.strip().lower()
     args = _parse_arguments(call)
     if tool == "list_catalog":
@@ -153,12 +208,21 @@ def handle_cordis_tool(name: str, call: dict[str, Any]) -> str:
         )
     if tool == "call_job":
         mod_name = str(args.get("name") or "").strip()
+        if is_cordis_tool(mod_name) and mod_name != "call_job":
+            inner_call = {"function": {"arguments": args.get("arguments") or args}}
+            return handle_cordis_tool(mod_name, inner_call, default_user=default_user, default_timezone=default_timezone)
         mod = find_module(mod_name)
         if mod is None:
             return f"refused: unknown module {mod_name}"
         job_args = args.get("arguments")
         if not isinstance(job_args, dict):
             job_args = {k: v for k, v in args.items() if k != "name"}
+        if str(mod.get("name") or "") == "mcp.schedule.add":
+            job_args = dict(job_args)
+            if not job_args.get("user") and default_user:
+                job_args["user"] = default_user
+            if not job_args.get("timezone") and default_timezone:
+                job_args["timezone"] = default_timezone
         extra = _arguments_to_argv(mod, job_args)
         rec = execute_job(mod, extra_argv=extra or None)
         if rec.get("status") != "SUCCESS":

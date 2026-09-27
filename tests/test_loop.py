@@ -1,3 +1,4 @@
+import importlib.util
 import io
 import json
 import os
@@ -149,6 +150,7 @@ class TestModulesAndLoop(unittest.TestCase):
         self.assertIn("ping", out)
 
 
+    @unittest.skipUnless(importlib.util.find_spec("agents_memory"), "agents-memory not installed")
     def test_scripted_tool_turn_searches_memory(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -213,6 +215,7 @@ class TestModulesAndLoop(unittest.TestCase):
         self.assertIn("canary", parsed[0]["function"]["arguments"])
         self.assertEqual(rest, "thinking")
 
+    @unittest.skipUnless(importlib.util.find_spec("agents_memory"), "agents-memory not installed")
     def test_complete_passes_tools_and_tool_results(self):
         seen: list[CompletionRequest] = []
 
@@ -302,6 +305,124 @@ class TestModulesAndLoop(unittest.TestCase):
         rc = loop_main(["--list-tools"])
         self.assertEqual(rc, 0)
 
+    def test_max_tool_rounds_forces_synthesis(self):
+        seen_requests = []
+
+        class EndlessToolProvider:
+            def complete(self, req):
+                seen_requests.append(req)
+                if req.tools:
+                    # Model asks for another tool call
+                    return CompletionResult(
+                        text="",
+                        tool_calls=[
+                            {
+                                "id": f"c_{len(seen_requests)}",
+                                "name": "call_job",
+                                "arguments": '{"catalog": "skill.catalog"}',
+                            }
+                        ],
+                    )
+                # Forced synthesis turn (tools=None)
+                return CompletionResult(text="Synthesized answer after tools.", tool_calls=None)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            env = dict(os.environ)
+            env.update(
+                {
+                    "AGENTS_HOME": tmp,
+                    "AGENTS_TRACES_DIR": str(Path(tmp) / "traces"),
+                    "AGENTS_IDENTITY_PATH": str(Path(tmp) / "identity.json"),
+                }
+            )
+            out = io.StringIO()
+            err = io.StringIO()
+            with patch.dict(os.environ, env, clear=True):
+                with patch("runner.loop.get_provider", return_value=EndlessToolProvider()):
+                    with redirect_stdout(out), redirect_stderr(err):
+                        rc = loop_main(
+                            [
+                                "--channel",
+                                "telegram",
+                                "--user",
+                                "endlesstool",
+                                "--new-session",
+                                "--message",
+                                "search everything",
+                                "--complete",
+                                "--provider",
+                                "fake",
+                                "--deliver",
+                                "buffered",
+                                "--max-tool-rounds",
+                                "2",
+                            ]
+                        )
+            self.assertEqual(rc, 0, err.getvalue())
+            self.assertIn("Synthesized answer after tools.", out.getvalue())
+            # The final request must have had tools=None to force synthesis
+            self.assertIsNone(seen_requests[-1].tools)
+            notices = [
+                m.get("content", "")
+                for r in seen_requests
+                for m in (r.messages or [])
+                if m.get("role") == "user" and "Soft tool-round cap" in str(m.get("content") or "")
+            ]
+            self.assertFalse(notices)
+
+    def test_loop_emits_last_answer_not_scratch_join(self):
+        class DraftThenFinal:
+            def complete(self, req):
+                if any(m.get("role") == "tool" for m in req.messages):
+                    return CompletionResult(text="Forensik final.", tool_calls=None)
+                return CompletionResult(
+                    text="Forensik-Modus. Erste Runde...",
+                    tool_calls=[
+                        {
+                            "id": "c_draft",
+                            "name": "call_job",
+                            "arguments": '{"catalog": "skill.catalog"}',
+                        }
+                    ],
+                )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            env = dict(os.environ)
+            env.update(
+                {
+                    "AGENTS_HOME": tmp,
+                    "AGENTS_TRACES_DIR": str(Path(tmp) / "traces"),
+                    "AGENTS_IDENTITY_PATH": str(Path(tmp) / "identity.json"),
+                }
+            )
+            out = io.StringIO()
+            err = io.StringIO()
+            with patch.dict(os.environ, env, clear=True):
+                with patch("runner.loop.get_provider", return_value=DraftThenFinal()):
+                    with redirect_stdout(out), redirect_stderr(err):
+                        rc = loop_main(
+                            [
+                                "--channel",
+                                "telegram",
+                                "--user",
+                                "draftjoin",
+                                "--new-session",
+                                "--message",
+                                "calendar forensics",
+                                "--complete",
+                                "--provider",
+                                "fake",
+                                "--deliver",
+                                "buffered",
+                            ]
+                        )
+            self.assertEqual(rc, 0, err.getvalue())
+            body = out.getvalue().split(LOOP_TRAILER_MARKER)[0]
+            self.assertIn("Forensik final.", body)
+            self.assertNotIn("Erste Runde", body)
+            self.assertNotIn("Forensik-Modus. Erste Runde...\n\nForensik final.", body)
+
 
 if __name__ == "__main__":
     unittest.main()
+

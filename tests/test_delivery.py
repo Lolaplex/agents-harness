@@ -26,7 +26,7 @@ class TestDelivery(unittest.TestCase):
         on_status("still going")
         emit("pong")
         self.assertEqual(out.getvalue(), "pong\n")
-        self.assertEqual(err.getvalue(), "thinking...\n")
+        self.assertEqual(err.getvalue(), "thinking...\nstill going\n")
 
     def test_stream_writes_tokens(self):
         out, err = io.StringIO(), io.StringIO()

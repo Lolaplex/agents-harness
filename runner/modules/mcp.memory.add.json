@@ -1,0 +1,39 @@
+{
+  "name": "mcp.memory.add",
+  "kind": "mcp",
+  "when": "on_request",
+  "cadence": "on_request",
+  "verb": "python -m agents_memory add",
+  "rests_on": "agents-memory CLI save a durable fact or note; exit 0 = saved",
+  "expected_exit": 0,
+  "timeout_sec": 30,
+  "as_tool": true,
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "fact": {
+        "type": "string",
+        "description": "Fact or note content to save"
+      },
+      "kind": {
+        "type": "string",
+        "description": "Category: fact, note, concept, workflow, decision"
+      },
+      "name": {
+        "type": "string",
+        "description": "Optional file name stem"
+      },
+      "project": {
+        "type": "string",
+        "description": "Optional project slug"
+      },
+      "collection": {
+        "type": "string",
+        "description": "Optional note collection"
+      }
+    },
+    "required": [
+      "fact"
+    ]
+  }
+}

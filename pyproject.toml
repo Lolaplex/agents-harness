@@ -4,14 +4,12 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "agents-harness"
-version = "0.0.1"
+version = "0.0.2"
 description = "Declarative scheduled flow runner, per-request agent loop, and job kernel for local agent services"
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
-authors = [
-    { name = "Felix Kempf" },
-]
+authors = [{ name = "Lolaplex" }]
 requires-python = ">=3.10"
 dependencies = []
 keywords = ["agents", "harness", "runner", "executor", "kernel", "mcp", "cordis", "loop"]

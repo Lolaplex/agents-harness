@@ -1,0 +1,21 @@
+{
+  "name": "mcp.schedule.remove",
+  "kind": "mcp",
+  "when": "on_request",
+  "cadence": "on_request",
+  "verb": "python -m runner.schedule remove",
+  "rests_on": "agents-harness CLI remove dynamic schedule by name; exit 0 = removed",
+  "expected_exit": 0,
+  "timeout_sec": 30,
+  "as_tool": true,
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "name": {
+        "type": "string",
+        "description": "Name or identifier of the schedule to remove"
+      }
+    },
+    "required": ["name"]
+  }
+}

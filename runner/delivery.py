@@ -43,13 +43,10 @@ def bind_delivery(
     out = stdout if stdout is not None else sys.stdout
     err = stderr if stderr is not None else sys.stderr
     mode = delivery_for(channel, stdout_tty=stdout_tty, override=override)
-    stated = {"ack": False}
-
     def on_status(text: str) -> None:
-        if stated["ack"]:
-            return
-        stated["ack"] = True
-        print(text or "thinking...", file=err, flush=True)
+        msg = (text or "thinking...").strip()
+        if msg:
+            print(msg, file=err, flush=True)
 
     on_delta: Callable[[str], None] | None = None
     if mode == "stream":

@@ -10,8 +10,10 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import sys
+import uuid
 from typing import Any
 
 from .cordis_tools import handle_cordis_tool, is_cordis_tool
@@ -27,8 +29,10 @@ from .providers import CompletionRequest, CompletionResult, get_provider, list_p
 
 
 def _assemble(session: str, limit: int) -> list[dict[str, Any]]:
-    from agents_traces.assemble import assemble_messages
-
+    try:
+        from agents_traces.assemble import assemble_messages
+    except ImportError:
+        return []
     return assemble_messages(session, limit=limit)
 
 
@@ -39,11 +43,20 @@ def _record(
     channel: str,
     user: str,
     user_id: str = "",
+    project: str = "",
 ) -> None:
-    from agents_traces.assemble import record_message
-
+    try:
+        from agents_traces.assemble import record_message
+    except ImportError:
+        return
     record_message(
-        session, role, content, channel=channel, user=user, user_id=user_id
+        session,
+        role,
+        content,
+        channel=channel,
+        user=user,
+        user_id=user_id,
+        project=project,
     )
 
 
@@ -67,7 +80,13 @@ def _emit_trailer(
     print(f"{LOOP_TRAILER_MARKER}\n{trailer}", file=sys.stdout, flush=True)
 
 
-def _run_tool_calls(calls: list[Any]) -> list[dict[str, Any]]:
+def _run_tool_calls(
+    calls: list[Any],
+    *,
+    default_user: str = "",
+    default_timezone: str = "",
+    on_status: Callable[[str], None] | None = None,
+) -> list[dict[str, Any]]:
     """Route tool_calls through the three Cordis tools (closed carrier)."""
     messages: list[dict[str, Any]] = []
     for i, call in enumerate(calls):
@@ -76,8 +95,26 @@ def _run_tool_calls(calls: list[Any]) -> list[dict[str, Any]]:
         fn = call.get("function") if isinstance(call.get("function"), dict) else call
         name = str(fn.get("name") or call.get("name") or "").strip()
         call_id = str(call.get("id") or f"call_{i}")
+        if on_status:
+            args_hint = ""
+            if isinstance(fn.get("arguments"), dict):
+                args_hint = str(fn["arguments"].get("name") or fn["arguments"].get("command") or "")
+            elif isinstance(fn.get("arguments"), str) and fn["arguments"].strip():
+                try:
+                    p = json.loads(fn["arguments"])
+                    if isinstance(p, dict):
+                        args_hint = str(p.get("name") or p.get("command") or "")
+                except Exception:
+                    pass
+            label = f"{name} ({args_hint[:30]})" if args_hint else name
+            on_status(f"running {label}...")
         if is_cordis_tool(name):
-            content = handle_cordis_tool(name, call)
+            content = handle_cordis_tool(
+                name,
+                call,
+                default_user=default_user,
+                default_timezone=default_timezone,
+            )
         else:
             content = f"refused: unknown tool {name} (use call_job with a catalog name)"
         messages.append(
@@ -168,7 +205,43 @@ def build_payload(
 
     Clock is last-before-user so it cannot invalidate the system prefix.
     """
-    from agents_traces.prompt import PromptParts, clock_message, system_messages
+    try:
+        from agents_traces.prompt import PromptParts, clock_message, system_messages
+    except ImportError:
+        messages: list[dict[str, Any]] = []
+        sess_attr = f'id="{session}"'
+        if start_date:
+            sess_attr += f' start_date="{start_date}"'
+        messages.append(
+            {
+                "role": "system",
+                "content": (
+                    "<system_prompt>\n"
+                    f"  <instructions>\n    <text>{system}</text>\n  </instructions>\n"
+                    f"  <runtime_context>\n    <session {sess_attr}/>\n  </runtime_context>\n"
+                    "</system_prompt>"
+                ),
+            }
+        )
+        messages.extend(_assemble(session, limit=limit))
+        if include_clock:
+            from datetime import datetime, timezone as utc_tz
+            from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+            now = datetime.now(utc_tz.utc)
+            if timezone_name:
+                try:
+                    now = now.astimezone(ZoneInfo(timezone_name))
+                except ZoneInfoNotFoundError:
+                    pass
+            weekday = now.strftime("%A")
+            stamp = now.isoformat(timespec="seconds")
+            messages.append(
+                {"role": "system", "content": f"<clock>{weekday} {stamp}</clock>"}
+            )
+        if user_message:
+            messages.append({"role": "user", "content": user_message})
+        return messages
 
     parts = PromptParts(
         instructions=system,
@@ -192,7 +265,28 @@ def build_payload(
 
 
 def _resolve_identity(args: argparse.Namespace):
-    from agents_traces.identity import IdentityStore, session_has_events
+    try:
+        from agents_traces.identity import IdentityStore, session_has_events
+    except ImportError:
+        from types import SimpleNamespace
+
+        uid = (args.user_id or args.user or "").strip()
+        sid = (args.session or "").strip()
+        if not sid:
+            sid = "ses_" + uuid.uuid4().hex[:12]
+        alias = f"{args.channel}:{args.user}" if args.user else ""
+        return SimpleNamespace(
+            alias=alias,
+            user=SimpleNamespace(
+                id=uid,
+                display="",
+                work="",
+                project="",
+                timezone="",
+                aliases=[],
+            ),
+            session=SimpleNamespace(id=sid, start_date=""),
+        )
 
     ident = IdentityStore()
     return ident.resolve(
@@ -224,6 +318,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--limit", type=int, default=24, help="History turns to rebuild")
     parser.add_argument("--system", default="", help="Optional instructions blob (stable prefix)")
     parser.add_argument("--provider", default="", help="Provider name (openai.default, echo, …)")
+    parser.add_argument("--persona", default="", help="Persona manifest name (runner/personas/)")
     parser.add_argument("--assemble-only", action="store_true", help="Print reconstructed payload, no HTTP")
     parser.add_argument("--complete", action="store_true", help="Complete via the selected provider and record")
     parser.add_argument(
@@ -241,7 +336,19 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--call", metavar="NAME", help="Run one module or schedule by name (Cordis)")
     parser.add_argument("--check-term", metavar="FILE", help="Check a job-term JSON against the catalog")
     parser.add_argument("--reduce-term", metavar="FILE", help="Check, mix, and reduce a job-term JSON")
+    parser.add_argument(
+        "--max-tool-rounds",
+        type=int,
+        default=int(os.environ.get("AGENTS_MAX_TOOL_ROUNDS", "12")),
+        help="Cap on tool-call rounds. The last round strips tools and asks for a final answer (default: 12).",
+    )
     args = parser.parse_args(argv)
+    try:
+        from . import __version__
+        from .updates import check_for_updates
+        check_for_updates("agents-harness", __version__)
+    except Exception:
+        pass
 
     if args.check_term:
         from .kernel import main as kernel_main
@@ -300,31 +407,40 @@ def main(argv: list[str] | None = None) -> int:
         print("Error: --session, --user, or --user-id is required", file=sys.stderr)
         return 1
 
+    from .user_profile import load_user_profile
+
     resolved = _resolve_identity(args)
     session = resolved.session.id
     user_text = args.message or ""
+    profile = load_user_profile()
+    project = (args.project or "").strip()
+    timezone_name = (resolved.user.timezone or profile.get("timezone") or "").strip()
 
-    system_text = args.system
-    if system_text:
-        import os
+    system = args.system
+    if system:
         from pathlib import Path
         try:
-            p = Path(system_text)
+            p = Path(system)
             if p.is_file():
-                system_text = p.read_text(encoding="utf-8")
+                system = p.read_text(encoding="utf-8")
         except Exception:
             pass
+
+    if args.persona:
+        from .personas import persona_system_append
+
+        system = persona_system_append(args.persona, base=system)
 
     messages = build_payload(
         session,
         user_text,
         limit=args.limit,
-        system=system_text,
+        system=system,
         user_id=resolved.user.id,
-        user_display=resolved.user.display,
-        work=resolved.user.work,
-        project=args.project or resolved.user.project,
-        timezone_name=resolved.user.timezone,
+        user_display=profile.get("display", ""),
+        work=profile.get("work", ""),
+        project=project,
+        timezone_name=timezone_name,
         aliases=resolved.user.aliases,
         start_date=resolved.session.start_date,
     )
@@ -353,7 +469,15 @@ def main(argv: list[str] | None = None) -> int:
     provider = get_provider(args.provider)
     mode, on_status, on_delta, emit = bind_delivery(args.channel, override=args.deliver)
     if user_text:
-        _record(session, "user", user_text, args.channel, args.user, resolved.user.id)
+        _record(
+            session,
+            "user",
+            user_text,
+            args.channel,
+            args.user,
+            resolved.user.id,
+            project=project,
+        )
     tools = openai_tools()
     req = CompletionRequest(
         messages=messages,
@@ -361,12 +485,21 @@ def main(argv: list[str] | None = None) -> int:
         on_status=on_status,
         on_delta=on_delta,
     )
-    max_tool_rounds = 3
+    max_rounds = max(1, getattr(args, "max_tool_rounds", 12))
+    last_scratch = ""
     result = _complete_once(provider, req)
-    for _round in range(max_tool_rounds):
+    if (result.text or "").strip():
+        last_scratch = result.text.strip()
+
+    for _round in range(max_rounds):
         if not result.tool_calls:
             break
-        tool_msgs = _run_tool_calls(result.tool_calls)
+        tool_msgs = _run_tool_calls(
+            result.tool_calls,
+            default_user=args.user,
+            default_timezone=timezone_name,
+            on_status=on_status,
+        )
         messages.append(
             {
                 "role": "assistant",
@@ -375,25 +508,72 @@ def main(argv: list[str] | None = None) -> int:
             }
         )
         messages.extend(tool_msgs)
+        is_last = _round >= max_rounds - 1
+        round_tools = None if is_last else tools
+        if is_last:
+            messages.append(
+                {
+                    "role": "user",
+                    "content": "[System Notice: Tool execution round limit reached. Please synthesize your final response now: summarize what was completed, note any tool issues, and answer the user.]",
+                }
+            )
         result = _complete_once(
             provider,
             CompletionRequest(
                 messages=messages,
-                tools=tools or None,
+                tools=round_tools,
                 on_status=on_status,
                 on_delta=on_delta,
             ),
         )
-    else:
-        if result.tool_calls:
-            print(
-                f"Error: still requested tools after {max_tool_rounds} rounds",
-                file=sys.stderr,
-            )
-            return 1
-    if result.text:
-        _record(session, "assistant", result.text, args.channel, args.user, resolved.user.id)
-    emit(result.text)
+        if (result.text or "").strip():
+            last_scratch = result.text.strip()
+
+    if result.tool_calls and not (result.text or "").strip():
+        tool_msgs = _run_tool_calls(
+            result.tool_calls,
+            default_user=args.user,
+            default_timezone=timezone_name,
+            on_status=on_status,
+        )
+        messages.append(
+            {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": result.tool_calls,
+            }
+        )
+        messages.extend(tool_msgs)
+        messages.append(
+            {
+                "role": "user",
+                "content": "[System Notice: Provide your final summary to the user now.]",
+            }
+        )
+        result = _complete_once(
+            provider,
+            CompletionRequest(
+                messages=messages,
+                tools=None,
+                on_status=on_status,
+                on_delta=on_delta,
+            ),
+        )
+        if (result.text or "").strip():
+            last_scratch = result.text.strip()
+
+    final_text = (result.text or "").strip() or last_scratch
+    if final_text:
+        _record(
+            session,
+            "assistant",
+            final_text,
+            args.channel,
+            args.user,
+            resolved.user.id,
+            project=project,
+        )
+    emit(final_text)
     _emit_trailer(
         emit,
         session=session,

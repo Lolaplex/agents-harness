@@ -10,6 +10,7 @@ from .executor import execute_job, list_schedules
 from .loop import build_payload
 from .modules import find_module, list_modules
 from .providers import list_providers
+from .user_profile import load_user_profile
 
 mcp = FastMCP("agents-harness")
 
@@ -40,13 +41,15 @@ def assemble_session(
     user: str = "",
     session: str = "",
     message: str = "",
+    project: str = "",
     limit: int = 24,
 ) -> str:
-    """Rebuild chat-completions messages from the trace for this channel/user."""
+    """Rebuild chat-completions messages from the trace for this channel/user/project."""
     sid = session
     user_id = ""
     start_date = ""
     alias = ""
+    profile = load_user_profile()
     if not sid:
         if not user:
             return json.dumps({"error": "session or user is required"})
@@ -58,6 +61,7 @@ def assemble_session(
             channel=channel,
             user=user,
             session=session,
+            project=project.strip(),
             legacy_exists=session_has_events,
         )
         sid = resolved.session.id
@@ -70,6 +74,10 @@ def assemble_session(
             message,
             limit=limit,
             user_id=user_id,
+            user_display=profile.get("display", ""),
+            work=profile.get("work", ""),
+            project=project.strip(),
+            timezone_name=profile.get("timezone", ""),
             aliases=[alias] if alias else [],
             start_date=start_date,
         )
@@ -81,6 +89,7 @@ def assemble_session(
             "user_id": user_id,
             "alias": alias,
             "start_date": start_date,
+            "project": project.strip(),
             "messages": payload,
         },
         ensure_ascii=False,

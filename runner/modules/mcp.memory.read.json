@@ -1,0 +1,23 @@
+{
+  "name": "mcp.memory.read",
+  "kind": "mcp",
+  "when": "on_request",
+  "cadence": "on_request",
+  "verb": "python -m agents_memory read",
+  "rests_on": "agents-memory CLI read raw markdown file by id; extra argv is file_id (e.g. USER.md, PROJECTS.md); exit 0 = read",
+  "expected_exit": 0,
+  "timeout_sec": 30,
+  "as_tool": true,
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "file_id": {
+        "type": "string",
+        "description": "File id or relative path in memory vault (e.g. USER.md, PROJECTS.md, facts.md, rules/user-rules.mdc)"
+      }
+    },
+    "required": [
+      "file_id"
+    ]
+  }
+}

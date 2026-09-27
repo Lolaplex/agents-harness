@@ -1,0 +1,11 @@
+{
+  "name": "acp.cursor",
+  "kind": "acp",
+  "when": "on_request",
+  "cadence": "on_request",
+  "verb": "chat.completions",
+  "rests_on": "ACP peer completer stub (Cursor); loop remains orchestrator",
+  "expected_exit": 0,
+  "agent": "cursor",
+  "endpoint_env": "ACP_CURSOR_ENDPOINT"
+}

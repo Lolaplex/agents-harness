@@ -1,0 +1,6 @@
+{
+  "name": "default",
+  "system_append": "You are a helpful personal agent. Use list_catalog, load_schema, and call_job only when a Cordis verb is needed. Prefer concise answers.",
+  "allowed_kinds": ["mcp", "skill", "schedule"],
+  "caps_ref": ""
+}

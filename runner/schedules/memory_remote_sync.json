@@ -1,0 +1,8 @@
+{
+  "name": "memory_remote_sync",
+  "verb": "python -m agents_memory remote pull",
+  "cadence": "6h",
+  "rests_on": "Pull/push personal memory mirror when remote connect is configured",
+  "expected_exit": 0,
+  "timeout_sec": 120
+}

@@ -1,0 +1,16 @@
+{
+  "name": "mcp.schedule.list",
+  "kind": "mcp",
+  "when": "on_request",
+  "cadence": "on_request",
+  "verb": "python -m runner.schedule list",
+  "rests_on": "agents-harness CLI list dynamic schedules and reminders; exit 0 = listed",
+  "expected_exit": 0,
+  "timeout_sec": 30,
+  "as_tool": true,
+  "parameters": {
+    "type": "object",
+    "properties": {},
+    "required": []
+  }
+}
