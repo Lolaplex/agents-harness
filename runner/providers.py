@@ -279,6 +279,33 @@ class OpenAICompatProvider:
         body: dict[str, Any] = {"model": model, "messages": req.messages, "stream": stream}
         extra = dict(req.extra or {})
         extra.pop("stream", None)
+
+        # Set default temperature to prevent runaway hallucination / token collapse
+        if "temperature" not in extra:
+            temp_env = os.environ.get("LLM_TEMPERATURE")
+            if temp_env is not None:
+                try:
+                    body["temperature"] = float(temp_env)
+                except ValueError:
+                    pass
+            elif "temperature" in self.manifest:
+                body["temperature"] = float(self.manifest["temperature"])
+            else:
+                body["temperature"] = 0.2
+
+        # Set default max_tokens to prevent infinite generation loops
+        if "max_tokens" not in extra:
+            max_env = os.environ.get("LLM_MAX_TOKENS")
+            if max_env is not None:
+                try:
+                    body["max_tokens"] = int(max_env)
+                except ValueError:
+                    pass
+            elif "max_tokens" in self.manifest:
+                body["max_tokens"] = int(self.manifest["max_tokens"])
+            else:
+                body["max_tokens"] = 4096
+
         if req.tools:
             body["tools"] = req.tools
             if "tool_choice" not in extra:

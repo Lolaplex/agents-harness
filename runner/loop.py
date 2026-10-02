@@ -563,7 +563,21 @@ def main(argv: list[str] | None = None) -> int:
     )
     max_rounds = max(1, getattr(args, "max_tool_rounds", 12))
     last_scratch = ""
-    result = _complete_once(provider, req)
+    try:
+        result = _complete_once(provider, req)
+    except Exception as e:
+        err_msg = str(e).strip() or e.__class__.__name__
+        print(f"Turn error: {err_msg}", file=sys.stderr)
+        emit(f"Turn failed: {err_msg}")
+        _emit_trailer(
+            emit,
+            session=session,
+            user_id=resolved.user.id,
+            alias=resolved.alias,
+            mode=mode,
+        )
+        return 1
+
     if (result.text or "").strip():
         last_scratch = result.text.strip()
 
@@ -597,15 +611,30 @@ def main(argv: list[str] | None = None) -> int:
                     "content": "[System Notice: Tool execution round limit reached. Please synthesize your final response now: summarize what was completed, note any tool issues, and answer the user.]",
                 }
             )
-        result = _complete_once(
-            provider,
-            CompletionRequest(
-                messages=messages,
-                tools=round_tools,
-                on_status=on_status,
-                on_delta=on_delta,
-            ),
-        )
+        try:
+            result = _complete_once(
+                provider,
+                CompletionRequest(
+                    messages=messages,
+                    tools=round_tools,
+                    on_status=on_status,
+                    on_delta=on_delta,
+                ),
+            )
+        except Exception as e:
+            err_msg = str(e).strip() or e.__class__.__name__
+            print(f"Turn error: {err_msg}", file=sys.stderr)
+            fallback = last_scratch or f"Turn failed: {err_msg}"
+            emit(fallback)
+            _emit_trailer(
+                emit,
+                session=session,
+                user_id=resolved.user.id,
+                alias=resolved.alias,
+                mode=mode,
+            )
+            return 1
+
         if (result.text or "").strip():
             last_scratch = result.text.strip()
 
@@ -632,15 +661,30 @@ def main(argv: list[str] | None = None) -> int:
                 "content": "[System Notice: Provide your final summary to the user now.]",
             }
         )
-        result = _complete_once(
-            provider,
-            CompletionRequest(
-                messages=messages,
-                tools=None,
-                on_status=on_status,
-                on_delta=on_delta,
-            ),
-        )
+        try:
+            result = _complete_once(
+                provider,
+                CompletionRequest(
+                    messages=messages,
+                    tools=None,
+                    on_status=on_status,
+                    on_delta=on_delta,
+                ),
+            )
+        except Exception as e:
+            err_msg = str(e).strip() or e.__class__.__name__
+            print(f"Turn error: {err_msg}", file=sys.stderr)
+            fallback = last_scratch or f"Turn failed: {err_msg}"
+            emit(fallback)
+            _emit_trailer(
+                emit,
+                session=session,
+                user_id=resolved.user.id,
+                alias=resolved.alias,
+                mode=mode,
+            )
+            return 1
+
         if (result.text or "").strip():
             last_scratch = result.text.strip()
 

@@ -6,7 +6,7 @@ import json
 from typing import Any
 
 from .executor import execute_job
-from .modules import find_module, list_modules, openai_tool_name
+from .modules import find_module, find_module_for_tool, list_modules, openai_tool_name
 from .redact import redact_tool_output
 
 CORDIS_TOOL_NAMES = ("list_catalog", "load_schema", "call_job")
@@ -212,6 +212,8 @@ def handle_cordis_tool(
             inner_call = {"function": {"arguments": args.get("arguments") or args}}
             return handle_cordis_tool(mod_name, inner_call, default_user=default_user, default_timezone=default_timezone)
         mod = find_module(mod_name)
+        if mod is None:
+            mod = find_module_for_tool(mod_name)
         if mod is None:
             return f"refused: unknown module {mod_name}"
         job_args = args.get("arguments")
