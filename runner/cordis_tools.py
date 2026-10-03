@@ -84,17 +84,34 @@ def _parse_arguments(call: dict[str, Any]) -> dict[str, Any]:
         try:
             args = json.loads(raw) if raw.strip() else {}
         except json.JSONDecodeError:
-            return {}
-    elif isinstance(raw, dict):
+            return {"arguments": raw.strip()}
+    elif isinstance(raw, (dict, list)):
         args = raw
     else:
         args = {}
-    return args if isinstance(args, dict) else {}
+    return args if isinstance(args, dict) else {"arguments": args}
 
 
-def _arguments_to_argv(mod: dict[str, Any], arguments: dict[str, Any]) -> list[str]:
+def _arguments_to_argv(mod: dict[str, Any], arguments: Any) -> list[str]:
     if not arguments:
         return []
+    if isinstance(arguments, str):
+        return [arguments.strip()] if arguments.strip() else []
+    if isinstance(arguments, list):
+        return [str(a) for a in arguments if str(a).strip()]
+    if not isinstance(arguments, dict):
+        return []
+
+    # Unwrap single wrapper key: {"arguments": ...}
+    if len(arguments) == 1 and "arguments" in arguments:
+        inner = arguments["arguments"]
+        if isinstance(inner, dict):
+            arguments = inner
+        elif isinstance(inner, list):
+            return [str(a) for a in inner if str(a).strip()]
+        elif isinstance(inner, str):
+            return [inner.strip()] if inner.strip() else []
+
     name = str(mod.get("name") or "")
     if name == "mcp.terminal":
         raw_cmd = arguments.get("argv") or arguments.get("command") or arguments.get("cmd") or []
@@ -133,6 +150,16 @@ def _arguments_to_argv(mod: dict[str, Any], arguments: dict[str, Any]) -> list[s
                 if val not in (None, ""):
                     out.extend([f"--{k}", str(val)])
             return out
+    if name == "mcp.memory.read":
+        file_val = (
+            arguments.get("file_id")
+            or arguments.get("file")
+            or arguments.get("path")
+            or arguments.get("filename")
+            or arguments.get("target")
+        )
+        if file_val not in (None, ""):
+            return [str(file_val).strip()]
     if "argv" in arguments and isinstance(arguments["argv"], list):
         return [str(a) for a in arguments["argv"]]
 
@@ -162,6 +189,13 @@ def _arguments_to_argv(mod: dict[str, Any], arguments: dict[str, Any]) -> list[s
                 out.append(str(arguments[key]))
         if out:
             return out
+        # If no explicit prop matched, but arguments has a single string/list value
+        if len(arguments) == 1:
+            only_val = next(iter(arguments.values()))
+            if isinstance(only_val, str) and only_val.strip():
+                return [only_val.strip()]
+            if isinstance(only_val, list):
+                return [str(a) for a in only_val if str(a).strip()]
     return []
 
 
@@ -217,9 +251,9 @@ def handle_cordis_tool(
         if mod is None:
             return f"refused: unknown module {mod_name}"
         job_args = args.get("arguments")
-        if not isinstance(job_args, dict):
+        if job_args is None:
             job_args = {k: v for k, v in args.items() if k != "name"}
-        if str(mod.get("name") or "") == "mcp.schedule.add":
+        if str(mod.get("name") or "") == "mcp.schedule.add" and isinstance(job_args, dict):
             job_args = dict(job_args)
             if not job_args.get("user") and default_user:
                 job_args["user"] = default_user

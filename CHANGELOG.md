@@ -17,6 +17,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Module alias fallback via `find_module_for_tool` in `call_job` routing.
 - Clean error handling around `_complete_once` in `runner.loop` emitting error trailer without crashing.
 
+### Fixed
+- Cordis tool argument parser normalizes list, string, and aliased parameter structures (e.g. `file`, `path` for `file_id`) to prevent empty argv dispatch.
+
 ## [0.0.2] - 2026-09-27
 
 ### Added
