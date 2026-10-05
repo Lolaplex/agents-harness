@@ -177,6 +177,34 @@ def _arguments_to_argv(mod: dict[str, Any], arguments: Any) -> list[str]:
         return [str(target)] if target else []
     if name == "mcp.schedule.list":
         return []
+    if name == "mcp.calendar.add":
+        out = []
+        summary = arguments.get("summary")
+        dtstart = arguments.get("dtstart")
+        dtend = arguments.get("dtend")
+        if summary:
+            out.extend(["--summary", str(summary)])
+        if dtstart:
+            out.extend(["--dtstart", str(dtstart)])
+        if dtend:
+            out.extend(["--dtend", str(dtend)])
+        for k in ("calendar", "location", "description"):
+            val = arguments.get(k)
+            if val not in (None, ""):
+                out.extend([f"--{k}", str(val)])
+        return out
+    if name == "mcp.calendar.list":
+        out = []
+        start = arguments.get("from") or arguments.get("start")
+        end = arguments.get("to") or arguments.get("end")
+        if start:
+            out.extend(["--from", str(start)])
+        if end:
+            out.extend(["--to", str(end)])
+        cal = arguments.get("calendar")
+        if cal not in (None, ""):
+            out.extend(["--calendar", str(cal)])
+        return out
     query = str(arguments.get("query") or arguments.get("q") or "").strip()
     if query:
         return [query]
