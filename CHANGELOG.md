@@ -24,6 +24,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Module alias fallback via `find_module_for_tool` in `call_job` routing.
 - Clean error handling around `_complete_once` in `runner.loop` emitting error trailer without crashing.
 
+### Changed
+- CI is one job on every pull request and on manual dispatch: Ubuntu, Python 3.12, tests, then build and `twine check`. The merge notification workflows and the failure webhook job are removed.
+
 ### Fixed
 - Cron ticks no longer treat the clock as UTC when the job has a timezone, and a second tick in the same minute no longer double-fires.
 - A SKIPPED routine no longer consumes its cron slot or one-shot manifest. `tick()` does not hold the file lock while jobs run.
