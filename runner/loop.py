@@ -14,9 +14,11 @@ import os
 import re
 import sys
 import uuid
-from typing import Any
+from typing import Any, Callable
 
+from .attachments import render_user_content, vision_enabled
 from .cordis_tools import handle_cordis_tool, is_cordis_tool
+from .fence import FENCE_SYSTEM_NOTE, HarnessMessage, fence_untrusted, present_tool_result
 from .delivery import bind_delivery
 from .executor import execute_job, list_schedules
 from .modules import (
@@ -25,7 +27,8 @@ from .modules import (
     openai_tool_name,
     openai_tools,
 )
-from .providers import CompletionRequest, CompletionResult, get_provider, list_providers
+from .providers import CompletionRequest, CompletionResult, find_provider, get_provider, list_providers
+from .skills import skills_prompt_block
 
 
 def _assemble(session: str, limit: int) -> list[dict[str, Any]]:
@@ -71,14 +74,39 @@ def _emit_trailer(
     alias: str,
     mode: str,
     seal_digest: str = "",
+    seal_error: str = "",
 ) -> None:
     if mode != "buffered":
         return
     data = {"session": session, "user_id": user_id, "alias": alias}
     if seal_digest:
         data["seal"] = seal_digest
+    elif seal_error:
+        data["seal_error"] = seal_error
     trailer = json.dumps(data, ensure_ascii=False)
     print(f"{LOOP_TRAILER_MARKER}\n{trailer}", file=sys.stdout, flush=True)
+
+
+def _seal_session(session: str) -> tuple[str, str]:
+    """Return ``(digest, error)`` for the session's tool-call hash chain.
+
+    Sealing needs the agents-traces audit API (``agents_traces.audit``).
+    Releases without it (0.0.3 and older) still record traces, so report
+    why there is no seal instead of dropping it silently.
+    """
+    try:
+        from agents_traces.audit import events_to_records, seal_records
+        from agents_traces.store import TraceStore
+    except ImportError:
+        return "", "agents-traces audit API unavailable (agents_traces.audit missing)"
+    try:
+        recs = events_to_records(TraceStore().get_events_for_session(session))
+        links = seal_records(recs) if recs else []
+    except Exception as e:
+        return "", f"seal failed: {type(e).__name__}: {e}"
+    if not links:
+        return "", "no tool calls to seal"
+    return links[-1].digest, ""
 
 
 def _record_tool(
@@ -116,11 +144,57 @@ def _record_tool(
         pass
 
 
+def _augment_system(system: str) -> str:
+    chunks = [system.strip()] if system and system.strip() else []
+    chunks.append(FENCE_SYSTEM_NOTE)
+    block = skills_prompt_block()
+    if block:
+        chunks.append(block)
+    return "\n\n".join(chunks)
+
+
+def _tool_source(name: str, raw_args: Any) -> str:
+    if name != "call_job":
+        return name or "tool"
+    payload: Any = raw_args
+    if isinstance(payload, str):
+        try:
+            payload = json.loads(payload) if payload.strip() else {}
+        except json.JSONDecodeError:
+            return name
+    if isinstance(payload, dict):
+        mod_name = str(payload.get("name") or "").strip()
+        if mod_name:
+            return mod_name
+    return name or "tool"
+
+
+def _tool_call_mutates(name: str, args_str: str) -> bool:
+    """Mutator check for in-turn loop protection. Catalog flag wins when the module resolves."""
+    if name != "call_job":
+        return False
+    mod_name = ""
+    try:
+        parsed = json.loads(args_str) if args_str else {}
+    except json.JSONDecodeError:
+        parsed = {}
+    if isinstance(parsed, dict):
+        mod_name = str(parsed.get("name") or "")
+    if mod_name:
+        mod = find_module(mod_name)
+        if mod is not None:
+            from .approval import module_is_mutator
+
+            return module_is_mutator(mod)
+    return any(tok in args_str for tok in ("write", "add", "remove", "terminal", "delete"))
+
+
 def _run_tool_calls(
     calls: list[Any],
     *,
     session: str = "",
     default_user: str = "",
+    default_channel: str = "",
     default_timezone: str = "",
     on_status: Callable[[str], None] | None = None,
     turn_cache: dict[tuple[str, str], str] | None = None,
@@ -158,20 +232,24 @@ def _run_tool_calls(
                 args_str = raw_args.strip()
 
             call_key = (name, args_str)
-            is_mutator = (
-                name in ("mcp_docs_write", "mcp_memory_add", "mcp_schedule_add", "mcp_schedule_remove", "mcp_terminal")
-                or (name == "call_job" and any(m in args_str for m in ("write", "add", "remove", "terminal", "delete")))
-            )
+            is_mutator = _tool_call_mutates(name, args_str)
+            source = _tool_source(name, raw_args)
 
             if turn_cache is not None and not is_mutator and call_key in turn_cache:
                 prev_out = turn_cache[call_key]
-                content = f"[Notice: '{name}' was already called with identical arguments earlier in this turn. State has not changed. Output was: {prev_out[:200]}]"
+                content = HarnessMessage(
+                    f"[Notice: '{name}' was already called with identical arguments earlier in this turn. "
+                    "State has not changed. Previous output:] "
+                    + fence_untrusted(source, prev_out[:500])
+                )
             else:
                 content = handle_cordis_tool(
                     name,
                     call,
                     default_user=default_user,
+                    default_channel=default_channel,
                     default_timezone=default_timezone,
+                    session=session,
                 )
                 if turn_cache is not None:
                     if is_mutator:
@@ -189,7 +267,11 @@ def _run_tool_calls(
             status="ok" if not content.startswith("refused") else "error",
         )
         messages.append(
-            {"role": "tool", "tool_call_id": call_id, "content": content}
+            {
+                "role": "tool",
+                "tool_call_id": call_id,
+                "content": present_tool_result(source if is_cordis_tool(name) else name, content),
+            }
         )
     return messages
 
@@ -271,11 +353,15 @@ def build_payload(
     aliases: list[str] | None = None,
     start_date: str = "",
     include_clock: bool = True,
+    attachments: list[str] | None = None,
+    vision: bool = False,
 ) -> list[dict[str, Any]]:
     """system (cached) → history → clock → new user turn.
 
     Clock is last-before-user so it cannot invalidate the system prefix.
     """
+    system = _augment_system(system)
+    user_content = render_user_content(user_message, attachments, vision=vision)
     try:
         from agents_traces.prompt import PromptParts, clock_message, system_messages
     except ImportError:
@@ -310,8 +396,8 @@ def build_payload(
             messages.append(
                 {"role": "system", "content": f"<clock>{weekday} {stamp}</clock>"}
             )
-        if user_message:
-            messages.append({"role": "user", "content": user_message})
+        if user_content:
+            messages.append({"role": "user", "content": user_content})
         return messages
 
     parts = PromptParts(
@@ -330,14 +416,125 @@ def build_payload(
     messages.extend(_assemble(session, limit=limit))
     if include_clock:
         messages.append(clock_message(timezone_name=timezone_name))
-    if user_message:
-        messages.append({"role": "user", "content": user_message})
+    if user_content:
+        messages.append({"role": "user", "content": user_content})
     return messages
+
+
+def _legacy_detached_session(session: str) -> bool:
+    """A session id starting with ``routine:`` stays detached for older callers."""
+    return (session or "").strip().lower().startswith("routine:")
+
+
+def _turn_is_detached(args: argparse.Namespace) -> bool:
+    """This turn uses its session without replacing the person's active session."""
+    if bool(getattr(args, "detached_session", False)):
+        return True
+    return _legacy_detached_session(getattr(args, "session", None) or "")
+
+
+def _alias_id(channel: str, user: str) -> str:
+    try:
+        from agents_traces.identity import alias_id
+    except ImportError:
+        ch = (channel or "local").strip().lower().replace(" ", "-")
+        return f"{ch}:{str(user).strip()}"
+    return alias_id(channel, user)
+
+
+def _lookup_person(ident: Any, *, channel: str, user: str, user_id: str) -> Any:
+    person = None
+    if user_id and hasattr(ident, "get_user"):
+        person = ident.get_user(user_id)
+    if person is None and channel and str(user).strip() and hasattr(ident, "find_by_alias"):
+        person = ident.find_by_alias(_alias_id(channel, user))
+    return person
+
+
+def _prior_chat_session(ident: Any, *, channel: str, user: str, user_id: str) -> str:
+    person = _lookup_person(ident, channel=channel, user=user, user_id=user_id)
+    if person is None:
+        return ""
+    active = str(getattr(person, "active_session", "") or "")
+    if _legacy_detached_session(active):
+        return ""
+    return active
+
+
+def _restore_chat_session(
+    ident: Any,
+    *,
+    user_id: str,
+    explicit_session: str,
+    prior_active: str,
+    force: bool,
+) -> None:
+    if not hasattr(ident, "get_user"):
+        return
+    person = ident.get_user(user_id)
+    if person is None:
+        return
+    current = str(getattr(person, "active_session", "") or "")
+    if not force and current != explicit_session and not _legacy_detached_session(current):
+        return
+    person.active_session = prior_active
+    ident.save()
+
+
+def resolve_identity_store(ident: Any, args: argparse.Namespace) -> Any:
+    """Resolve a turn. A detached session is not left as the active session.
+
+    ``--detached-session`` runs in the given session and then restores the
+    previous active session. A session id that starts with ``routine:`` does
+    the same without the flag.
+
+    agents-traces ``IdentityStore.resolve`` sets ``active_session`` for every
+    explicit session. This restores the previous chat session after that write.
+    """
+    explicit = (getattr(args, "session", None) or "").strip()
+    detached = _turn_is_detached(args)
+    prior = ""
+    if detached:
+        prior = _prior_chat_session(
+            ident,
+            channel=getattr(args, "channel", "") or "",
+            user=getattr(args, "user", "") or "",
+            user_id=getattr(args, "user_id", "") or "",
+        )
+    resolved = ident.resolve(
+        channel=args.channel,
+        user=args.user,
+        user_id=args.user_id,
+        session=args.session or "",
+        new_session=args.new_session,
+        project=args.project,
+        legacy_exists=_session_has_events(),
+    )
+    if detached:
+        try:
+            _restore_chat_session(
+                ident,
+                user_id=str(getattr(resolved.user, "id", "") or ""),
+                explicit_session=explicit,
+                prior_active=prior,
+                force=bool(getattr(args, "detached_session", False)),
+            )
+        except Exception as exc:
+            print(f"[!] detached session left active: {exc}", file=sys.stderr)
+    return resolved
+
+
+def _session_has_events():
+    try:
+        from agents_traces.identity import session_has_events
+    except ImportError:
+        return None
+    return session_has_events
 
 
 def _resolve_identity(args: argparse.Namespace):
     try:
-        from agents_traces.identity import IdentityStore, session_has_events
+        from agents_traces.identity import IdentityStore
     except ImportError:
         from types import SimpleNamespace
 
@@ -359,16 +556,7 @@ def _resolve_identity(args: argparse.Namespace):
             session=SimpleNamespace(id=sid, start_date=""),
         )
 
-    ident = IdentityStore()
-    return ident.resolve(
-        channel=args.channel,
-        user=args.user,
-        user_id=args.user_id,
-        session=args.session or "",
-        new_session=args.new_session,
-        project=args.project,
-        legacy_exists=session_has_events,
-    )
+    return resolve_identity_store(IdentityStore(), args)
 
 
 def _complete_once(provider: Any, req: CompletionRequest) -> CompletionResult:
@@ -380,12 +568,24 @@ def main(argv: list[str] | None = None) -> int:
         description="Per-request loop: assemble trace, complete, or call a Cordis module"
     )
     parser.add_argument("--session", help="Thread id (ses_…); omit to resume the user's active session")
+    parser.add_argument(
+        "--detached-session",
+        action="store_true",
+        help="Use --session for this turn only. Do not store it as the person's active session. A session id starting with routine: is detached even without this flag.",
+    )
     parser.add_argument("--channel", default="local", help="Alias scheme (telegram, http, cli, …)")
     parser.add_argument("--user", default="", help="Channel handle (chat id, login, …)")
     parser.add_argument("--user-id", default="", dest="user_id", help="Canonical person id (binds this alias)")
     parser.add_argument("--new-session", action="store_true", help="Start a new thread for this user")
     parser.add_argument("--project", default="", help="Current project for runtime_context")
     parser.add_argument("--message", default="", help="New user turn")
+    parser.add_argument(
+        "--attach",
+        action="append",
+        default=None,
+        metavar="PATH",
+        help="Attach a file (repeatable). Images are vision parts when AGENTS_VISION=1 or the provider advertises vision; otherwise the path is text.",
+    )
     parser.add_argument("--limit", type=int, default=24, help="History turns to rebuild")
     parser.add_argument("--system", default="", help="Optional instructions blob (stable prefix)")
     parser.add_argument("--provider", default="", help="Provider name (openai.default, echo, …)")
@@ -492,6 +692,10 @@ def main(argv: list[str] | None = None) -> int:
     project = (args.project or "").strip()
     timezone_name = (resolved.user.timezone or profile.get("timezone") or "").strip()
 
+    attachments = [str(item) for item in (args.attach or []) if str(item).strip()]
+    provider_manifest = find_provider(args.provider) if args.provider else None
+    vision = vision_enabled(provider_manifest)
+
     system = args.system
     if system:
         from pathlib import Path
@@ -519,6 +723,8 @@ def main(argv: list[str] | None = None) -> int:
         timezone_name=timezone_name,
         aliases=resolved.user.aliases,
         start_date=resolved.session.start_date,
+        attachments=attachments,
+        vision=vision,
     )
     if args.assemble_only or not args.complete:
         print(
@@ -538,17 +744,21 @@ def main(argv: list[str] | None = None) -> int:
         if not args.complete:
             return 0
 
-    if not user_text and not args.assemble_only:
+    if not user_text and not attachments and not args.assemble_only:
         print("Error: --message is required unless --assemble-only with existing history", file=sys.stderr)
         return 1
 
     provider = get_provider(args.provider)
     mode, on_status, on_delta, emit = bind_delivery(args.channel, override=args.deliver)
-    if user_text:
+    if user_text or attachments:
+        recorded = user_text
+        if attachments:
+            suffix = "\n".join(f"[attach] {path}" for path in attachments)
+            recorded = f"{recorded}\n{suffix}".strip() if recorded else suffix
         _record(
             session,
             "user",
-            user_text,
+            recorded,
             args.channel,
             args.user,
             resolved.user.id,
@@ -590,6 +800,7 @@ def main(argv: list[str] | None = None) -> int:
             result.tool_calls,
             session=session,
             default_user=args.user,
+            default_channel=args.channel,
             default_timezone=timezone_name,
             on_status=on_status,
             turn_cache=turn_cache,
@@ -643,6 +854,7 @@ def main(argv: list[str] | None = None) -> int:
             result.tool_calls,
             session=session,
             default_user=args.user,
+            default_channel=args.channel,
             default_timezone=timezone_name,
             on_status=on_status,
             turn_cache=turn_cache,
@@ -700,22 +912,14 @@ def main(argv: list[str] | None = None) -> int:
             project=project,
         )
 
-    seal_digest = ""
+    seal_digest, seal_error = "", ""
     if getattr(args, "seal", False):
-        try:
-            from agents_traces.audit import events_to_records, seal_records
-            from agents_traces.store import TraceStore
-
-            st = TraceStore()
-            evs = st.get_events_for_session(session)
-            recs = events_to_records(evs)
-            if recs:
-                links = seal_records(recs)
-                seal_digest = links[-1].digest if links else ""
-                if on_status and seal_digest:
-                    on_status(f"trace sealed ({seal_digest[:16]}...)")
-        except Exception:
-            pass
+        seal_digest, seal_error = _seal_session(session)
+        if on_status:
+            if seal_digest:
+                on_status(f"trace sealed ({seal_digest[:16]}...)")
+            else:
+                on_status(f"trace not sealed: {seal_error}")
 
     emit(final_text)
     _emit_trailer(
@@ -725,6 +929,7 @@ def main(argv: list[str] | None = None) -> int:
         alias=resolved.alias,
         mode=mode,
         seal_digest=seal_digest,
+        seal_error=seal_error,
     )
     return 0
 

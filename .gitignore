@@ -10,3 +10,8 @@ logs/
 build/
 dist/
 
+
+# Personal memory injection files are user-specific: .agents/AGENTS.md,
+# .agents/memory/, .cursor/rules/user-rules.mdc, CLAUDE.md. The repo-root
+# AGENTS.md stays tracked.
+CLAUDE.md

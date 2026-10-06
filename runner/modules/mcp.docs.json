@@ -6,5 +6,6 @@
   "verb": "python -m agents_docs --help-json",
   "rests_on": "agents-docs catalog/search CLI, exit 0 = module present",
   "expected_exit": 0,
+  "mutates": false,
   "timeout_sec": 30
 }

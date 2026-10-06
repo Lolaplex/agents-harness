@@ -4,7 +4,8 @@
   "when": "on_request",
   "cadence": "on_request",
   "verb": "python -c \"print('skill catalog')\"",
-  "rests_on": "SKILL.md files on disk, injected into per-request system context when named, not executed as shell",
+  "rests_on": "Compatibility alias of skill.list. Prefer skill.list and skill.load.",
+  "mutates": false,
   "expected_exit": 0,
   "timeout_sec": 10
 }

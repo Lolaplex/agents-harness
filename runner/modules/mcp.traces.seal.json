@@ -6,6 +6,7 @@
   "verb": "python -m agents_traces seal",
   "rests_on": "agents-traces CLI cryptographic SHA-256 hash sealing of session tool calls; exit 0 = sealed",
   "expected_exit": 0,
+  "mutates": true,
   "timeout_sec": 30,
   "as_tool": true,
   "parameters": {

@@ -87,6 +87,21 @@ def find_provider(name: str, providers_dir: Path | None = None) -> dict[str, Any
     return None
 
 
+def message_text(content: Any) -> str:
+    """Plain text from a string message or a vision content-part list."""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        bits: list[str] = []
+        for part in content:
+            if isinstance(part, str):
+                bits.append(part)
+            elif isinstance(part, dict) and part.get("type") == "text":
+                bits.append(str(part.get("text") or ""))
+        return "\n".join(bit for bit in bits if bit)
+    return str(content or "")
+
+
 class EchoProvider:
     """Test double. Same complete() shape; returns the last user text."""
 
@@ -97,8 +112,7 @@ class EchoProvider:
         text = ""
         for msg in reversed(req.messages):
             if msg.get("role") == "user":
-                content = msg.get("content") or ""
-                text = content if isinstance(content, str) else str(content)
+                text = message_text(msg.get("content") or "")
                 break
         text = text or "(echo)"
         if req.on_status:
@@ -135,8 +149,7 @@ class ScriptedToolProvider:
         if not query:
             for msg in reversed(req.messages):
                 if msg.get("role") == "user":
-                    content = msg.get("content") or ""
-                    query = content if isinstance(content, str) else str(content)
+                    query = message_text(msg.get("content") or "")
                     break
         job_name = str(self.tool_arguments.get("name") or "mcp.memory.search")
         job_args = dict(self.tool_arguments.get("arguments") or {})
