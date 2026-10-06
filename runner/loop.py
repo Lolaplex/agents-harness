@@ -74,14 +74,39 @@ def _emit_trailer(
     alias: str,
     mode: str,
     seal_digest: str = "",
+    seal_error: str = "",
 ) -> None:
     if mode != "buffered":
         return
     data = {"session": session, "user_id": user_id, "alias": alias}
     if seal_digest:
         data["seal"] = seal_digest
+    elif seal_error:
+        data["seal_error"] = seal_error
     trailer = json.dumps(data, ensure_ascii=False)
     print(f"{LOOP_TRAILER_MARKER}\n{trailer}", file=sys.stdout, flush=True)
+
+
+def _seal_session(session: str) -> tuple[str, str]:
+    """Return ``(digest, error)`` for the session's tool-call hash chain.
+
+    Sealing needs the agents-traces audit API (``agents_traces.audit``).
+    Releases without it (0.0.3 and older) still record traces, so report
+    why there is no seal instead of dropping it silently.
+    """
+    try:
+        from agents_traces.audit import events_to_records, seal_records
+        from agents_traces.store import TraceStore
+    except ImportError:
+        return "", "agents-traces audit API unavailable (agents_traces.audit missing)"
+    try:
+        recs = events_to_records(TraceStore().get_events_for_session(session))
+        links = seal_records(recs) if recs else []
+    except Exception as e:
+        return "", f"seal failed: {type(e).__name__}: {e}"
+    if not links:
+        return "", "no tool calls to seal"
+    return links[-1].digest, ""
 
 
 def _record_tool(
@@ -893,22 +918,14 @@ def main(argv: list[str] | None = None) -> int:
             project=project,
         )
 
-    seal_digest = ""
+    seal_digest, seal_error = "", ""
     if getattr(args, "seal", False):
-        try:
-            from agents_traces.audit import events_to_records, seal_records
-            from agents_traces.store import TraceStore
-
-            st = TraceStore()
-            evs = st.get_events_for_session(session)
-            recs = events_to_records(evs)
-            if recs:
-                links = seal_records(recs)
-                seal_digest = links[-1].digest if links else ""
-                if on_status and seal_digest:
-                    on_status(f"trace sealed ({seal_digest[:16]}...)")
-        except Exception:
-            pass
+        seal_digest, seal_error = _seal_session(session)
+        if on_status:
+            if seal_digest:
+                on_status(f"trace sealed ({seal_digest[:16]}...)")
+            else:
+                on_status(f"trace not sealed: {seal_error}")
 
     emit(final_text)
     _emit_trailer(
@@ -918,6 +935,7 @@ def main(argv: list[str] | None = None) -> int:
         alias=resolved.alias,
         mode=mode,
         seal_digest=seal_digest,
+        seal_error=seal_error,
     )
     return 0
 

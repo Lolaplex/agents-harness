@@ -489,8 +489,23 @@ class TestModulesAndLoop(unittest.TestCase):
             if importlib.util.find_spec("agents_traces") is None:
                 return
             trailer = json.loads(raw.split(LOOP_TRAILER_MARKER)[1].strip())
+            if importlib.util.find_spec("agents_traces.audit") is None:
+                # agents-traces without the audit API (0.0.3 and older): no
+                # digest, and the trailer must say why.
+                self.assertNotIn("seal", trailer)
+                self.assertIn("agents_traces.audit", trailer.get("seal_error", ""))
+                return
+            self.assertNotIn("seal_error", trailer)
             self.assertIn("seal", trailer)
-            self.assertEqual(len(trailer["seal"]), 64)
+            self.assertRegex(trailer["seal"], r"^[0-9a-f]{64}$")
+            from agents_traces.audit import events_to_records, seal_records
+            from agents_traces.store import TraceStore
+
+            recs = events_to_records(
+                TraceStore(traces_dir).get_events_for_session(trailer["session"])
+            )
+            self.assertTrue(recs)
+            self.assertEqual(trailer["seal"], seal_records(recs)[-1].digest)
 
     def test_tool_result_is_fenced_denial_is_not(self):
         class ListThenAnswer:

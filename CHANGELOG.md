@@ -32,6 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `tick(wait=False)` returns after claiming due jobs. The CLI still waits for them.
 - A failed or timed-out one-shot is still removed (no retry). The failure is logged and `last_result` is kept in `tick-state.json`.
 - `mcp.schedule.add` copies the turn's `channel` onto the job when the call omits it, the same way it copies `user`.
+- `--seal` no longer drops the seal silently when agents-traces lacks the audit API (0.0.3 and older) or sealing fails; the trailer carries `seal_error` with the reason instead of `seal`.
 - Cordis tool argument parser normalizes list, string, and aliased parameter structures (e.g. `file`, `path` for `file_id`) to prevent empty argv dispatch.
 
 ## [0.0.2] - 2026-09-27
