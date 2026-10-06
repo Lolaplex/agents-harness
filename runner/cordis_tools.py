@@ -232,6 +232,30 @@ def _arguments_to_argv(mod: dict[str, Any], arguments: Any) -> list[str]:
         if cal not in (None, ""):
             out.extend(["--calendar", str(cal)])
         return out
+    if name == "mcp.calendar.calendars":
+        return []
+    if name == "mcp.calendar.update":
+        out = []
+        for flag, key in (
+            ("--href", "href"),
+            ("--etag", "etag"),
+            ("--summary", "summary"),
+            ("--dtstart", "dtstart"),
+            ("--dtend", "dtend"),
+            ("--location", "location"),
+            ("--description", "description"),
+        ):
+            val = arguments.get(key)
+            if val not in (None, ""):
+                out.extend([flag, str(val)])
+        return out
+    if name == "mcp.calendar.delete":
+        out = []
+        for flag, key in (("--href", "href"), ("--etag", "etag")):
+            val = arguments.get(key)
+            if val not in (None, ""):
+                out.extend([flag, str(val)])
+        return out
     query = str(arguments.get("query") or arguments.get("q") or "").strip()
     if query:
         return [query]

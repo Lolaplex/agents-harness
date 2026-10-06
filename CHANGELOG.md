@@ -10,6 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.1.0] - 2026-10-06
 
 ### Added
+- System-prefix hard rules from agents-memory (`agents-memory context` / `render_rules`) once per process+project, soft-fail when memory is missing. Disable with `AGENTS_MEMORY_RULES=0`. Cordis modules unchanged.
+- Bundled Cordis modules `mcp.calendar.list|add|update|delete|calendars` so hosts without a klanker overlay still get calendar tools (needs agents-calendar 0.1.0+).
 - Approval gate for mutating `call_job` tools (`AGENTS_APPROVAL_CMD`, `AGENTS_APPROVAL_MODE`, `{user}` substitution). A denial tells the model not to retry.
 - Untrusted-data fence around tool results, plus a system-prompt note. Only messages the harness builds itself (approval denials, loop notices) skip the fence; they are marked by type, so tool output starting with `Denied:` or `[Notice:` is still fenced. Redaction is unchanged.
 - External MCP client (`~/.agents/mcp.json`) exposing `mcp.<server>.<tool>` modules (`kind: mcp_remote`) via the optional `mcp` extra. Short-lived sessions; schema cache.

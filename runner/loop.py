@@ -29,6 +29,7 @@ from .modules import (
 )
 from .providers import CompletionRequest, CompletionResult, find_provider, get_provider, list_providers
 from .skills import skills_prompt_block
+from .memory_rules import memory_rules_prompt_block
 
 
 def _assemble(session: str, limit: int) -> list[dict[str, Any]]:
@@ -144,9 +145,12 @@ def _record_tool(
         pass
 
 
-def _augment_system(system: str) -> str:
+def _augment_system(system: str, project: str = "") -> str:
     chunks = [system.strip()] if system and system.strip() else []
     chunks.append(FENCE_SYSTEM_NOTE)
+    rules = memory_rules_prompt_block(project)
+    if rules:
+        chunks.append(rules)
     block = skills_prompt_block()
     if block:
         chunks.append(block)
@@ -360,7 +364,7 @@ def build_payload(
 
     Clock is last-before-user so it cannot invalidate the system prefix.
     """
-    system = _augment_system(system)
+    system = _augment_system(system, project=project)
     user_content = render_user_content(user_message, attachments, vision=vision)
     try:
         from agents_traces.prompt import PromptParts, clock_message, system_messages
