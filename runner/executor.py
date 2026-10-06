@@ -206,6 +206,13 @@ def append_log(record: Dict[str, Any], path: Optional[Path]) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
+    try:
+        from . import __version__
+        from .updates import check_for_updates
+
+        check_for_updates("agents-harness", __version__)
+    except Exception:
+        pass
     parser = argparse.ArgumentParser(description="agents-harness declarative scheduled flow runner")
     parser.add_argument("--list", action="store_true", help="List all discovered schedule manifests")
     parser.add_argument("--validate", action="store_true", help="Validate manifest syntax and requirements")
