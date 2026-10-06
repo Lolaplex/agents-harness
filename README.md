@@ -1,4 +1,4 @@
-# agents-harness
+<h1 align="center">agents-harness</h1>
 
 <p align="center">
   <a href="https://github.com/Lolaplex/agents-harness/releases"><img src="https://img.shields.io/badge/version-0.1.0-blue.svg?style=flat-square" alt="Version 0.1.0"></a>
