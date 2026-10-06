@@ -6,6 +6,7 @@
   "verb": "python -m runner.schedule list",
   "rests_on": "agents-harness CLI list dynamic schedules and reminders; exit 0 = listed",
   "expected_exit": 0,
+  "mutates": false,
   "timeout_sec": 30,
   "as_tool": true,
   "parameters": {

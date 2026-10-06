@@ -58,7 +58,12 @@ pip install "agents-harness[mcp]"
 - [x] **Cordis CLI Tool Round**: Declared CLI verbs (`runner/modules/*.json`) mapped as OpenAI-compatible function tools.
 - [x] **Job Kernel (`runner.kernel`)**: Declarative AST checking, mixing, and deterministic term reduction (`norm`, `konst`, `comp`, `app`).
 - [x] **Koru Schedules (`runner.executor`)**: Declarative scheduled flow manifests (`runner/schedules/*.json`) with exit code health semantics (`exit 0 = healthy`).
-- [x] **Dynamic Reminders (`runner.schedule`)**: Dynamic one-shot & recurring due tasks ticked via cron / task runners.
+- [x] **Dynamic Reminders (`runner.schedule`)**: Dynamic one-shot, cron, and routine jobs. `tick()` is in-process safe (file lock, timezone, grace window) and still callable from host cron.
+- [x] **Approval gate**: `AGENTS_APPROVAL_CMD` / `AGENTS_APPROVAL_MODE` before mutating `call_job` tools.
+- [x] **Untrusted tool fence**: tool results are wrapped for the model; redaction stays.
+- [x] **External MCP client**: `~/.agents/mcp.json` tools show up as `mcp.<server>.<tool>`.
+- [x] **Skills**: `skill.list` / `skill.load` read `~/.agents/skills/*/SKILL.md`.
+- [x] **Attachments**: `--attach` sends images as vision parts when vision is enabled.
 - [x] **Provider Streaming**: Streaming completions with prefill (`first_byte_sec`) and stall (`idle_sec`) hang detection.
 - [x] **Decoupled Identity**: Decoupled alias (`telegram:123`), user (`u_...`), and session (`ses_...`) directory.
 - [x] **FastMCP Interface (`runner.mcp_server`)**: Exposes `list_catalog`, `load_schema`, and `call_job` for MCP hosts.
@@ -103,11 +108,34 @@ python -m runner.loop --user 123 --message "hello" --assemble-only
 # Complete request with a provider
 python -m runner.loop --user probe --message "status report" --complete --provider openai.default
 
-# Tick dynamic due reminders
+# Tick dynamic due reminders (also safe to call in-process from klanker serve)
 python -m runner.schedule tick
+
+# Assemble a turn with an image (vision parts when AGENTS_VISION=1)
+python -m runner.loop --user 123 --message "what is this?" --attach ./shot.png --assemble-only
 ```
 
 ---
+
+## Approval, skills, schedules, attachments
+
+Mutating `call_job` tools ask first when `AGENTS_APPROVAL_CMD` is set. `{user}` in that command becomes the turn's channel user. `AGENTS_APPROVAL_MODE=ask` gates mutators (the default once a command is set). Creating or listing a schedule does not ask in `ask` mode; removing one does. `strict` gates every tool that is not read-only, including schedule create. `off`, or no command, keeps the old behavior. Exit 0 approves, 1 denies, 2 is timeout/unavailable (denied). A denial tells the model not to retry.
+
+Every tool result the model sees is wrapped in `<untrusted_data source="...">...</untrusted_data>` after redaction. Denials stay outside that fence.
+
+Skills live in `~/.agents/skills/<name>/SKILL.md` (`AGENTS_SKILLS_DIR`, plus `AGENTS_SKILLS_EXTRA`). The system prompt lists name and description. `skill.load` returns the file. `skill.catalog` is a compatibility alias of `skill.list`.
+
+Cron uses the job's `timezone` (else `AGENTS_TIMEZONE`, `TZ`, or `timezone` in `~/.agents/config.json`). The last fired minute is stored next to the manifests so a double tick does not double-fire, and a miss inside `grace_min` (default 5) still runs once. LLM reminders and routines default to `timeout_sec` 300. `tick()` holds its file lock only while claiming or finalizing, then runs jobs outside the lock. `tick(wait=False)` returns after the claim; `python -m runner.schedule tick` waits. A failed or timed-out one-shot is removed and not retried. The failure is logged, and `last_result` stays in `tick-state.json`. Routine jobs (`--prompt`) are not executed here: register `runner.schedule.register_routine_handler`. With no handler, a routine that has a verb runs that verb; a routine with only a prompt is skipped and its slot or one-shot file is left in place. `mcp.schedule.add` copies the turn's `channel` and `user` onto the job when the call omits them.
+
+`python -m runner.loop --detached-session --session ses_…` runs that turn in `ses_…` and restores the previous active session afterward. A session id that starts with `routine:` is detached the same way without the flag. A host cron or a platform scheduler can call `python -m runner.schedule tick` when it runs as the same user as the service. That process does not inherit environment set only on the long-running service (for example `AGENTS_APPROVAL_CMD`).
+
+## External MCP client
+
+`~/.agents/mcp.json` (override `AGENTS_MCP_CONFIG`) uses the Claude/Cursor `mcpServers` shape, plus optional `allow` / `deny` globs. `${ENV_VAR}` expands in commands, args, env, urls, and headers. See `mcp.client.json.example`.
+
+Each server tool is a catalog module `mcp.<server>.<tool>` (`kind: mcp_remote`) with the server's `inputSchema`. `readOnlyHint: true` is non-mutating; anything else is a mutator for the approval gate. Hand-written modules of the same name win.
+
+The loop process is new every turn. Schemas are cached for `AGENTS_MCP_CACHE_SEC` (default 60). Each call connects, initializes, calls one tool, and disconnects (stdio, streamable HTTP, or SSE). Install the SDK with `pip install "agents-harness[mcp]"`. OAuth is out of scope.
 
 ## MCP Server Integration
 

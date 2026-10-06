@@ -2,13 +2,20 @@ import importlib.util
 import io
 import json
 import os
+import sys
 import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from unittest.mock import patch
 
-from runner.loop import LOOP_TRAILER_MARKER, _parse_text_tool_calls, build_payload, main as loop_main
+from runner.loop import (
+    LOOP_TRAILER_MARKER,
+    _parse_text_tool_calls,
+    build_payload,
+    main as loop_main,
+    resolve_identity_store,
+)
 from runner.modules import list_modules, openai_tools
 from runner.providers import CompletionRequest, CompletionResult, get_provider, list_providers
 
@@ -22,6 +29,8 @@ class TestModulesAndLoop(unittest.TestCase):
         self.assertIn("mcp.traces", names)
         self.assertIn("a2a.peer", names)
         self.assertIn("skill.catalog", names)
+        self.assertIn("skill.list", names)
+        self.assertIn("skill.load", names)
         later = [m for m in mods if m["when"] == "later"]
         self.assertTrue(any(m["kind"] == "a2a" for m in later))
 
@@ -476,9 +485,199 @@ class TestModulesAndLoop(unittest.TestCase):
                         )
             self.assertEqual(rc, 0, err.getvalue())
             raw = out.getvalue()
+            self.assertIn("Done repeating.", raw.split(LOOP_TRAILER_MARKER)[0])
+            if importlib.util.find_spec("agents_traces") is None:
+                return
             trailer = json.loads(raw.split(LOOP_TRAILER_MARKER)[1].strip())
             self.assertIn("seal", trailer)
             self.assertEqual(len(trailer["seal"]), 64)
+
+    def test_tool_result_is_fenced_denial_is_not(self):
+        class ListThenAnswer:
+            def __init__(self):
+                self.seen = []
+
+            def complete(self, req):
+                self.seen.append(req)
+                if any(m.get("role") == "tool" for m in req.messages):
+                    return CompletionResult(text="listed", tool_calls=None)
+                return CompletionResult(
+                    text="",
+                    tool_calls=[
+                        {
+                            "id": "c_list",
+                            "type": "function",
+                            "function": {
+                                "name": "call_job",
+                                "arguments": json.dumps({"name": "skill.list"}),
+                            },
+                        }
+                    ],
+                )
+
+        provider = ListThenAnswer()
+        with tempfile.TemporaryDirectory() as tmp:
+            env = dict(os.environ)
+            env.update(
+                {
+                    "AGENTS_HOME": tmp,
+                    "AGENTS_TRACES_DIR": str(Path(tmp) / "traces"),
+                    "AGENTS_IDENTITY_PATH": str(Path(tmp) / "identity.json"),
+                    "AGENTS_SKILLS_DIR": str(Path(tmp) / "skills"),
+                }
+            )
+            env.pop("AGENTS_APPROVAL_CMD", None)
+            out, err = io.StringIO(), io.StringIO()
+            with patch.dict(os.environ, env, clear=True):
+                with patch("runner.loop.get_provider", return_value=provider):
+                    with redirect_stdout(out), redirect_stderr(err):
+                        rc = loop_main(
+                            [
+                                "--channel",
+                                "local",
+                                "--user",
+                                "fenceuser",
+                                "--new-session",
+                                "--message",
+                                "skills?",
+                                "--complete",
+                                "--provider",
+                                "fake",
+                                "--deliver",
+                                "buffered",
+                            ]
+                        )
+            self.assertEqual(rc, 0, err.getvalue())
+            self.assertIn("untrusted data", provider.seen[0].messages[0]["content"])
+            tool_msgs = [m for m in provider.seen[1].messages if m.get("role") == "tool"]
+            self.assertTrue(tool_msgs[0]["content"].startswith('<untrusted_data source="skill.list">'))
+            self.assertIn("</untrusted_data>", tool_msgs[0]["content"])
+
+        class DenyAdd:
+            def __init__(self):
+                self.seen = []
+
+            def complete(self, req):
+                self.seen.append(req)
+                if any(m.get("role") == "tool" for m in req.messages):
+                    return CompletionResult(text="stopped", tool_calls=None)
+                return CompletionResult(
+                    text="",
+                    tool_calls=[
+                        {
+                            "id": "c_add",
+                            "type": "function",
+                            "function": {
+                                "name": "call_job",
+                                "arguments": json.dumps(
+                                    {"name": "mcp.memory.add", "arguments": {"fact": "nope"}}
+                                ),
+                            },
+                        }
+                    ],
+                )
+
+        denier = DenyAdd()
+        with tempfile.TemporaryDirectory() as tmp:
+            env = dict(os.environ)
+            env.update(
+                {
+                    "AGENTS_HOME": tmp,
+                    "AGENTS_TRACES_DIR": str(Path(tmp) / "traces"),
+                    "AGENTS_IDENTITY_PATH": str(Path(tmp) / "identity.json"),
+                    "AGENTS_SKILLS_DIR": str(Path(tmp) / "skills"),
+                    "AGENTS_APPROVAL_MODE": "ask",
+                    "AGENTS_APPROVAL_CMD": f"{sys.executable} -c \"import sys; sys.exit(1)\"",
+                }
+            )
+            out, err = io.StringIO(), io.StringIO()
+            with patch.dict(os.environ, env, clear=True):
+                with patch("runner.loop.get_provider", return_value=denier):
+                    with redirect_stdout(out), redirect_stderr(err):
+                        rc = loop_main(
+                            [
+                                "--channel",
+                                "local",
+                                "--user",
+                                "denyuser",
+                                "--new-session",
+                                "--message",
+                                "remember this",
+                                "--complete",
+                                "--provider",
+                                "fake",
+                                "--deliver",
+                                "buffered",
+                            ]
+                        )
+            self.assertEqual(rc, 0, err.getvalue())
+            tool_msgs = [m for m in denier.seen[1].messages if m.get("role") == "tool"]
+            self.assertTrue(tool_msgs[0]["content"].startswith("Denied:"))
+            self.assertIn("Do not retry the same tool call.", tool_msgs[0]["content"])
+            self.assertNotIn("<untrusted_data", tool_msgs[0]["content"])
+
+    def test_routine_session_does_not_replace_active_chat(self):
+        from types import SimpleNamespace
+
+        class Person:
+            def __init__(self) -> None:
+                self.id = "u_1"
+                self.active_session = "ses_chat"
+                self.aliases = ["telegram:5712"]
+
+        class Store:
+            def __init__(self) -> None:
+                self.person = Person()
+                self.saved = 0
+
+            def get_user(self, user_id: str):
+                return self.person if user_id == self.person.id else None
+
+            def find_by_alias(self, alias: str):
+                return self.person if alias == "telegram:5712" else None
+
+            def resolve(self, **kwargs):
+                self.person.active_session = kwargs.get("session") or "ses_new"
+                return SimpleNamespace(
+                    user=self.person,
+                    session=SimpleNamespace(id=self.person.active_session, start_date="2026-10-06"),
+                    alias="telegram:5712",
+                )
+
+            def save(self) -> None:
+                self.saved += 1
+
+        store = Store()
+        args = SimpleNamespace(
+            channel="telegram",
+            user="5712",
+            user_id="",
+            session="routine:digest",
+            new_session=False,
+            project="",
+        )
+        resolved = resolve_identity_store(store, args)
+        self.assertEqual(resolved.session.id, "routine:digest")
+        self.assertEqual(store.person.active_session, "ses_chat")
+        self.assertGreaterEqual(store.saved, 1)
+
+        store.person.active_session = "routine:old"
+        resolved = resolve_identity_store(store, args)
+        self.assertEqual(resolved.session.id, "routine:digest")
+        self.assertEqual(store.person.active_session, "")
+
+        args.session = "ses_keep"
+        store.person.active_session = "ses_chat"
+        resolved = resolve_identity_store(store, args)
+        self.assertEqual(store.person.active_session, "ses_keep")
+        self.assertEqual(resolved.session.id, "ses_keep")
+
+        args.session = "ses_side"
+        args.detached_session = True
+        store.person.active_session = "ses_chat"
+        resolved = resolve_identity_store(store, args)
+        self.assertEqual(resolved.session.id, "ses_side")
+        self.assertEqual(store.person.active_session, "ses_chat")
 
 
 if __name__ == "__main__":

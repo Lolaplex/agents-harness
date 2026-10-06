@@ -1,0 +1,21 @@
+{
+  "name": "skill.load",
+  "kind": "skill",
+  "when": "on_request",
+  "cadence": "on_request",
+  "verb": "python -c \"print('skill load')\"",
+  "rests_on": "Return one SKILL.md by name. call_job reads the file in-process.",
+  "expected_exit": 0,
+  "timeout_sec": 10,
+  "mutates": false,
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "name": {
+        "type": "string",
+        "description": "Skill name (frontmatter name, else directory name)"
+      }
+    },
+    "required": ["name"]
+  }
+}

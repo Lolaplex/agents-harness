@@ -19,7 +19,7 @@ from typing import Any, Dict, List, Set
 from .executor import load_manifest
 
 MODULES_DIR = Path(__file__).parent / "modules"
-KINDS = ("mcp", "skill", "a2a", "schedule")
+KINDS = ("mcp", "skill", "a2a", "schedule", "mcp_remote")
 WHENS = ("on_request", "scheduled", "later")
 ENABLED_FILE = "enabled.json"
 _OPENAI_TOOL_NAME = re.compile(r"^[a-zA-Z0-9_-]+$")
@@ -58,7 +58,22 @@ def list_modules(modules_dir: Path | None = None) -> List[Dict[str, Any]]:
                 continue
             row = load_module(p)
             seen[str(row["name"])] = row
+    if modules_dir is None:
+        _merge_remote_modules(seen)
     return list(seen.values())
+
+
+def _merge_remote_modules(seen: dict[str, Dict[str, Any]]) -> None:
+    """External MCP tools fill gaps. Hand-written manifests keep their names."""
+    try:
+        from .mcp_client import remote_modules
+
+        for row in remote_modules():
+            name = str(row.get("name") or "")
+            if name and name not in seen:
+                seen[name] = row
+    except Exception:
+        return
 
 
 def find_module(name: str, modules_dir: Path | None = None) -> Dict[str, Any] | None:

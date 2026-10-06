@@ -153,6 +153,60 @@ class TestCordisTools(unittest.TestCase):
         self.assertEqual(_arguments_to_argv(mod, {"arguments": ["USER.md"]}), ["USER.md"])
         self.assertEqual(_arguments_to_argv(mod, {"arguments": "USER.md"}), ["USER.md"])
 
+    def test_schedule_add_inherits_turn_channel_and_user(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.dict(os.environ, {"AGENTS_SCHEDULES_DIR": tmp}):
+                out = handle_cordis_tool(
+                    "call_job",
+                    {
+                        "function": {
+                            "arguments": json.dumps(
+                                {
+                                    "name": "mcp.schedule.add",
+                                    "arguments": {
+                                        "name": "pingjob",
+                                        "text": "ping",
+                                        "at": "+10m",
+                                    },
+                                }
+                            )
+                        }
+                    },
+                    default_user="42",
+                    default_channel="telegram",
+                )
+            self.assertNotIn("Error", out)
+            data = json.loads((Path(tmp) / "pingjob.json").read_text(encoding="utf-8"))
+            self.assertEqual(data["channel"], "telegram")
+            self.assertEqual(data["user"], "42")
+            self.assertIn("--channel", data["verb"])
+            self.assertIn("telegram", data["verb"])
+
+            with patch.dict(os.environ, {"AGENTS_SCHEDULES_DIR": tmp}):
+                handle_cordis_tool(
+                    "call_job",
+                    {
+                        "function": {
+                            "arguments": json.dumps(
+                                {
+                                    "name": "mcp.schedule.add",
+                                    "arguments": {
+                                        "name": "explicit",
+                                        "prompt": "check",
+                                        "cron": "0 8 * * *",
+                                        "channel": "http",
+                                    },
+                                }
+                            )
+                        }
+                    },
+                    default_user="42",
+                    default_channel="telegram",
+                )
+            explicit = json.loads((Path(tmp) / "explicit.json").read_text(encoding="utf-8"))
+            self.assertEqual(explicit["channel"], "http")
+            self.assertEqual(explicit["user"], "42")
+
 
 if __name__ == "__main__":
     unittest.main()

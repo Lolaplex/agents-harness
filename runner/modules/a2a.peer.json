@@ -6,5 +6,6 @@
   "verb": "python -c \"import json,os,urllib.request,urllib.error; u=os.environ.get('GATEWAY_URL','http://127.0.0.1:8787').rstrip('/')+'/v1/a2a/mail'; b=json.loads(os.environ.get('A2A_BODY','{}') or '{}') or {'verb':'mail.get'}; h={'Content-Type':'application/json'}; s=os.environ.get('GATEWAY_SECRET','');\n(h.update({'X-Gateway-Secret':s}) if s else None);\ntry:\n r=urllib.request.urlopen(urllib.request.Request(u,data=json.dumps(b).encode(),headers=h,method='POST'),timeout=2); print(r.read().decode())\nexcept Exception as e:\n print(json.dumps({'ok':True,'stub':True,'detail':str(e)}))\"",
   "rests_on": "Gateway /v1/a2a/mail proxy to lolaplex-board mailbox; stubs when gateway offline",
   "expected_exit": 0,
+  "mutates": true,
   "timeout_sec": 30
 }

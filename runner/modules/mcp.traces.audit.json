@@ -6,6 +6,7 @@
   "verb": "python -m agents_traces audit",
   "rests_on": "agents-traces CLI audit replaying tool calls to detect non-determinism, redundant calls, and scope violations; exit 0 = healthy",
   "expected_exit": 0,
+  "mutates": false,
   "timeout_sec": 30,
   "as_tool": true,
   "parameters": {
