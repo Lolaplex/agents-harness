@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "agents-harness"
-version = "0.0.2"
+version = "0.1.0"
 description = "Declarative scheduled flow runner, per-request agent loop, and job kernel for local agent services"
 readme = "README.md"
 license = "MIT"
@@ -32,6 +32,7 @@ Repository = "https://github.com/Lolaplex/agents-harness"
 
 [project.optional-dependencies]
 mcp = ["mcp>=1.0.0,<2"]
+traces = ["agents-traces>=0.1.0"]
 
 [project.scripts]
 agents-harness = "runner.executor:main"
