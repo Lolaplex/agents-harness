@@ -6,6 +6,7 @@ import json
 from typing import Any
 
 from .approval import gate_module
+from .fence import HarnessMessage
 from .executor import execute_job
 from .modules import find_module, find_module_for_tool, list_modules, openai_tool_name
 from .redact import redact_tool_output
@@ -361,7 +362,7 @@ def handle_cordis_tool(
             user=default_user,
         )
         if not allowed:
-            return redact_tool_output(denial)
+            return HarnessMessage(redact_tool_output(denial))
         mod_name = str(mod.get("name") or "")
         if mod_name in _SKILL_MODULES:
             return redact_tool_output(_run_skill(mod_name, job_args))

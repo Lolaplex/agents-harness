@@ -18,7 +18,7 @@ from typing import Any, Callable
 
 from .attachments import render_user_content, vision_enabled
 from .cordis_tools import handle_cordis_tool, is_cordis_tool
-from .fence import FENCE_SYSTEM_NOTE, fence_untrusted, is_harness_control
+from .fence import FENCE_SYSTEM_NOTE, HarnessMessage, fence_untrusted, present_tool_result
 from .delivery import bind_delivery
 from .executor import execute_job, list_schedules
 from .modules import (
@@ -189,12 +189,6 @@ def _tool_call_mutates(name: str, args_str: str) -> bool:
     return any(tok in args_str for tok in ("write", "add", "remove", "terminal", "delete"))
 
 
-def _present_tool_result(source: str, content: str) -> str:
-    if is_harness_control(content) or content.startswith("[Notice:"):
-        return content
-    return fence_untrusted(source, content)
-
-
 def _run_tool_calls(
     calls: list[Any],
     *,
@@ -243,7 +237,7 @@ def _run_tool_calls(
 
             if turn_cache is not None and not is_mutator and call_key in turn_cache:
                 prev_out = turn_cache[call_key]
-                content = (
+                content = HarnessMessage(
                     f"[Notice: '{name}' was already called with identical arguments earlier in this turn. "
                     "State has not changed. Previous output:] "
                     + fence_untrusted(source, prev_out[:500])
@@ -276,7 +270,7 @@ def _run_tool_calls(
             {
                 "role": "tool",
                 "tool_call_id": call_id,
-                "content": _present_tool_result(source if is_cordis_tool(name) else name, content),
+                "content": present_tool_result(source if is_cordis_tool(name) else name, content),
             }
         )
     return messages

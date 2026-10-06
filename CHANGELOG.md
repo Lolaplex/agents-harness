@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - Approval gate for mutating `call_job` tools (`AGENTS_APPROVAL_CMD`, `AGENTS_APPROVAL_MODE`, `{user}` substitution). A denial tells the model not to retry.
-- Untrusted-data fence around tool results, plus a system-prompt note. Redaction is unchanged.
+- Untrusted-data fence around tool results, plus a system-prompt note. Only messages the harness builds itself (approval denials, loop notices) skip the fence; they are marked by type, so tool output starting with `Denied:` or `[Notice:` is still fenced. Redaction is unchanged.
 - External MCP client (`~/.agents/mcp.json`) exposing `mcp.<server>.<tool>` modules (`kind: mcp_remote`) via the optional `mcp` extra. Short-lived sessions; schema cache.
 - `skill.list` / `skill.load` read `~/.agents/skills/*/SKILL.md` and the system prompt lists them. `skill.catalog` stays as an alias of `skill.list`.
 - Schedule `tick()` evaluates cron in the job timezone, persists the last-run minute, applies a grace window, takes a file lock, and honors per-job timeouts (300s default for LLM jobs and routines). `kind: routine` is handed to `register_routine_handler`.
