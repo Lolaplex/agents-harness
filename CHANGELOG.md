@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-10-06
+
 ### Added
 - Approval gate for mutating `call_job` tools (`AGENTS_APPROVAL_CMD`, `AGENTS_APPROVAL_MODE`, `{user}` substitution). A denial tells the model not to retry.
 - Untrusted-data fence around tool results, plus a system-prompt note. Only messages the harness builds itself (approval denials, loop notices) skip the fence; they are marked by type, so tool output starting with `Denied:` or `[Notice:` is still fenced. Redaction is unchanged.
@@ -23,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Default `temperature` (0.2) and `max_tokens` (4096) guardrails in `OpenAICompatProvider` to prevent token degeneration.
 - Module alias fallback via `find_module_for_tool` in `call_job` routing.
 - Clean error handling around `_complete_once` in `runner.loop` emitting error trailer without crashing.
+- `traces` extra (`agents-traces>=0.1.0`) for `--seal` and the trace audit modules. Calendar tools need agents-calendar 0.1.0 or newer.
 
 ### Fixed
 - Cron ticks no longer treat the clock as UTC when the job has a timezone, and a second tick in the same minute no longer double-fires.
@@ -64,6 +67,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Agent runtime engine and scheduled task runner (`python -m runner.loop`, Cordis job kernel, MCP tool round).
 
-[Unreleased]: https://github.com/Lolaplex/agents-harness/compare/v0.0.2...HEAD
+[Unreleased]: https://github.com/Lolaplex/agents-harness/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/Lolaplex/agents-harness/compare/v0.0.2...v0.1.0
 [0.0.2]: https://github.com/Lolaplex/agents-harness/compare/v0.0.1...v0.0.2
 [0.0.1]: https://github.com/Lolaplex/agents-harness/releases/tag/v0.0.1

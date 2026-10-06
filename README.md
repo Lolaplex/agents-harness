@@ -1,7 +1,7 @@
 # agents-harness
 
 <p align="center">
-  <a href="https://github.com/Lolaplex/agents-harness/releases"><img src="https://img.shields.io/badge/version-0.0.2-blue.svg?style=flat-square" alt="Version 0.0.2"></a>
+  <a href="https://github.com/Lolaplex/agents-harness/releases"><img src="https://img.shields.io/badge/version-0.1.0-blue.svg?style=flat-square" alt="Version 0.1.0"></a>
   <a href="https://modelcontextprotocol.io"><img src="https://img.shields.io/badge/MCP-Standard-orange.svg?style=flat-square" alt="MCP"></a>
   <a href="https://python.org"><img src="https://img.shields.io/badge/Python-3.10+-3776AB.svg?style=flat-square&logo=python&logoColor=white" alt="Python 3.10+"></a>
   <a href="https://pypi.org/project/agents-harness/"><img src="https://img.shields.io/pypi/v/agents-harness.svg?style=flat-square" alt="PyPI"></a>
@@ -26,6 +26,14 @@ Optional FastMCP server support:
 ```bash
 pip install "agents-harness[mcp]"
 ```
+
+Optional trace sealing and audit (`--seal`, `mcp.traces.seal`, `mcp.traces.audit`) need agents-traces 0.1.0 or newer:
+
+```bash
+pip install "agents-harness[traces]"
+```
+
+Calendar tools (`mcp.calendar.add`, `mcp.calendar.list`) forward `--calendar`, which needs agents-calendar 0.1.0 or newer.
 
 > [!TIP]
 > **🤖 Agent-Driven Setup:**
