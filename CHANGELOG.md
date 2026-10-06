@@ -26,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Module alias fallback via `find_module_for_tool` in `call_job` routing.
 - Clean error handling around `_complete_once` in `runner.loop` emitting error trailer without crashing.
 - `traces` extra (`agents-traces>=0.1.0`) for `--seal` and the trace audit modules. Calendar tools need agents-calendar 0.1.0 or newer.
+- CLI (and MCP, when present) check PyPI at most once per day for a newer release and print one stderr / tool-response line (`uv tool upgrade …`). Disabled with `AGENTS_NO_UPDATE_CHECK=1` or when `CI` is set; offline/timeout stays silent.
 
 ### Fixed
 - Cron ticks no longer treat the clock as UTC when the job has a timezone, and a second tick in the same minute no longer double-fires.
