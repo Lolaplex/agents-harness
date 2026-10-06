@@ -121,7 +121,7 @@ python -m runner.loop --user 123 --message "what is this?" --attach ./shot.png -
 
 Mutating `call_job` tools ask first when `AGENTS_APPROVAL_CMD` is set. `{user}` in that command becomes the turn's channel user. `AGENTS_APPROVAL_MODE=ask` gates mutators (the default once a command is set). Creating or listing a schedule does not ask in `ask` mode; removing one does. `strict` gates every tool that is not read-only, including schedule create. `off`, or no command, keeps the old behavior. Exit 0 approves, 1 denies, 2 is timeout/unavailable (denied). A denial tells the model not to retry.
 
-Every tool result the model sees is wrapped in `<untrusted_data source="...">...</untrusted_data>` after redaction. Denials stay outside that fence.
+Every tool result the model sees is wrapped in `<untrusted_data source="...">...</untrusted_data>` after redaction. Only messages the harness builds itself (approval denials, loop notices) stay outside that fence; tool text that merely starts with `Denied:` is still fenced.
 
 Skills live in `~/.agents/skills/<name>/SKILL.md` (`AGENTS_SKILLS_DIR`, plus `AGENTS_SKILLS_EXTRA`). The system prompt lists name and description. `skill.load` returns the file. `skill.catalog` is a compatibility alias of `skill.list`.
 
@@ -129,13 +129,20 @@ Cron uses the job's `timezone` (else `AGENTS_TIMEZONE`, `TZ`, or `timezone` in `
 
 `python -m runner.loop --detached-session --session ses_…` runs that turn in `ses_…` and restores the previous active session afterward. A session id that starts with `routine:` is detached the same way without the flag. A host cron or a platform scheduler can call `python -m runner.schedule tick` when it runs as the same user as the service. That process does not inherit environment set only on the long-running service (for example `AGENTS_APPROVAL_CMD`).
 
+| Variable | Default | Effect |
+| --- | --- | --- |
+| `AGENTS_APPROVAL_TIMEOUT` | `--timeout` in the command + 15 s, else 330 s | Seconds to wait for the approval command before denying |
+| `AGENTS_SCHEDULE_GRACE_MIN` | 5 | Minutes a missed cron slot still runs once (a job's `grace_min` wins) |
+| `AGENTS_SCHEDULES_DIR` | `~/.agents/schedules` | Dynamic reminder manifests; also an overlay for `runner.executor` schedules |
+| `AGENTS_BUNDLED_SCHEDULES` | `1` | `0`/`false`/`no`/`off` hides the bundled `runner/schedules/` from `runner.executor` |
+
 ## External MCP client
 
 `~/.agents/mcp.json` (override `AGENTS_MCP_CONFIG`) uses the Claude/Cursor `mcpServers` shape, plus optional `allow` / `deny` globs. `${ENV_VAR}` expands in commands, args, env, urls, and headers. See `mcp.client.json.example`.
 
 Each server tool is a catalog module `mcp.<server>.<tool>` (`kind: mcp_remote`) with the server's `inputSchema`. `readOnlyHint: true` is non-mutating; anything else is a mutator for the approval gate. Hand-written modules of the same name win.
 
-The loop process is new every turn. Schemas are cached for `AGENTS_MCP_CACHE_SEC` (default 60). Each call connects, initializes, calls one tool, and disconnects (stdio, streamable HTTP, or SSE). Install the SDK with `pip install "agents-harness[mcp]"`. OAuth is out of scope.
+The loop process is new every turn. Schemas are cached for `AGENTS_MCP_CACHE_SEC` (default 60) in `AGENTS_MCP_CACHE` (default `~/.agents/mcp-tools-cache.json`). `AGENTS_MCP_CONNECT_TIMEOUT` (default 10 s) bounds each listing or call session, connect included. Each call connects, initializes, calls one tool, and disconnects (stdio, streamable HTTP, or SSE). Install the SDK with `pip install "agents-harness[mcp]"`. OAuth is out of scope.
 
 ## MCP Server Integration
 
