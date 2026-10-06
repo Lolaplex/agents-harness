@@ -170,6 +170,13 @@ def reduce_term(
 
 
 def main(argv: list[str] | None = None) -> int:
+    try:
+        from . import __version__
+        from .updates import check_for_updates
+
+        check_for_updates("agents-harness", __version__)
+    except Exception:
+        pass
     parser = argparse.ArgumentParser(
         description="Check / mix / reduce a job term against the catalog alphabet"
     )

@@ -6,6 +6,7 @@
   "verb": "python -m agents_memory read",
   "rests_on": "agents-memory CLI read raw markdown file by id; extra argv is file_id (e.g. USER.md, PROJECTS.md); exit 0 = read",
   "expected_exit": 0,
+  "mutates": false,
   "timeout_sec": 30,
   "as_tool": true,
   "parameters": {

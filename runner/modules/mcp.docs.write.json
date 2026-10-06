@@ -6,6 +6,7 @@
   "verb": "python -m agents_docs write",
   "rests_on": "agents-docs CLI append a hard tech fact; positionals name content [category]; exit 0 = wrote",
   "expected_exit": 0,
+  "mutates": true,
   "timeout_sec": 30,
   "as_tool": true,
   "parameters": {

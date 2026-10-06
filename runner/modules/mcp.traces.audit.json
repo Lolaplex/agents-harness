@@ -1,0 +1,25 @@
+{
+  "name": "mcp.traces.audit",
+  "kind": "mcp",
+  "when": "on_request",
+  "cadence": "on_request",
+  "verb": "python -m agents_traces audit",
+  "rests_on": "agents-traces CLI audit replaying tool calls to detect non-determinism, redundant calls, and scope violations; exit 0 = healthy",
+  "expected_exit": 0,
+  "mutates": false,
+  "timeout_sec": 30,
+  "as_tool": true,
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "session": {
+        "type": "string",
+        "description": "Session ID to audit (optional, defaults to active session)"
+      },
+      "json": {
+        "type": "boolean",
+        "description": "Output structured JSON report"
+      }
+    }
+  }
+}

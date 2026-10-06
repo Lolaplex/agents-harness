@@ -6,5 +6,6 @@
   "verb": "python -m agents_traces --help-json",
   "rests_on": "agents-traces assemble/record, conversation is the agent, exit 0 = module present",
   "expected_exit": 0,
+  "mutates": false,
   "timeout_sec": 30
 }

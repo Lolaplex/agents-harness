@@ -87,6 +87,21 @@ def find_provider(name: str, providers_dir: Path | None = None) -> dict[str, Any
     return None
 
 
+def message_text(content: Any) -> str:
+    """Plain text from a string message or a vision content-part list."""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        bits: list[str] = []
+        for part in content:
+            if isinstance(part, str):
+                bits.append(part)
+            elif isinstance(part, dict) and part.get("type") == "text":
+                bits.append(str(part.get("text") or ""))
+        return "\n".join(bit for bit in bits if bit)
+    return str(content or "")
+
+
 class EchoProvider:
     """Test double. Same complete() shape; returns the last user text."""
 
@@ -97,8 +112,7 @@ class EchoProvider:
         text = ""
         for msg in reversed(req.messages):
             if msg.get("role") == "user":
-                content = msg.get("content") or ""
-                text = content if isinstance(content, str) else str(content)
+                text = message_text(msg.get("content") or "")
                 break
         text = text or "(echo)"
         if req.on_status:
@@ -135,8 +149,7 @@ class ScriptedToolProvider:
         if not query:
             for msg in reversed(req.messages):
                 if msg.get("role") == "user":
-                    content = msg.get("content") or ""
-                    query = content if isinstance(content, str) else str(content)
+                    query = message_text(msg.get("content") or "")
                     break
         job_name = str(self.tool_arguments.get("name") or "mcp.memory.search")
         job_args = dict(self.tool_arguments.get("arguments") or {})
@@ -279,6 +292,33 @@ class OpenAICompatProvider:
         body: dict[str, Any] = {"model": model, "messages": req.messages, "stream": stream}
         extra = dict(req.extra or {})
         extra.pop("stream", None)
+
+        # Set default temperature to prevent runaway hallucination / token collapse
+        if "temperature" not in extra:
+            temp_env = os.environ.get("LLM_TEMPERATURE")
+            if temp_env is not None:
+                try:
+                    body["temperature"] = float(temp_env)
+                except ValueError:
+                    pass
+            elif "temperature" in self.manifest:
+                body["temperature"] = float(self.manifest["temperature"])
+            else:
+                body["temperature"] = 0.2
+
+        # Set default max_tokens to prevent infinite generation loops
+        if "max_tokens" not in extra:
+            max_env = os.environ.get("LLM_MAX_TOKENS")
+            if max_env is not None:
+                try:
+                    body["max_tokens"] = int(max_env)
+                except ValueError:
+                    pass
+            elif "max_tokens" in self.manifest:
+                body["max_tokens"] = int(self.manifest["max_tokens"])
+            else:
+                body["max_tokens"] = 4096
+
         if req.tools:
             body["tools"] = req.tools
             if "tool_choice" not in extra:

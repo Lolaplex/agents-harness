@@ -1,0 +1,15 @@
+{
+  "name": "skill.list",
+  "kind": "skill",
+  "when": "on_request",
+  "cadence": "on_request",
+  "verb": "python -c \"print('skill list')\"",
+  "rests_on": "List ~/.agents/skills/*/SKILL.md names and descriptions. call_job reads the files in-process.",
+  "expected_exit": 0,
+  "timeout_sec": 10,
+  "mutates": false,
+  "parameters": {
+    "type": "object",
+    "properties": {}
+  }
+}

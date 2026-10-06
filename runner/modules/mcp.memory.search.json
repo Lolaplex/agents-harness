@@ -6,6 +6,7 @@
   "verb": "python -m agents_memory search",
   "rests_on": "agents-memory CLI search over the markdown vault; extra argv is the query; exit 0 = ran",
   "expected_exit": 0,
+  "mutates": false,
   "timeout_sec": 30,
   "as_tool": true,
   "parameters": {

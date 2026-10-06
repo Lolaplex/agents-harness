@@ -13,6 +13,14 @@ from .providers import list_providers
 from .user_profile import load_user_profile
 
 mcp = FastMCP("agents-harness")
+try:
+    from . import __version__
+    from .updates import attach_mcp_update_notice
+
+    attach_mcp_update_notice(mcp, "agents-harness", __version__)
+except Exception:
+    pass
+
 
 
 @mcp.tool()

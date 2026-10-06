@@ -6,6 +6,7 @@
   "verb": "python -m agents_memory projects",
   "rests_on": "agents-memory CLI list all tracked projects or get project memories; optional slug arg; exit 0 = listed",
   "expected_exit": 0,
+  "mutates": false,
   "timeout_sec": 30,
   "as_tool": true,
   "parameters": {
