@@ -2,13 +2,15 @@
 
 Pure Python standard library. Stores dynamic schedule manifests in ~/.agents/schedules/
 (or AGENTS_SCHEDULES_DIR). Invoked via CLI, as a Cordis tool, or in-process
-``tick()`` (klanker serve). Cron is evaluated in each job's timezone. A file
-lock plus a persisted last-run minute keep overlapping ticks from double-firing,
-and a missed minute still runs once inside the grace window (default 5).
-The lock is held only while claiming due slots. Jobs then run outside it.
-``kind: routine`` jobs are handed to ``register_routine_handler``. A SKIPPED
-routine (no handler, or the handler returns SKIPPED) does not consume the slot
-or a one-shot manifest.
+``tick()``. Cron is evaluated in each job's timezone. A file lock plus a
+persisted last-run minute keep overlapping ticks from double-firing, and a
+missed minute still runs once inside the grace window (default 5). The lock
+is held only while claiming or finalizing. Jobs then run outside it.
+``tick(wait=False)`` returns after the claim. ``kind: routine`` jobs are
+handed to ``register_routine_handler``. A SKIPPED routine (no handler, or the
+handler returns SKIPPED) does not consume the slot or a one-shot manifest.
+A failed one-shot is removed (it is not retried); the failure is logged and
+``last_result`` is kept in tick-state.json.
 """
 
 from __future__ import annotations
@@ -75,7 +77,7 @@ def configured_timezone() -> str:
 def register_routine_handler(
     handler: Optional[Callable[[Dict[str, Any]], Any]],
 ) -> Optional[Callable[[Dict[str, Any]], Any]]:
-    """Klanker registers this. The harness does not run routine prompts itself."""
+    """Host processes register this. The harness does not run routine prompts itself."""
     global _routine_handler
     _routine_handler = handler
     return handler
@@ -610,8 +612,28 @@ def _collect_due(now: datetime) -> tuple[List[Dict[str, Any]], List[Dict[str, An
     return claimed, skipped
 
 
+def _last_result(result: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "status": str(result.get("status") or "FAILED"),
+        "exit_code": result.get("exit_code"),
+        "stdout_tail": str(result.get("stdout_tail") or "")[:500],
+        "stderr_tail": str(result.get("stderr_tail") or "")[:500],
+        "finished_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+def _log_schedule_failure(name: str, result: Dict[str, Any]) -> None:
+    status = str(result.get("status") or "FAILED")
+    code = result.get("exit_code")
+    err = str(result.get("stderr_tail") or "").replace("\n", " ").strip()
+    if len(err) > 300:
+        err = err[:297] + "..."
+    detail = f": {err}" if err else ""
+    print(f"[-] schedule '{name}' {status} (exit {code}){detail}", file=sys.stderr)
+
+
 def _finalize(claimed: List[Dict[str, Any]], results: List[Dict[str, Any]]) -> None:
-    """Drop claims for SKIPPED jobs. Consume one-shots that actually ran."""
+    """Drop claims for SKIPPED jobs. Remove finished one-shots. Keep failed results."""
     by_name = {str(row["schedule"]): row["result"] for row in results}
     state = _load_state()
     dirty = False
@@ -624,6 +646,11 @@ def _finalize(claimed: List[Dict[str, Any]], results: List[Dict[str, Any]]) -> N
         if "inflight_until" in row:
             row.pop("inflight_until", None)
             dirty = True
+        failed = status not in ("SUCCESS", "SKIPPED")
+        if failed:
+            _log_schedule_failure(name, result)
+            row["last_result"] = _last_result(result)
+            dirty = True
         if status == "SKIPPED":
             if "last_slot" in row:
                 row.pop("last_slot", None)
@@ -634,19 +661,34 @@ def _finalize(claimed: List[Dict[str, Any]], results: List[Dict[str, Any]]) -> N
             continue
         if item.get("one_shot"):
             remove_schedule(name)
-            state.get("jobs", {}).pop(name, None)
+            if not failed:
+                state.get("jobs", {}).pop(name, None)
             dirty = True
     if dirty:
         _save_state(state)
 
 
-def _run_claimed(claimed: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """Run claimed jobs without the tick lock. Parallel so one slow job does not stall the rest."""
+def _job_outcome(schedule: Dict[str, Any]) -> Dict[str, Any]:
+    name = str(schedule.get("name") or "")
+    try:
+        result = _run_due(schedule)
+    except Exception as exc:
+        result = {
+            "status": "ERROR",
+            "job": name,
+            "exit_code": -1,
+            "stdout_tail": "",
+            "stderr_tail": str(exc),
+        }
+    return {"schedule": name, "result": result}
+
+
+def _start_workers(claimed: List[Dict[str, Any]]) -> tuple[List[Optional[Dict[str, Any]]], List[threading.Thread]]:
+    """Start claimed jobs. Parallel so one slow job does not stall the rest."""
     results: List[Optional[Dict[str, Any]]] = [None] * len(claimed)
 
     def _one(index: int, item: Dict[str, Any]) -> None:
-        schedule = item["schedule"]
-        results[index] = {"schedule": schedule["name"], "result": _run_due(schedule)}
+        results[index] = _job_outcome(item["schedule"])
 
     threads = [
         threading.Thread(target=_one, args=(i, item), name=f"tick-{item['schedule'].get('name')}")
@@ -654,35 +696,90 @@ def _run_claimed(claimed: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     ]
     for thread in threads:
         thread.start()
+    return results, threads
+
+
+def _join_and_finalize(
+    claimed: List[Dict[str, Any]],
+    results: List[Optional[Dict[str, Any]]],
+    threads: List[threading.Thread],
+) -> List[Dict[str, Any]]:
     for thread in threads:
         thread.join()
-    return [row for row in results if row is not None]
+    ran = [row for row in results if row is not None]
+    with _PROCESS_LOCK:
+        with _file_lock(dynamic_schedules_dir()):
+            _finalize(claimed, ran)
+    return ran
 
 
-def _tick_body(now: datetime) -> List[Dict[str, Any]]:
+_background_guard = threading.Lock()
+_background_ticks: List[threading.Thread] = []
+
+
+def wait_for_background_ticks() -> None:
+    """Join jobs started by ``tick(wait=False)``."""
+    with _background_guard:
+        pending = list(_background_ticks)
+    for thread in pending:
+        thread.join()
+    with _background_guard:
+        _background_ticks[:] = [thread for thread in _background_ticks if thread.is_alive()]
+
+
+def _claimed_pending(claimed: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    rows: List[Dict[str, Any]] = []
+    for item in claimed:
+        name = str(item["schedule"].get("name") or "")
+        rows.append(
+            {
+                "schedule": name,
+                "result": {
+                    "status": "CLAIMED",
+                    "job": name,
+                    "exit_code": None,
+                    "stdout_tail": "",
+                    "stderr_tail": "",
+                },
+            }
+        )
+    return rows
+
+
+def _tick_body(now: datetime, *, wait: bool = True) -> List[Dict[str, Any]]:
     with _PROCESS_LOCK:
         with _file_lock(dynamic_schedules_dir()):
             claimed, skipped = _collect_due(now)
     if not claimed:
         return skipped
-    ran = _run_claimed(claimed)
-    with _PROCESS_LOCK:
-        with _file_lock(dynamic_schedules_dir()):
-            _finalize(claimed, ran)
+    results, threads = _start_workers(claimed)
+    if not wait:
+        def _finish() -> None:
+            _join_and_finalize(claimed, results, threads)
+
+        finisher = threading.Thread(target=_finish, name="tick-finalize")
+        finisher.start()
+        with _background_guard:
+            _background_ticks.append(finisher)
+        return skipped + _claimed_pending(claimed)
+    ran = _join_and_finalize(claimed, results, threads)
     return skipped + ran
 
 
-def tick(base_time: Optional[datetime] = None) -> List[Dict[str, Any]]:
+def tick(base_time: Optional[datetime] = None, *, wait: bool = True) -> List[Dict[str, Any]]:
     """Run due jobs. Safe to call in-process and from overlapping processes.
 
-    The file lock is held only while claiming or rolling back slots, not while
-    a job runs. Cron slots are claimed before the job starts so a second tick
-    does not double-fire. SKIPPED routines release that claim and keep one-shots.
+    The file lock is held only while claiming or finalizing, not while a job
+    runs. ``wait=False`` returns after the claim (status ``CLAIMED``); the
+    jobs finish on background threads. The CLI waits. Cron slots are claimed
+    before the job starts so a second tick does not double-fire. SKIPPED
+    routines release that claim and keep one-shots. A failed one-shot is
+    removed and not retried; its last result stays in tick-state.json.
     """
     now = base_time or datetime.now(timezone.utc)
     if now.tzinfo is None:
         now = now.replace(tzinfo=timezone.utc)
-    return _tick_body(now)
+    return _tick_body(now, wait=wait)
 
 
 def main(argv: Optional[List[str]] = None) -> int:
@@ -715,7 +812,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     rem_p = sub.add_parser("remove", help="Remove dynamic schedule")
     rem_p.add_argument("name", help="Schedule name/slug")
 
-    tick_p = sub.add_parser("tick", help="Execute due schedules")
+    tick_p = sub.add_parser("tick", help="Execute due schedules and wait until they finish")
     tick_p.add_argument("--now", help="Simulate current ISO datetime")
 
     args = parser.parse_args(argv)

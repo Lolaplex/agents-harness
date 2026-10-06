@@ -18,6 +18,7 @@ from runner.schedule import (
     tick,
     parse_due_time,
     is_cron_due,
+    wait_for_background_ticks,
 )
 
 
@@ -28,6 +29,7 @@ class TestSchedule(unittest.TestCase):
         os.environ["AGENTS_SCHEDULES_DIR"] = self.temp_dir
 
     def tearDown(self):
+        wait_for_background_ticks()
         if self.old_env is not None:
             os.environ["AGENTS_SCHEDULES_DIR"] = self.old_env
         else:
@@ -335,6 +337,48 @@ class TestSchedule(unittest.TestCase):
         )
         fired = tick(base_time=datetime(2026, 9, 5, 4, 0, tzinfo=timezone.utc))
         self.assertEqual(fired[0]["result"]["status"], "TIMEOUT")
+
+    def test_failed_one_shot_is_logged_and_not_retried(self):
+        import io
+        import json
+        from contextlib import redirect_stderr
+        from pathlib import Path
+
+        add_schedule(
+            name="boom",
+            at="2026-09-05T11:59:00Z",
+            verb='python -c "import sys; sys.exit(3)"',
+            one_shot=True,
+        )
+        when = datetime(2026, 9, 5, 12, 0, tzinfo=timezone.utc)
+        err = io.StringIO()
+        with redirect_stderr(err):
+            fired = tick(base_time=when)
+        self.assertEqual(fired[0]["result"]["status"], "FAILED")
+        self.assertEqual(list_dynamic_schedules(), [])
+        state = json.loads((Path(self.temp_dir) / "tick-state.json").read_text(encoding="utf-8"))
+        self.assertEqual(state["jobs"]["boom"]["last_result"]["status"], "FAILED")
+        self.assertIn("schedule 'boom' FAILED", err.getvalue())
+        self.assertEqual(tick(base_time=when), [])
+
+    def test_tick_wait_false_returns_after_claim(self):
+        import time
+
+        add_schedule(
+            name="slow",
+            cron="0 * * * *",
+            verb='python -c "import time; time.sleep(0.4); print(\'once\')"',
+            timezone_name="UTC",
+        )
+        when = datetime(2026, 9, 5, 8, 0, tzinfo=timezone.utc)
+        started = time.perf_counter()
+        rows = tick(base_time=when, wait=False)
+        elapsed = time.perf_counter() - started
+        self.assertLess(elapsed, 0.25)
+        self.assertEqual(rows[0]["result"]["status"], "CLAIMED")
+        self.assertEqual(tick(base_time=when, wait=False), [])
+        wait_for_background_ticks()
+        self.assertEqual(tick(base_time=when), [])
 
 
 if __name__ == "__main__":

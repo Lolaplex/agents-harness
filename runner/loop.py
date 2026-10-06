@@ -175,6 +175,7 @@ def _run_tool_calls(
     *,
     session: str = "",
     default_user: str = "",
+    default_channel: str = "",
     default_timezone: str = "",
     on_status: Callable[[str], None] | None = None,
     turn_cache: dict[tuple[str, str], str] | None = None,
@@ -227,6 +228,7 @@ def _run_tool_calls(
                     name,
                     call,
                     default_user=default_user,
+                    default_channel=default_channel,
                     default_timezone=default_timezone,
                     session=session,
                 )
@@ -400,9 +402,16 @@ def build_payload(
     return messages
 
 
-def _explicit_session_detached(session: str) -> bool:
-    """Routine threads must not become the user's active chat session."""
+def _legacy_detached_session(session: str) -> bool:
+    """A session id starting with ``routine:`` stays detached for older callers."""
     return (session or "").strip().lower().startswith("routine:")
+
+
+def _turn_is_detached(args: argparse.Namespace) -> bool:
+    """This turn uses its session without replacing the person's active session."""
+    if bool(getattr(args, "detached_session", False)):
+        return True
+    return _legacy_detached_session(getattr(args, "session", None) or "")
 
 
 def _alias_id(channel: str, user: str) -> str:
@@ -428,7 +437,7 @@ def _prior_chat_session(ident: Any, *, channel: str, user: str, user_id: str) ->
     if person is None:
         return ""
     active = str(getattr(person, "active_session", "") or "")
-    if active.lower().startswith("routine:"):
+    if _legacy_detached_session(active):
         return ""
     return active
 
@@ -439,6 +448,7 @@ def _restore_chat_session(
     user_id: str,
     explicit_session: str,
     prior_active: str,
+    force: bool,
 ) -> None:
     if not hasattr(ident, "get_user"):
         return
@@ -446,22 +456,26 @@ def _restore_chat_session(
     if person is None:
         return
     current = str(getattr(person, "active_session", "") or "")
-    if current != explicit_session and not current.lower().startswith("routine:"):
+    if not force and current != explicit_session and not _legacy_detached_session(current):
         return
     person.active_session = prior_active
     ident.save()
 
 
 def resolve_identity_store(ident: Any, args: argparse.Namespace) -> Any:
-    """Resolve a turn. ``routine:`` sessions are not left as the active session.
+    """Resolve a turn. A detached session is not left as the active session.
+
+    ``--detached-session`` runs in the given session and then restores the
+    previous active session. A session id that starts with ``routine:`` does
+    the same without the flag.
 
     agents-traces ``IdentityStore.resolve`` sets ``active_session`` for every
-    explicit session (identity.py). This restores the previous chat session
-    after that write so the next Telegram turn does not continue the routine.
+    explicit session. This restores the previous chat session after that write.
     """
     explicit = (getattr(args, "session", None) or "").strip()
+    detached = _turn_is_detached(args)
     prior = ""
-    if _explicit_session_detached(explicit):
+    if detached:
         prior = _prior_chat_session(
             ident,
             channel=getattr(args, "channel", "") or "",
@@ -477,16 +491,17 @@ def resolve_identity_store(ident: Any, args: argparse.Namespace) -> Any:
         project=args.project,
         legacy_exists=_session_has_events(),
     )
-    if _explicit_session_detached(explicit):
+    if detached:
         try:
             _restore_chat_session(
                 ident,
                 user_id=str(getattr(resolved.user, "id", "") or ""),
                 explicit_session=explicit,
                 prior_active=prior,
+                force=bool(getattr(args, "detached_session", False)),
             )
         except Exception as exc:
-            print(f"[!] routine session left active: {exc}", file=sys.stderr)
+            print(f"[!] detached session left active: {exc}", file=sys.stderr)
     return resolved
 
 
@@ -534,6 +549,11 @@ def main(argv: list[str] | None = None) -> int:
         description="Per-request loop: assemble trace, complete, or call a Cordis module"
     )
     parser.add_argument("--session", help="Thread id (ses_…); omit to resume the user's active session")
+    parser.add_argument(
+        "--detached-session",
+        action="store_true",
+        help="Use --session for this turn only. Do not store it as the person's active session. A session id starting with routine: is detached even without this flag.",
+    )
     parser.add_argument("--channel", default="local", help="Alias scheme (telegram, http, cli, …)")
     parser.add_argument("--user", default="", help="Channel handle (chat id, login, …)")
     parser.add_argument("--user-id", default="", dest="user_id", help="Canonical person id (binds this alias)")
@@ -761,6 +781,7 @@ def main(argv: list[str] | None = None) -> int:
             result.tool_calls,
             session=session,
             default_user=args.user,
+            default_channel=args.channel,
             default_timezone=timezone_name,
             on_status=on_status,
             turn_cache=turn_cache,
@@ -814,6 +835,7 @@ def main(argv: list[str] | None = None) -> int:
             result.tool_calls,
             session=session,
             default_user=args.user,
+            default_channel=args.channel,
             default_timezone=timezone_name,
             on_status=on_status,
             turn_cache=turn_cache,

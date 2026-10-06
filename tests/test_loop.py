@@ -672,6 +672,13 @@ class TestModulesAndLoop(unittest.TestCase):
         self.assertEqual(store.person.active_session, "ses_keep")
         self.assertEqual(resolved.session.id, "ses_keep")
 
+        args.session = "ses_side"
+        args.detached_session = True
+        store.person.active_session = "ses_chat"
+        resolved = resolve_identity_store(store, args)
+        self.assertEqual(resolved.session.id, "ses_side")
+        self.assertEqual(store.person.active_session, "ses_chat")
+
 
 if __name__ == "__main__":
     unittest.main()

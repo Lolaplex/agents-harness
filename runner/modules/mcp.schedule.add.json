@@ -31,7 +31,7 @@
       },
       "channel": {
         "type": "string",
-        "description": "Target channel. Required with text unless verb is set."
+        "description": "Target channel. Inherited from the current turn when omitted. Required with text unless verb is set."
       },
       "user": {
         "type": "string",

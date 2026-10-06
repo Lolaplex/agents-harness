@@ -288,6 +288,7 @@ def handle_cordis_tool(
     call: dict[str, Any],
     *,
     default_user: str = "",
+    default_channel: str = "",
     default_timezone: str = "",
     session: str = "",
 ) -> str:
@@ -333,6 +334,7 @@ def handle_cordis_tool(
                 mod_name,
                 inner_call,
                 default_user=default_user,
+                default_channel=default_channel,
                 default_timezone=default_timezone,
                 session=session,
             )
@@ -348,6 +350,8 @@ def handle_cordis_tool(
             job_args = dict(job_args)
             if not job_args.get("user") and default_user:
                 job_args["user"] = default_user
+            if not job_args.get("channel") and default_channel:
+                job_args["channel"] = default_channel
             if not job_args.get("timezone") and default_timezone:
                 job_args["timezone"] = default_timezone
         allowed, denial = gate_module(
