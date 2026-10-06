@@ -26,6 +26,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - Cron ticks no longer treat the clock as UTC when the job has a timezone, and a second tick in the same minute no longer double-fires.
+- A SKIPPED routine no longer consumes its cron slot or one-shot manifest. `tick()` does not hold the file lock while jobs run.
+- `mcp.schedule.add` is not an approval prompt in `ask` mode. `strict` still gates it. `mcp.schedule.remove` stays gated in `ask`.
+- `runner.loop --session routine:…` does not leave that id as the user's active session.
 - Cordis tool argument parser normalizes list, string, and aliased parameter structures (e.g. `file`, `path` for `file_id`) to prevent empty argv dispatch.
 
 ## [0.0.2] - 2026-09-27

@@ -5,8 +5,10 @@ Pure Python standard library. Stores dynamic schedule manifests in ~/.agents/sch
 ``tick()`` (klanker serve). Cron is evaluated in each job's timezone. A file
 lock plus a persisted last-run minute keep overlapping ticks from double-firing,
 and a missed minute still runs once inside the grace window (default 5).
-``kind: routine`` jobs are handed to ``register_routine_handler``; this package
-does not run the prompt itself.
+The lock is held only while claiming due slots. Jobs then run outside it.
+``kind: routine`` jobs are handed to ``register_routine_handler``. A SKIPPED
+routine (no handler, or the handler returns SKIPPED) does not consume the slot
+or a one-shot manifest.
 """
 
 from __future__ import annotations
@@ -500,10 +502,55 @@ def remove_schedule(name: str) -> bool:
     return False
 
 
-def _mark_slot(state: Dict[str, Any], name: str, slot: datetime) -> None:
+def _job_row(state: Dict[str, Any], name: str) -> Dict[str, Any]:
     jobs = state.setdefault("jobs", {})
-    jobs[name] = {"last_slot": slot.isoformat()}
-    _save_state(state)
+    row = jobs.get(name)
+    if not isinstance(row, dict):
+        row = {}
+        jobs[name] = row
+    return row
+
+
+def _inflight(state: Dict[str, Any], name: str, now: datetime) -> bool:
+    row = (state.get("jobs") or {}).get(name) or {}
+    if not isinstance(row, dict):
+        return False
+    until = _parse_slot(str(row.get("inflight_until") or ""))
+    if until is None:
+        return False
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=timezone.utc)
+    return until > now
+
+
+def _set_inflight(state: Dict[str, Any], name: str, now: datetime, timeout_sec: int) -> None:
+    row = _job_row(state, name)
+    until = now + timedelta(seconds=max(1, int(timeout_sec)) + 30)
+    row["inflight_until"] = until.isoformat()
+
+
+def _mark_slot(state: Dict[str, Any], name: str, slot: datetime) -> None:
+    row = _job_row(state, name)
+    row["last_slot"] = slot.isoformat()
+
+
+def _skip_result(schedule: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "status": "SKIPPED",
+        "job": schedule.get("name"),
+        "exit_code": 0,
+        "stdout_tail": "",
+        "stderr_tail": "no routine handler registered",
+    }
+
+
+def _will_skip(schedule: Dict[str, Any]) -> bool:
+    """Routine with no handler and no verb cannot run. Do not claim its slot."""
+    if str(schedule.get("kind") or "") != "routine":
+        return False
+    if _routine_handler is not None:
+        return False
+    return not schedule.get("verb")
 
 
 def _run_due(schedule: Dict[str, Any]) -> Dict[str, Any]:
@@ -514,29 +561,34 @@ def _run_due(schedule: Dict[str, Any]) -> Dict[str, Any]:
     return execute_job(prepared)
 
 
-def _tick_unlocked(base_time: Optional[datetime] = None) -> List[Dict[str, Any]]:
-    """Check and execute due schedules. Caller holds the tick locks."""
-    now = base_time or datetime.now(timezone.utc)
-    if now.tzinfo is None:
-        now = now.replace(tzinfo=timezone.utc)
+def _collect_due(now: datetime) -> tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+    """Claim due work. Caller holds the tick locks. Returns (claimed, skipped)."""
     schedules = list_dynamic_schedules()
     state = _load_state()
-    executed: List[Dict[str, Any]] = []
+    claimed: List[Dict[str, Any]] = []
+    skipped: List[Dict[str, Any]] = []
+    dirty = False
 
     for s in schedules:
-        ran = False
+        name = str(s["name"])
+        if _inflight(state, name, now):
+            continue
         if "at" in s:
             try:
                 due_dt = parse_due_time(s["at"])
             except Exception:
-                due_dt = None
-            if due_dt is not None and due_dt <= now:
-                res = _run_due(s)
-                executed.append({"schedule": s["name"], "result": res})
-                ran = True
+                continue
+            if due_dt > now:
+                continue
+            if _will_skip(s):
+                skipped.append({"schedule": name, "result": _skip_result(s)})
+                continue
+            _set_inflight(state, name, now, _job_timeout(s))
+            dirty = True
+            claimed.append({"schedule": s, "one_shot": bool(s.get("one_shot", False))})
         elif "cron" in s:
-            job_state = (state.get("jobs") or {}).get(s["name"]) or {}
-            last = _parse_slot(str(job_state.get("last_slot") or ""))
+            job_state = (state.get("jobs") or {}).get(name) or {}
+            last = _parse_slot(str(job_state.get("last_slot") or "")) if isinstance(job_state, dict) else None
             slot = due_cron_slot(
                 str(s["cron"]),
                 now,
@@ -544,31 +596,93 @@ def _tick_unlocked(base_time: Optional[datetime] = None) -> List[Dict[str, Any]]
                 last_slot=last,
                 grace_min=_job_grace(s),
             )
-            if slot is not None:
-                _mark_slot(state, str(s["name"]), slot)
-                res = _run_due(s)
-                executed.append({"schedule": s["name"], "result": res})
-                ran = True
+            if slot is None:
+                continue
+            if _will_skip(s):
+                skipped.append({"schedule": name, "result": _skip_result(s)})
+                continue
+            _mark_slot(state, name, slot)
+            dirty = True
+            claimed.append({"schedule": s, "one_shot": bool(s.get("one_shot", False))})
 
-        if ran and s.get("one_shot", False):
-            remove_schedule(s["name"])
-            jobs = state.get("jobs") or {}
-            jobs.pop(s["name"], None)
-            _save_state(state)
+    if dirty:
+        _save_state(state)
+    return claimed, skipped
 
-    return executed
+
+def _finalize(claimed: List[Dict[str, Any]], results: List[Dict[str, Any]]) -> None:
+    """Drop claims for SKIPPED jobs. Consume one-shots that actually ran."""
+    by_name = {str(row["schedule"]): row["result"] for row in results}
+    state = _load_state()
+    dirty = False
+    for item in claimed:
+        schedule = item["schedule"]
+        name = str(schedule["name"])
+        result = by_name.get(name) or {}
+        status = str(result.get("status") or "")
+        row = _job_row(state, name)
+        if "inflight_until" in row:
+            row.pop("inflight_until", None)
+            dirty = True
+        if status == "SKIPPED":
+            if "last_slot" in row:
+                row.pop("last_slot", None)
+                dirty = True
+            if not row:
+                state.get("jobs", {}).pop(name, None)
+                dirty = True
+            continue
+        if item.get("one_shot"):
+            remove_schedule(name)
+            state.get("jobs", {}).pop(name, None)
+            dirty = True
+    if dirty:
+        _save_state(state)
+
+
+def _run_claimed(claimed: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Run claimed jobs without the tick lock. Parallel so one slow job does not stall the rest."""
+    results: List[Optional[Dict[str, Any]]] = [None] * len(claimed)
+
+    def _one(index: int, item: Dict[str, Any]) -> None:
+        schedule = item["schedule"]
+        results[index] = {"schedule": schedule["name"], "result": _run_due(schedule)}
+
+    threads = [
+        threading.Thread(target=_one, args=(i, item), name=f"tick-{item['schedule'].get('name')}")
+        for i, item in enumerate(claimed)
+    ]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    return [row for row in results if row is not None]
+
+
+def _tick_body(now: datetime) -> List[Dict[str, Any]]:
+    with _PROCESS_LOCK:
+        with _file_lock(dynamic_schedules_dir()):
+            claimed, skipped = _collect_due(now)
+    if not claimed:
+        return skipped
+    ran = _run_claimed(claimed)
+    with _PROCESS_LOCK:
+        with _file_lock(dynamic_schedules_dir()):
+            _finalize(claimed, ran)
+    return skipped + ran
 
 
 def tick(base_time: Optional[datetime] = None) -> List[Dict[str, Any]]:
     """Run due jobs. Safe to call in-process and from overlapping processes.
 
-    A threading lock covers one process. A file lock covers other processes
-    ticking the same ``AGENTS_SCHEDULES_DIR``. Cron slots are claimed before
-    the job runs so a second tick in the same minute does not double-fire.
+    The file lock is held only while claiming or rolling back slots, not while
+    a job runs. Cron slots are claimed before the job starts so a second tick
+    does not double-fire. SKIPPED routines release that claim and keep one-shots.
     """
-    with _PROCESS_LOCK:
-        with _file_lock(dynamic_schedules_dir()):
-            return _tick_unlocked(base_time)
+    now = base_time or datetime.now(timezone.utc)
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=timezone.utc)
+    return _tick_body(now)
 
 
 def main(argv: Optional[List[str]] = None) -> int:

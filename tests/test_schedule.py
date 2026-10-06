@@ -215,6 +215,115 @@ class TestSchedule(unittest.TestCase):
         )
         skipped = tick(base_time=datetime(2026, 9, 5, 9, 0, tzinfo=timezone.utc))
         self.assertEqual(skipped[0]["result"]["status"], "SKIPPED")
+        self.assertEqual(len(list_dynamic_schedules()), 2)
+        again = tick(base_time=datetime(2026, 9, 5, 9, 0, tzinfo=timezone.utc))
+        self.assertEqual(again[0]["schedule"], "orphan")
+        self.assertEqual(again[0]["result"]["status"], "SKIPPED")
+
+    def test_skipped_one_shot_routine_is_not_consumed(self):
+        add_schedule(
+            name="once",
+            at="2026-09-05T11:00:00Z",
+            prompt="ping",
+            user="7",
+            timezone_name="UTC",
+        )
+        when = datetime(2026, 9, 5, 12, 0, tzinfo=timezone.utc)
+        first = tick(base_time=when)
+        self.assertEqual(first[0]["result"]["status"], "SKIPPED")
+        self.assertEqual([row["name"] for row in list_dynamic_schedules()], ["once"])
+        second = tick(base_time=when)
+        self.assertEqual(second[0]["result"]["status"], "SKIPPED")
+        self.assertEqual([row["name"] for row in list_dynamic_schedules()], ["once"])
+
+    def test_handler_skip_does_not_consume_slot(self):
+        calls = []
+
+        def handler(job):
+            calls.append(job["name"])
+            return {"status": "SKIPPED"}
+
+        register_routine_handler(handler)
+        add_schedule(
+            name="digest",
+            cron="0 8 * * *",
+            prompt="check",
+            user="7",
+            timezone_name="UTC",
+        )
+        when = datetime(2026, 9, 5, 8, 0, tzinfo=timezone.utc)
+        self.assertEqual(tick(base_time=when)[0]["result"]["status"], "SKIPPED")
+        self.assertEqual(tick(base_time=when)[0]["result"]["status"], "SKIPPED")
+        self.assertEqual(calls, ["digest", "digest"])
+
+    def test_slow_routine_does_not_hold_tick_lock(self):
+        import time
+
+        holder: dict = {}
+
+        def handler(job):
+            if job["name"] != "slow":
+                return {"status": "SUCCESS"}
+
+            def _inner() -> None:
+                holder["rows"] = tick(base_time=datetime(2026, 9, 5, 9, 0, tzinfo=timezone.utc))
+
+            thread = threading.Thread(target=_inner)
+            thread.start()
+            thread.join(2)
+            holder["alive"] = thread.is_alive()
+            return {"status": "SUCCESS"}
+
+        register_routine_handler(handler)
+        add_schedule(
+            name="slow",
+            cron="0 8 * * *",
+            prompt="long",
+            user="7",
+            timezone_name="UTC",
+        )
+        add_schedule(
+            name="other",
+            cron="0 9 * * *",
+            verb="python -c \"print('other')\"",
+            timezone_name="UTC",
+        )
+        fired = tick(base_time=datetime(2026, 9, 5, 8, 0, tzinfo=timezone.utc))
+        self.assertFalse(holder.get("alive"), "inner tick blocked on the outer tick lock")
+        inner_names = [row["schedule"] for row in holder.get("rows") or []]
+        self.assertIn("other", inner_names)
+        self.assertEqual(fired[0]["schedule"], "slow")
+        self.assertEqual(fired[0]["result"]["status"], "SUCCESS")
+
+    def test_due_jobs_run_in_parallel(self):
+        import time
+
+        order: list[tuple[str, str]] = []
+
+        def handler(job):
+            order.append(("start", job["name"]))
+            if job["name"] == "a_slow":
+                time.sleep(0.35)
+            order.append(("end", job["name"]))
+            return {"status": "SUCCESS"}
+
+        register_routine_handler(handler)
+        add_schedule(
+            name="a_slow",
+            cron="0 8 * * *",
+            prompt="slow",
+            user="7",
+            timezone_name="UTC",
+        )
+        add_schedule(
+            name="b_fast",
+            cron="0 8 * * *",
+            prompt="fast",
+            user="7",
+            timezone_name="UTC",
+        )
+        tick(base_time=datetime(2026, 9, 5, 8, 0, tzinfo=timezone.utc))
+        self.assertLess(order.index(("end", "b_fast")), order.index(("end", "a_slow")))
 
     def test_per_job_timeout(self):
         add_schedule(

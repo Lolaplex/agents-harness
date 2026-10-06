@@ -4,8 +4,9 @@ No ``AGENTS_APPROVAL_CMD`` means today's behavior: tools run immediately.
 When the command is set, ``AGENTS_APPROVAL_MODE`` selects the gate:
 
 - ``off``: never ask
-- ``ask``: mutators only (default when a command is set and the mode is empty)
-- ``strict``: every tool that is not read-only
+- ``ask``: mutators only (default when a command is set and the mode is empty).
+  Modules with ``approval_ask: false`` (schedule create and list) are not asked.
+- ``strict``: every tool that is not read-only, including schedule create
 
 The command gets one JSON object on stdin and exits 0 (approved), 1 (denied),
 or 2 (timeout / unavailable, treated as denied). ``{user}`` in the command is
@@ -112,6 +113,8 @@ def needs_approval(mod: dict[str, Any]) -> bool:
         return False
     if mode == "strict":
         return not module_is_read_only(mod)
+    if mod.get("approval_ask") is False:
+        return False
     return module_is_mutator(mod)
 
 

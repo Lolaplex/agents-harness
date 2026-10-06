@@ -119,13 +119,13 @@ python -m runner.loop --user 123 --message "what is this?" --attach ./shot.png -
 
 ## Approval, skills, schedules, attachments
 
-Mutating `call_job` tools ask first when `AGENTS_APPROVAL_CMD` is set. `{user}` in that command becomes the turn's channel user. `AGENTS_APPROVAL_MODE=ask` gates mutators (the default once a command is set). `strict` gates every tool that is not read-only. `off`, or no command, keeps the old behavior. Exit 0 approves, 1 denies, 2 is timeout/unavailable (denied). A denial tells the model not to retry.
+Mutating `call_job` tools ask first when `AGENTS_APPROVAL_CMD` is set. `{user}` in that command becomes the turn's channel user. `AGENTS_APPROVAL_MODE=ask` gates mutators (the default once a command is set). Creating or listing a schedule does not ask in `ask` mode; removing one does. `strict` gates every tool that is not read-only, including schedule create. `off`, or no command, keeps the old behavior. Exit 0 approves, 1 denies, 2 is timeout/unavailable (denied). A denial tells the model not to retry.
 
 Every tool result the model sees is wrapped in `<untrusted_data source="...">...</untrusted_data>` after redaction. Denials stay outside that fence.
 
 Skills live in `~/.agents/skills/<name>/SKILL.md` (`AGENTS_SKILLS_DIR`, plus `AGENTS_SKILLS_EXTRA`). The system prompt lists name and description. `skill.load` returns the file. `skill.catalog` is a compatibility alias of `skill.list`.
 
-Cron uses the job's `timezone` (else `AGENTS_TIMEZONE`, `TZ`, or `timezone` in `~/.agents/config.json`). The last fired minute is stored next to the manifests so a double tick does not double-fire, and a miss inside `grace_min` (default 5) still runs once. LLM reminders and routines default to `timeout_sec` 300. `tick()` takes a file lock. Routine jobs (`--prompt`) are not executed here: register `runner.schedule.register_routine_handler`. With no handler, a routine that has a verb runs that verb; a routine with only a prompt is skipped.
+Cron uses the job's `timezone` (else `AGENTS_TIMEZONE`, `TZ`, or `timezone` in `~/.agents/config.json`). The last fired minute is stored next to the manifests so a double tick does not double-fire, and a miss inside `grace_min` (default 5) still runs once. LLM reminders and routines default to `timeout_sec` 300. `tick()` holds its file lock only while claiming slots, then runs jobs outside the lock. Routine jobs (`--prompt`) are not executed here: register `runner.schedule.register_routine_handler`. With no handler, a routine that has a verb runs that verb; a routine with only a prompt is skipped and its slot or one-shot file is left in place. `--session routine:…` restores the previous active chat session after identity resolve so the next turn is not stuck in the routine thread.
 
 ## External MCP client
 

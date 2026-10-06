@@ -400,9 +400,107 @@ def build_payload(
     return messages
 
 
+def _explicit_session_detached(session: str) -> bool:
+    """Routine threads must not become the user's active chat session."""
+    return (session or "").strip().lower().startswith("routine:")
+
+
+def _alias_id(channel: str, user: str) -> str:
+    try:
+        from agents_traces.identity import alias_id
+    except ImportError:
+        ch = (channel or "local").strip().lower().replace(" ", "-")
+        return f"{ch}:{str(user).strip()}"
+    return alias_id(channel, user)
+
+
+def _lookup_person(ident: Any, *, channel: str, user: str, user_id: str) -> Any:
+    person = None
+    if user_id and hasattr(ident, "get_user"):
+        person = ident.get_user(user_id)
+    if person is None and channel and str(user).strip() and hasattr(ident, "find_by_alias"):
+        person = ident.find_by_alias(_alias_id(channel, user))
+    return person
+
+
+def _prior_chat_session(ident: Any, *, channel: str, user: str, user_id: str) -> str:
+    person = _lookup_person(ident, channel=channel, user=user, user_id=user_id)
+    if person is None:
+        return ""
+    active = str(getattr(person, "active_session", "") or "")
+    if active.lower().startswith("routine:"):
+        return ""
+    return active
+
+
+def _restore_chat_session(
+    ident: Any,
+    *,
+    user_id: str,
+    explicit_session: str,
+    prior_active: str,
+) -> None:
+    if not hasattr(ident, "get_user"):
+        return
+    person = ident.get_user(user_id)
+    if person is None:
+        return
+    current = str(getattr(person, "active_session", "") or "")
+    if current != explicit_session and not current.lower().startswith("routine:"):
+        return
+    person.active_session = prior_active
+    ident.save()
+
+
+def resolve_identity_store(ident: Any, args: argparse.Namespace) -> Any:
+    """Resolve a turn. ``routine:`` sessions are not left as the active session.
+
+    agents-traces ``IdentityStore.resolve`` sets ``active_session`` for every
+    explicit session (identity.py). This restores the previous chat session
+    after that write so the next Telegram turn does not continue the routine.
+    """
+    explicit = (getattr(args, "session", None) or "").strip()
+    prior = ""
+    if _explicit_session_detached(explicit):
+        prior = _prior_chat_session(
+            ident,
+            channel=getattr(args, "channel", "") or "",
+            user=getattr(args, "user", "") or "",
+            user_id=getattr(args, "user_id", "") or "",
+        )
+    resolved = ident.resolve(
+        channel=args.channel,
+        user=args.user,
+        user_id=args.user_id,
+        session=args.session or "",
+        new_session=args.new_session,
+        project=args.project,
+        legacy_exists=_session_has_events(),
+    )
+    if _explicit_session_detached(explicit):
+        try:
+            _restore_chat_session(
+                ident,
+                user_id=str(getattr(resolved.user, "id", "") or ""),
+                explicit_session=explicit,
+                prior_active=prior,
+            )
+        except Exception as exc:
+            print(f"[!] routine session left active: {exc}", file=sys.stderr)
+    return resolved
+
+
+def _session_has_events():
+    try:
+        from agents_traces.identity import session_has_events
+    except ImportError:
+        return None
+    return session_has_events
+
+
 def _resolve_identity(args: argparse.Namespace):
     try:
-        from agents_traces.identity import IdentityStore, session_has_events
+        from agents_traces.identity import IdentityStore
     except ImportError:
         from types import SimpleNamespace
 
@@ -424,16 +522,7 @@ def _resolve_identity(args: argparse.Namespace):
             session=SimpleNamespace(id=sid, start_date=""),
         )
 
-    ident = IdentityStore()
-    return ident.resolve(
-        channel=args.channel,
-        user=args.user,
-        user_id=args.user_id,
-        session=args.session or "",
-        new_session=args.new_session,
-        project=args.project,
-        legacy_exists=session_has_events,
-    )
+    return resolve_identity_store(IdentityStore(), args)
 
 
 def _complete_once(provider: Any, req: CompletionRequest) -> CompletionResult:

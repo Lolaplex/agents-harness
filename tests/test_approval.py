@@ -120,6 +120,52 @@ class TestApproval(unittest.TestCase):
         self.assertIn("unavailable", msg)
         self.assertIn("Do not retry", msg)
 
+    def test_ask_does_not_gate_schedule_add_strict_does(self):
+        from runner.modules import find_module
+
+        add = find_module("mcp.schedule.add")
+        remove = find_module("mcp.schedule.remove")
+        self.assertIsNotNone(add)
+        self.assertTrue(add["mutates"])
+        self.assertIs(add.get("approval_ask"), False)
+        env_ask = {"AGENTS_APPROVAL_CMD": "false", "AGENTS_APPROVAL_MODE": "ask"}
+        with patch.dict(os.environ, env_ask, clear=False):
+            with patch("runner.cordis_tools.execute_job", return_value={"status": "SUCCESS", "stdout_tail": "added"}) as run:
+                out = handle_cordis_tool(
+                    "call_job",
+                    {
+                        "function": {
+                            "arguments": json.dumps(
+                                {"name": "mcp.schedule.add", "arguments": {"text": "hi", "at": "+10m", "channel": "http", "user": "1"}}
+                            )
+                        }
+                    },
+                )
+            run.assert_called_once()
+            self.assertIn("added", out)
+            with patch("runner.cordis_tools.execute_job") as remove_run:
+                denied = handle_cordis_tool(
+                    "call_job",
+                    {"function": {"arguments": json.dumps({"name": "mcp.schedule.remove", "arguments": {"name": "x"}})}},
+                )
+            remove_run.assert_not_called()
+            self.assertTrue(denied.startswith("Denied:"))
+        self.assertTrue(remove["mutates"])
+        with patch.dict(os.environ, {"AGENTS_APPROVAL_CMD": "false", "AGENTS_APPROVAL_MODE": "strict"}, clear=False):
+            with patch("runner.cordis_tools.execute_job") as strict_run:
+                strict = handle_cordis_tool(
+                    "call_job",
+                    {
+                        "function": {
+                            "arguments": json.dumps(
+                                {"name": "mcp.schedule.add", "arguments": {"text": "hi", "at": "+10m"}}
+                            )
+                        }
+                    },
+                )
+            strict_run.assert_not_called()
+            self.assertTrue(strict.startswith("Denied:"))
+
     def test_ask_skips_read_only(self):
         with patch.dict(
             os.environ,

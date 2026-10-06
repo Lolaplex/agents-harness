@@ -9,7 +9,13 @@ from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from unittest.mock import patch
 
-from runner.loop import LOOP_TRAILER_MARKER, _parse_text_tool_calls, build_payload, main as loop_main
+from runner.loop import (
+    LOOP_TRAILER_MARKER,
+    _parse_text_tool_calls,
+    build_payload,
+    main as loop_main,
+    resolve_identity_store,
+)
 from runner.modules import list_modules, openai_tools
 from runner.providers import CompletionRequest, CompletionResult, get_provider, list_providers
 
@@ -609,6 +615,62 @@ class TestModulesAndLoop(unittest.TestCase):
             self.assertTrue(tool_msgs[0]["content"].startswith("Denied:"))
             self.assertIn("Do not retry the same tool call.", tool_msgs[0]["content"])
             self.assertNotIn("<untrusted_data", tool_msgs[0]["content"])
+
+    def test_routine_session_does_not_replace_active_chat(self):
+        from types import SimpleNamespace
+
+        class Person:
+            def __init__(self) -> None:
+                self.id = "u_1"
+                self.active_session = "ses_chat"
+                self.aliases = ["telegram:5712"]
+
+        class Store:
+            def __init__(self) -> None:
+                self.person = Person()
+                self.saved = 0
+
+            def get_user(self, user_id: str):
+                return self.person if user_id == self.person.id else None
+
+            def find_by_alias(self, alias: str):
+                return self.person if alias == "telegram:5712" else None
+
+            def resolve(self, **kwargs):
+                self.person.active_session = kwargs.get("session") or "ses_new"
+                return SimpleNamespace(
+                    user=self.person,
+                    session=SimpleNamespace(id=self.person.active_session, start_date="2026-10-06"),
+                    alias="telegram:5712",
+                )
+
+            def save(self) -> None:
+                self.saved += 1
+
+        store = Store()
+        args = SimpleNamespace(
+            channel="telegram",
+            user="5712",
+            user_id="",
+            session="routine:digest",
+            new_session=False,
+            project="",
+        )
+        resolved = resolve_identity_store(store, args)
+        self.assertEqual(resolved.session.id, "routine:digest")
+        self.assertEqual(store.person.active_session, "ses_chat")
+        self.assertGreaterEqual(store.saved, 1)
+
+        store.person.active_session = "routine:old"
+        resolved = resolve_identity_store(store, args)
+        self.assertEqual(resolved.session.id, "routine:digest")
+        self.assertEqual(store.person.active_session, "")
+
+        args.session = "ses_keep"
+        store.person.active_session = "ses_chat"
+        resolved = resolve_identity_store(store, args)
+        self.assertEqual(store.person.active_session, "ses_keep")
+        self.assertEqual(resolved.session.id, "ses_keep")
 
 
 if __name__ == "__main__":

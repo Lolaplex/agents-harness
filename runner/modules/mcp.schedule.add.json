@@ -7,6 +7,7 @@
   "rests_on": "agents-harness CLI add dynamic schedule or reminder; exit 0 = added",
   "expected_exit": 0,
   "mutates": true,
+  "approval_ask": false,
   "timeout_sec": 30,
   "as_tool": true,
   "parameters": {
