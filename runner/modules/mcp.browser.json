@@ -6,5 +6,6 @@
   "verb": "python -m agents_browser --help-json",
   "rests_on": "agents-browser CDP MCP server; invoke via FastMCP tools when serve is running",
   "expected_exit": 0,
+  "mutates": false,
   "timeout_sec": 30
 }

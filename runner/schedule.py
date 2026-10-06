@@ -1,23 +1,37 @@
 """Dynamic schedule & reminder manager for agents-harness.
 
 Pure Python standard library. Stores dynamic schedule manifests in ~/.agents/schedules/
-(or AGENTS_SCHEDULES_DIR). Invoked via CLI or as Cordis tool.
+(or AGENTS_SCHEDULES_DIR). Invoked via CLI, as a Cordis tool, or in-process
+``tick()`` (klanker serve). Cron is evaluated in each job's timezone. A file
+lock plus a persisted last-run minute keep overlapping ticks from double-firing,
+and a missed minute still runs once inside the grace window (default 5).
+``kind: routine`` jobs are handed to ``register_routine_handler``; this package
+does not run the prompt itself.
 """
 
 from __future__ import annotations
 
 import argparse
+from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone, tzinfo
 import json
 import os
 from pathlib import Path
 import re
 import sys
+import threading
 import uuid
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from .executor import execute_job, load_manifest
+from .executor import execute_job
+
+DEFAULT_GRACE_MIN = 5
+DEFAULT_LLM_TIMEOUT = 300
+_STATE_NAME = "tick-state.json"
+_LOCK_NAME = "tick.lock"
+_PROCESS_LOCK = threading.Lock()
+_routine_handler: Optional[Callable[[Dict[str, Any]], Any]] = None
 
 
 def dynamic_schedules_dir() -> Path:
@@ -29,6 +43,203 @@ def dynamic_schedules_dir() -> Path:
         p = Path.home() / ".agents" / "schedules"
     p.mkdir(parents=True, exist_ok=True)
     return p
+
+
+def configured_timezone() -> str:
+    """Job default zone: AGENTS_TIMEZONE, then TZ, then ~/.agents/config.json, else UTC."""
+    named = os.environ.get("AGENTS_TIMEZONE", "").strip()
+    if named:
+        return named
+    tz = os.environ.get("TZ", "").strip()
+    if tz:
+        return tz
+    candidates: list[Path] = []
+    home = os.environ.get("AGENTS_HOME", "").strip()
+    if home:
+        candidates.append(Path(home).expanduser() / "config.json")
+    candidates.append(Path.home() / ".agents" / "config.json")
+    for path in candidates:
+        if not path.is_file():
+            continue
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if isinstance(data, dict) and str(data.get("timezone") or "").strip():
+            return str(data["timezone"]).strip()
+    return "UTC"
+
+
+def register_routine_handler(
+    handler: Optional[Callable[[Dict[str, Any]], Any]],
+) -> Optional[Callable[[Dict[str, Any]], Any]]:
+    """Klanker registers this. The harness does not run routine prompts itself."""
+    global _routine_handler
+    _routine_handler = handler
+    return handler
+
+
+def _is_llm_job(manifest: Dict[str, Any]) -> bool:
+    if str(manifest.get("kind") or "") == "routine" or manifest.get("prompt"):
+        return True
+    verb = str(manifest.get("verb") or "")
+    return "runner.loop" in verb and "--complete" in verb
+
+
+def _job_timeout(manifest: Dict[str, Any]) -> int:
+    raw = manifest.get("timeout_sec")
+    if raw not in (None, ""):
+        try:
+            return max(1, int(raw))
+        except (TypeError, ValueError):
+            pass
+    return DEFAULT_LLM_TIMEOUT if _is_llm_job(manifest) else 60
+
+
+def _job_grace(manifest: Dict[str, Any]) -> int:
+    raw = manifest.get("grace_min")
+    if raw not in (None, ""):
+        try:
+            return max(0, int(raw))
+        except (TypeError, ValueError):
+            pass
+    env = os.environ.get("AGENTS_SCHEDULE_GRACE_MIN", "").strip()
+    if env:
+        try:
+            return max(0, int(env))
+        except ValueError:
+            pass
+    return DEFAULT_GRACE_MIN
+
+
+def _state_path() -> Path:
+    return dynamic_schedules_dir() / _STATE_NAME
+
+
+def _load_state() -> Dict[str, Any]:
+    path = _state_path()
+    if not path.is_file():
+        return {"jobs": {}}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {"jobs": {}}
+    if not isinstance(data, dict):
+        return {"jobs": {}}
+    jobs = data.get("jobs")
+    if not isinstance(jobs, dict):
+        data["jobs"] = {}
+    return data
+
+
+def _save_state(state: Dict[str, Any]) -> None:
+    path = _state_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(state, indent=2, ensure_ascii=False), encoding="utf-8")
+    tmp.replace(path)
+
+
+def _parse_slot(value: str) -> Optional[datetime]:
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed
+
+
+@contextmanager
+def _file_lock(directory: Path):
+    """Exclusive lock so two processes cannot tick the same directory together."""
+    directory.mkdir(parents=True, exist_ok=True)
+    handle = open(directory / _LOCK_NAME, "a+", encoding="utf-8")
+    locked = False
+    try:
+        try:
+            import fcntl
+
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+            locked = True
+        except ImportError:
+            locked = False
+        yield
+    finally:
+        if locked:
+            try:
+                import fcntl
+
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+            except OSError:
+                pass
+        handle.close()
+
+
+def _normalize_handler_result(job: Dict[str, Any], value: Any) -> Dict[str, Any]:
+    if isinstance(value, dict) and value.get("status"):
+        return value
+    text = "" if value is None else str(value)
+    return {
+        "status": "SUCCESS",
+        "job": job.get("name"),
+        "exit_code": 0,
+        "stdout_tail": text[-1000:],
+        "stderr_tail": "",
+    }
+
+
+def run_routine(job: Dict[str, Any]) -> Dict[str, Any]:
+    """Hand a routine job to the registered handler.
+
+    No handler and a verb: run the verb (previous executor behavior).
+    No handler and no verb: skip. The harness does not start a model turn.
+    """
+    handler = _routine_handler
+    prepared = dict(job)
+    prepared["timeout_sec"] = _job_timeout(prepared)
+    if handler is None:
+        if prepared.get("verb"):
+            return execute_job(prepared)
+        return {
+            "status": "SKIPPED",
+            "job": prepared.get("name"),
+            "exit_code": 0,
+            "stdout_tail": "",
+            "stderr_tail": "no routine handler registered",
+        }
+
+    timeout = _job_timeout(prepared)
+    box: Dict[str, Any] = {}
+
+    def _target() -> None:
+        try:
+            box["value"] = handler(prepared)
+        except Exception as exc:
+            box["error"] = exc
+
+    thread = threading.Thread(target=_target, name=f"routine-{prepared.get('name')}", daemon=True)
+    thread.start()
+    thread.join(timeout)
+    if thread.is_alive():
+        return {
+            "status": "TIMEOUT",
+            "job": prepared.get("name"),
+            "exit_code": -1,
+            "stdout_tail": "",
+            "stderr_tail": f"routine timeout after {timeout}s",
+        }
+    if "error" in box:
+        return {
+            "status": "ERROR",
+            "job": prepared.get("name"),
+            "exit_code": -1,
+            "stdout_tail": "",
+            "stderr_tail": str(box["error"]),
+        }
+    return _normalize_handler_result(prepared, box.get("value"))
 
 
 def _iana_zone(timezone_name: str) -> tzinfo:
@@ -104,6 +315,36 @@ def match_cron_field(field: str, val: int) -> bool:
     return False
 
 
+def due_cron_slot(
+    cron_expr: str,
+    now: datetime,
+    *,
+    timezone_name: str = "",
+    last_slot: Optional[datetime] = None,
+    grace_min: int = DEFAULT_GRACE_MIN,
+) -> Optional[datetime]:
+    """Most recent matching minute in the job zone, inside the grace window, after last_slot."""
+    zone = _iana_zone(timezone_name or configured_timezone())
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=timezone.utc)
+    local = now.astimezone(zone).replace(second=0, microsecond=0)
+    cursor = local
+    earliest = local - timedelta(minutes=max(0, int(grace_min)))
+    matched: Optional[datetime] = None
+    while cursor >= earliest:
+        if is_cron_due(cron_expr, cursor):
+            matched = cursor
+            break
+        cursor -= timedelta(minutes=1)
+    if matched is None:
+        return None
+    if last_slot is not None:
+        prev = last_slot.astimezone(zone).replace(second=0, microsecond=0)
+        if matched <= prev:
+            return None
+    return matched
+
+
 def is_cron_due(cron_expr: str, now: datetime) -> bool:
     """Check standard 5-part cron expression (minute hour day-of-month month day-of-week)."""
     parts = cron_expr.strip().split()
@@ -136,8 +377,13 @@ def add_schedule(
     user: str = "",
     timezone_name: str = "",
     one_shot: Optional[bool] = None,
+    prompt: Optional[str] = None,
+    session: Optional[str] = None,
+    timeout_sec: Optional[int] = None,
+    grace_min: Optional[int] = None,
+    kind: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """Add a dynamic schedule or reminder manifest."""
+    """Add a dynamic schedule, reminder, or routine manifest."""
     target_dir = dynamic_schedules_dir()
     slug = (name or "").strip()
     if not slug:
@@ -147,10 +393,17 @@ def add_schedule(
     channel = (channel or "").strip()
     user = (user or "").strip()
     timezone_name = (timezone_name or "").strip()
+    prompt = (prompt or "").strip()
+    session = (session or "").strip()
+    kind_name = (kind or "").strip()
+    is_routine = bool(prompt) or kind_name == "routine"
 
-    if not verb:
+    if is_routine and not user:
+        raise ValueError("routine requires --user")
+
+    if not verb and not is_routine:
         if not text:
-            raise ValueError("Either 'verb' or 'text' must be provided.")
+            raise ValueError("Either 'verb', 'text', or 'prompt' must be provided.")
         if not channel or not user:
             raise ValueError("text without verb requires --channel and --user")
         parts = ["python", "-m", "runner.loop", "--channel", channel, "--user", str(user)]
@@ -158,13 +411,28 @@ def add_schedule(
         parts.extend(["--message", f'"{clean_text}"', "--complete"])
         verb = " ".join(parts)
 
+    stored_tz = timezone_name or configured_timezone()
+    draft: Dict[str, Any] = {"kind": "routine" if is_routine else "", "verb": verb or "", "prompt": prompt}
+    if timeout_sec not in (None, ""):
+        timeout_val = max(1, int(timeout_sec))
+    else:
+        timeout_val = _job_timeout(draft)
+    grace_val = DEFAULT_GRACE_MIN if grace_min is None else max(0, int(grace_min))
+
     manifest: Dict[str, Any] = {
         "name": slug,
-        "verb": verb,
         "rests_on": f"Dynamic schedule {slug}",
         "expected_exit": 0,
-        "timeout_sec": 60,
+        "timeout_sec": timeout_val,
+        "timezone": stored_tz,
+        "grace_min": grace_val,
     }
+    if verb:
+        manifest["verb"] = verb
+    if is_routine:
+        manifest["kind"] = "routine"
+        manifest["prompt"] = prompt
+        manifest["session"] = session or f"routine:{slug}"
 
     if at:
         due_dt = parse_due_time(at, timezone_name=timezone_name)
@@ -184,14 +452,14 @@ def add_schedule(
     else:
         raise ValueError("Must specify 'at', 'cron', or 'cadence'.")
 
+    if is_routine and prompt:
+        manifest["rests_on"] = f"Routine {slug} for user {user}: {prompt}"
     if text:
         manifest["text"] = str(text)
     if channel:
         manifest["channel"] = str(channel)
     if user:
         manifest["user"] = str(user)
-    if timezone_name:
-        manifest["timezone"] = timezone_name
 
     out_file = target_dir / f"{slug}.json"
     with open(out_file, "w", encoding="utf-8") as f:
@@ -207,6 +475,8 @@ def list_dynamic_schedules() -> List[Dict[str, Any]]:
     if not target_dir.exists():
         return results
     for p in sorted(target_dir.glob("*.json")):
+        if p.name == _STATE_NAME or p.name.startswith("."):
+            continue
         try:
             with open(p, "r", encoding="utf-8") as f:
                 data = json.load(f)
@@ -230,32 +500,75 @@ def remove_schedule(name: str) -> bool:
     return False
 
 
-def tick(base_time: Optional[datetime] = None) -> List[Dict[str, Any]]:
-    """Check and execute due schedules. Clean up completed one-shot tasks."""
+def _mark_slot(state: Dict[str, Any], name: str, slot: datetime) -> None:
+    jobs = state.setdefault("jobs", {})
+    jobs[name] = {"last_slot": slot.isoformat()}
+    _save_state(state)
+
+
+def _run_due(schedule: Dict[str, Any]) -> Dict[str, Any]:
+    prepared = dict(schedule)
+    prepared["timeout_sec"] = _job_timeout(prepared)
+    if str(prepared.get("kind") or "") == "routine":
+        return run_routine(prepared)
+    return execute_job(prepared)
+
+
+def _tick_unlocked(base_time: Optional[datetime] = None) -> List[Dict[str, Any]]:
+    """Check and execute due schedules. Caller holds the tick locks."""
     now = base_time or datetime.now(timezone.utc)
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=timezone.utc)
     schedules = list_dynamic_schedules()
+    state = _load_state()
     executed: List[Dict[str, Any]] = []
 
     for s in schedules:
-        is_due = False
+        ran = False
         if "at" in s:
             try:
                 due_dt = parse_due_time(s["at"])
-                if due_dt <= now:
-                    is_due = True
             except Exception:
-                pass
+                due_dt = None
+            if due_dt is not None and due_dt <= now:
+                res = _run_due(s)
+                executed.append({"schedule": s["name"], "result": res})
+                ran = True
         elif "cron" in s:
-            if is_cron_due(s["cron"], now):
-                is_due = True
+            job_state = (state.get("jobs") or {}).get(s["name"]) or {}
+            last = _parse_slot(str(job_state.get("last_slot") or ""))
+            slot = due_cron_slot(
+                str(s["cron"]),
+                now,
+                timezone_name=str(s.get("timezone") or ""),
+                last_slot=last,
+                grace_min=_job_grace(s),
+            )
+            if slot is not None:
+                _mark_slot(state, str(s["name"]), slot)
+                res = _run_due(s)
+                executed.append({"schedule": s["name"], "result": res})
+                ran = True
 
-        if is_due:
-            res = execute_job(s)
-            executed.append({"schedule": s["name"], "result": res})
-            if s.get("one_shot", False):
-                remove_schedule(s["name"])
+        if ran and s.get("one_shot", False):
+            remove_schedule(s["name"])
+            jobs = state.get("jobs") or {}
+            jobs.pop(s["name"], None)
+            _save_state(state)
 
     return executed
+
+
+def tick(base_time: Optional[datetime] = None) -> List[Dict[str, Any]]:
+    """Run due jobs. Safe to call in-process and from overlapping processes.
+
+    A threading lock covers one process. A file lock covers other processes
+    ticking the same ``AGENTS_SCHEDULES_DIR``. Cron slots are claimed before
+    the job runs so a second tick in the same minute does not double-fire.
+    """
+    with _PROCESS_LOCK:
+        with _file_lock(dynamic_schedules_dir()):
+            return _tick_unlocked(base_time)
 
 
 def main(argv: Optional[List[str]] = None) -> int:
@@ -278,6 +591,10 @@ def main(argv: Optional[List[str]] = None) -> int:
         help="IANA timezone for naive ISO datetimes (e.g. Europe/Berlin)",
     )
     add_p.add_argument("--one-shot", action="store_true", help="Delete manifest after execution")
+    add_p.add_argument("--prompt", default="", help="Routine prompt. Handed to the registered handler, not executed here.")
+    add_p.add_argument("--session", default="", help="Routine session id (default routine:<name>)")
+    add_p.add_argument("--timeout", type=int, default=0, dest="timeout_sec", help="Per-job timeout seconds. LLM jobs and routines default to 300.")
+    add_p.add_argument("--grace", type=int, default=-1, dest="grace_min", help="Minutes a missed cron slot may still run once (default 5).")
 
     sub.add_parser("list", help="List dynamic schedules")
 
@@ -302,6 +619,10 @@ def main(argv: Optional[List[str]] = None) -> int:
                 user=args.user,
                 timezone_name=getattr(args, "timezone_name", "") or "",
                 one_shot=args.one_shot if args.one_shot else None,
+                prompt=args.prompt or None,
+                session=args.session or None,
+                timeout_sec=args.timeout_sec or None,
+                grace_min=None if args.grace_min < 0 else args.grace_min,
             )
             print(json.dumps(res, indent=2, ensure_ascii=False))
             return 0

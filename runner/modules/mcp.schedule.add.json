@@ -6,6 +6,7 @@
   "verb": "python -m runner.schedule add",
   "rests_on": "agents-harness CLI add dynamic schedule or reminder; exit 0 = added",
   "expected_exit": 0,
+  "mutates": true,
   "timeout_sec": 30,
   "as_tool": true,
   "parameters": {
@@ -17,7 +18,7 @@
       },
       "at": {
         "type": "string",
-        "description": "Due time: relative like '+10m', '+1h', '+2d', or ISO datetime '2026-09-05T20:00:00Z'"
+        "description": "Due time: relative like '+10m', '+1h', '+2d', or ISO datetime '2026-09-05T20:00:00Z'. Provide at, cron, or cadence."
       },
       "name": {
         "type": "string",
@@ -37,9 +38,21 @@
       },
       "timezone": {
         "type": "string",
-        "description": "IANA timezone for naive ISO datetimes (e.g. Europe/Berlin). Inherited from the current user when omitted."
+        "description": "IANA timezone for naive ISO datetimes and cron (e.g. Europe/Berlin). Inherited from the current user when omitted."
+      },
+      "prompt": {
+        "type": "string",
+        "description": "Routine prompt. The harness stores the job and hands it to the registered routine handler instead of sending fixed text."
+      },
+      "session": {
+        "type": "string",
+        "description": "Routine session id. Defaults to routine:<name>."
+      },
+      "timeout_sec": {
+        "type": "integer",
+        "description": "Per-job timeout in seconds. LLM reminders and routines default to 300."
       }
     },
-    "required": ["at"]
+    "required": []
   }
 }

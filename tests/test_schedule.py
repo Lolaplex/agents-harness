@@ -8,9 +8,12 @@ import shutil
 import tempfile
 import unittest
 
+import threading
+
 from runner.schedule import (
     add_schedule,
     list_dynamic_schedules,
+    register_routine_handler,
     remove_schedule,
     tick,
     parse_due_time,
@@ -30,6 +33,7 @@ class TestSchedule(unittest.TestCase):
         else:
             os.environ.pop("AGENTS_SCHEDULES_DIR", None)
         shutil.rmtree(self.temp_dir, ignore_errors=True)
+        register_routine_handler(None)
 
     def test_parse_due_time(self):
         base = datetime(2026, 9, 5, 12, 0, 0, tzinfo=timezone.utc)
@@ -106,6 +110,122 @@ class TestSchedule(unittest.TestCase):
         remaining = list_dynamic_schedules()
         self.assertEqual(len(remaining), 1)
         self.assertEqual(remaining[0]["name"], "future_task")
+
+    def test_text_reminder_timeout_defaults_to_300(self):
+        item = add_schedule(name="rem", at="+10m", text="hi", channel="http", user="1")
+        self.assertEqual(item["timeout_sec"], 300)
+        self.assertTrue(item.get("timezone"))
+
+    def test_cron_uses_job_timezone(self):
+        add_schedule(
+            name="berlin_morning",
+            cron="0 9 * * *",
+            verb="python -c \"print('berlin')\"",
+            timezone_name="Europe/Berlin",
+        )
+        # 07:00 UTC is 09:00 in Berlin (CEST). 09:00 UTC is 11:00 there.
+        fired = tick(base_time=datetime(2026, 9, 5, 7, 0, tzinfo=timezone.utc))
+        self.assertEqual([row["schedule"] for row in fired], ["berlin_morning"])
+        self.assertEqual(fired[0]["result"]["status"], "SUCCESS")
+        later = tick(base_time=datetime(2026, 9, 5, 9, 0, tzinfo=timezone.utc))
+        self.assertEqual(later, [])
+
+    def test_same_minute_and_grace_window(self):
+        add_schedule(
+            name="hourly",
+            cron="0 * * * *",
+            verb="python -c \"print('slot')\"",
+            timezone_name="UTC",
+        )
+        now = datetime(2026, 9, 5, 8, 0, tzinfo=timezone.utc)
+        self.assertEqual(len(tick(base_time=now)), 1)
+        self.assertEqual(tick(base_time=now + timedelta(seconds=20)), [])
+
+        add_schedule(
+            name="missed",
+            cron="15 8 * * *",
+            verb="python -c \"print('grace')\"",
+            timezone_name="UTC",
+        )
+        late = tick(base_time=datetime(2026, 9, 5, 8, 18, tzinfo=timezone.utc))
+        self.assertEqual([row["schedule"] for row in late], ["missed"])
+        self.assertEqual(tick(base_time=datetime(2026, 9, 5, 8, 19, tzinfo=timezone.utc)), [])
+
+        add_schedule(
+            name="too_late",
+            cron="30 8 * * *",
+            verb="python -c \"print('nope')\"",
+            timezone_name="UTC",
+        )
+        self.assertEqual(tick(base_time=datetime(2026, 9, 5, 8, 36, tzinfo=timezone.utc)), [])
+
+    def test_parallel_ticks_fire_once(self):
+        add_schedule(
+            name="slow",
+            cron="0 * * * *",
+            verb="python -c \"import time; time.sleep(0.4); print('once')\"",
+            timezone_name="UTC",
+        )
+        now = datetime(2026, 9, 5, 8, 0, tzinfo=timezone.utc)
+        batches: list[list] = []
+
+        def _run() -> None:
+            batches.append(tick(base_time=now))
+
+        threads = [threading.Thread(target=_run) for _ in range(2)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=5)
+        fired = [item for batch in batches for item in batch]
+        self.assertEqual(len(fired), 1)
+        self.assertEqual(fired[0]["result"]["status"], "SUCCESS")
+
+    def test_routine_handler_and_skip_without_one(self):
+        seen = []
+
+        def handler(job):
+            seen.append(job)
+            return {"status": "SUCCESS", "stdout_tail": "ran"}
+
+        register_routine_handler(handler)
+        add_schedule(
+            name="digest",
+            cron="0 8 * * *",
+            prompt="check mail",
+            user="42",
+            timezone_name="UTC",
+        )
+        fired = tick(base_time=datetime(2026, 9, 5, 8, 0, tzinfo=timezone.utc))
+        self.assertEqual(len(seen), 1)
+        self.assertEqual(seen[0]["kind"], "routine")
+        self.assertEqual(seen[0]["prompt"], "check mail")
+        self.assertEqual(seen[0]["user"], "42")
+        self.assertEqual(seen[0]["session"], "routine:digest")
+        self.assertEqual(seen[0]["timeout_sec"], 300)
+        self.assertEqual(fired[0]["result"]["status"], "SUCCESS")
+
+        register_routine_handler(None)
+        add_schedule(
+            name="orphan",
+            cron="0 9 * * *",
+            prompt="nobody home",
+            user="42",
+            timezone_name="UTC",
+        )
+        skipped = tick(base_time=datetime(2026, 9, 5, 9, 0, tzinfo=timezone.utc))
+        self.assertEqual(skipped[0]["result"]["status"], "SKIPPED")
+
+    def test_per_job_timeout(self):
+        add_schedule(
+            name="tight",
+            cron="0 * * * *",
+            verb="python -c \"import time; time.sleep(3)\"",
+            timezone_name="UTC",
+            timeout_sec=1,
+        )
+        fired = tick(base_time=datetime(2026, 9, 5, 4, 0, tzinfo=timezone.utc))
+        self.assertEqual(fired[0]["result"]["status"], "TIMEOUT")
 
 
 if __name__ == "__main__":

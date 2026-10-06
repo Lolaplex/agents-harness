@@ -5,9 +5,13 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from .approval import gate_module
 from .executor import execute_job
 from .modules import find_module, find_module_for_tool, list_modules, openai_tool_name
 from .redact import redact_tool_output
+from .skills import format_skill_list, load_skill
+
+_SKILL_MODULES = ("skill.list", "skill.load", "skill.catalog")
 
 CORDIS_TOOL_NAMES = ("list_catalog", "load_schema", "call_job")
 
@@ -165,10 +169,32 @@ def _arguments_to_argv(mod: dict[str, Any], arguments: Any) -> list[str]:
 
     if name == "mcp.schedule.add":
         out = []
-        for k in ("at", "text", "name", "cron", "cadence", "channel", "user", "verb", "timezone"):
+        for k in (
+            "at",
+            "text",
+            "name",
+            "cron",
+            "cadence",
+            "channel",
+            "user",
+            "verb",
+            "timezone",
+            "prompt",
+            "session",
+        ):
             val = arguments.get(k)
             if val not in (None, ""):
                 out.extend([f"--{k}", str(val)])
+        timeout = arguments.get("timeout_sec")
+        if timeout in (None, ""):
+            timeout = arguments.get("timeout")
+        if timeout not in (None, ""):
+            out.extend(["--timeout", str(timeout)])
+        grace = arguments.get("grace_min")
+        if grace in (None, ""):
+            grace = arguments.get("grace")
+        if grace not in (None, ""):
+            out.extend(["--grace", str(grace)])
         if arguments.get("one_shot"):
             out.append("--one-shot")
         return out
@@ -227,12 +253,43 @@ def _arguments_to_argv(mod: dict[str, Any], arguments: Any) -> list[str]:
     return []
 
 
+def _skill_arguments_name(job_args: Any) -> str:
+    if isinstance(job_args, dict):
+        if len(job_args) == 1 and "arguments" in job_args:
+            return _skill_arguments_name(job_args["arguments"])
+        return str(job_args.get("name") or job_args.get("skill") or "").strip()
+    if isinstance(job_args, str):
+        return job_args.strip()
+    return ""
+
+
+def _run_skill(mod_name: str, job_args: Any) -> str:
+    if mod_name in ("skill.list", "skill.catalog"):
+        return format_skill_list()
+    text = load_skill(_skill_arguments_name(job_args))
+    if text is None:
+        return f"unknown skill {_skill_arguments_name(job_args)}"
+    return text
+
+
+def _remote_arguments(job_args: Any) -> dict[str, Any]:
+    if not isinstance(job_args, dict):
+        return {}
+    if set(job_args.keys()) == {"arguments"} and isinstance(job_args.get("arguments"), dict):
+        return job_args["arguments"]
+    inner = job_args.get("arguments")
+    if isinstance(inner, dict) and "name" not in job_args:
+        return inner
+    return {k: v for k, v in job_args.items() if k != "name"}
+
+
 def handle_cordis_tool(
     name: str,
     call: dict[str, Any],
     *,
     default_user: str = "",
     default_timezone: str = "",
+    session: str = "",
 ) -> str:
     tool = name.strip().lower()
     args = _parse_arguments(call)
@@ -272,7 +329,13 @@ def handle_cordis_tool(
         mod_name = str(args.get("name") or "").strip()
         if is_cordis_tool(mod_name) and mod_name != "call_job":
             inner_call = {"function": {"arguments": args.get("arguments") or args}}
-            return handle_cordis_tool(mod_name, inner_call, default_user=default_user, default_timezone=default_timezone)
+            return handle_cordis_tool(
+                mod_name,
+                inner_call,
+                default_user=default_user,
+                default_timezone=default_timezone,
+                session=session,
+            )
         mod = find_module(mod_name)
         if mod is None:
             mod = find_module_for_tool(mod_name)
@@ -287,6 +350,29 @@ def handle_cordis_tool(
                 job_args["user"] = default_user
             if not job_args.get("timezone") and default_timezone:
                 job_args["timezone"] = default_timezone
+        allowed, denial = gate_module(
+            mod,
+            job_args if isinstance(job_args, dict) else {"arguments": job_args},
+            session=session,
+            user=default_user,
+        )
+        if not allowed:
+            return redact_tool_output(denial)
+        mod_name = str(mod.get("name") or "")
+        if mod_name in _SKILL_MODULES:
+            return redact_tool_output(_run_skill(mod_name, job_args))
+        if str(mod.get("kind") or "") == "mcp_remote":
+            from .mcp_client import call_remote
+
+            try:
+                remote_out = call_remote(
+                    str(mod.get("mcp_server") or ""),
+                    str(mod.get("mcp_tool") or ""),
+                    _remote_arguments(job_args),
+                )
+            except Exception as exc:
+                return redact_tool_output(f"mcp remote failed: {exc}")
+            return redact_tool_output(remote_out or "")
         extra = _arguments_to_argv(mod, job_args)
         rec = execute_job(mod, extra_argv=extra or None)
         if rec.get("status") != "SUCCESS":

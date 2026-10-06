@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Approval gate for mutating `call_job` tools (`AGENTS_APPROVAL_CMD`, `AGENTS_APPROVAL_MODE`, `{user}` substitution). A denial tells the model not to retry.
+- Untrusted-data fence around tool results, plus a system-prompt note. Redaction is unchanged.
+- External MCP client (`~/.agents/mcp.json`) exposing `mcp.<server>.<tool>` modules (`kind: mcp_remote`) via the optional `mcp` extra. Short-lived sessions; schema cache.
+- `skill.list` / `skill.load` read `~/.agents/skills/*/SKILL.md` and the system prompt lists them. `skill.catalog` stays as an alias of `skill.list`.
+- Schedule `tick()` evaluates cron in the job timezone, persists the last-run minute, applies a grace window, takes a file lock, and honors per-job timeouts (300s default for LLM jobs and routines). `kind: routine` is handed to `register_routine_handler`.
+- `runner.loop --attach` (repeatable). Images are vision content parts when `AGENTS_VISION=1` or the provider advertises vision.
+- Manifest `"mutates"` flags on bundled modules.
 - Cordis modules `mcp.traces.audit` and `mcp.traces.seal` (`as_tool`) for autonomous integrity checks and cryptographic session sealing.
 - Hourly audit schedule `runner/schedules/traces_audit.json` to monitor trace file integrity and detect execution drift.
 - `--seal` flag on `runner.loop` emitting root digest in the stream trailer (`seal: <sha256>`).
@@ -18,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Clean error handling around `_complete_once` in `runner.loop` emitting error trailer without crashing.
 
 ### Fixed
+- Cron ticks no longer treat the clock as UTC when the job has a timezone, and a second tick in the same minute no longer double-fires.
 - Cordis tool argument parser normalizes list, string, and aliased parameter structures (e.g. `file`, `path` for `file_id`) to prevent empty argv dispatch.
 
 ## [0.0.2] - 2026-09-27

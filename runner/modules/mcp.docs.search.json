@@ -6,6 +6,7 @@
   "verb": "python -m agents_docs search",
   "rests_on": "agents-docs CLI BM25 search over ~/.agents/docs; extra argv is the query; exit 0 = ran",
   "expected_exit": 0,
+  "mutates": false,
   "timeout_sec": 30,
   "as_tool": true,
   "parameters": {

@@ -6,6 +6,7 @@
   "verb": "python -m runner.schedule remove",
   "rests_on": "agents-harness CLI remove dynamic schedule by name; exit 0 = removed",
   "expected_exit": 0,
+  "mutates": true,
   "timeout_sec": 30,
   "as_tool": true,
   "parameters": {
