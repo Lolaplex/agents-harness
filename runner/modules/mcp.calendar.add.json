@@ -4,7 +4,7 @@
   "when": "on_request",
   "cadence": "on_request",
   "verb": "python -m agents_calendar add",
-  "rests_on": "agents-calendar CLI create VEVENT; extra argv is summary dtstart dtend; exit 0 = created",
+  "rests_on": "agents-calendar CLI create VEVENT; summary plus dtstart and dtend as ISO-8601 with a UTC offset (a time without an offset is treated as UTC); exit 0 = created",
   "expected_exit": 0,
   "timeout_sec": 30,
   "as_tool": true,
@@ -18,11 +18,11 @@
       },
       "dtstart": {
         "type": "string",
-        "description": "Start ISO-8601"
+        "description": "Start, ISO-8601 with a UTC offset (e.g. 2026-11-29T16:00:00+01:00). A time without an offset is treated as UTC."
       },
       "dtend": {
         "type": "string",
-        "description": "End ISO-8601"
+        "description": "End, ISO-8601 with a UTC offset (e.g. 2026-11-29T17:00:00+01:00). A time without an offset is treated as UTC."
       },
       "calendar": {
         "type": "string",

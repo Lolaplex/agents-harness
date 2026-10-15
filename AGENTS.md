@@ -30,6 +30,7 @@
 - Run all scheduled flows once: `python -m runner.executor --all`
 - Tick due dynamic reminders: `python -m runner.schedule tick` (waits until claimed jobs finish) or in-process `runner.schedule.tick()`. `tick(wait=False)` returns after claiming so the caller is not blocked for the job timeout. A file lock makes overlapping ticks safe. A host cron or a platform scheduler, running as the same user as the service, can still call the CLI. An external tick does not inherit environment that only the long-running process sets (for example `AGENTS_APPROVAL_CMD`). This package does not start its own scheduler daemon.
 - Approval gate (model `call_job` only): `AGENTS_APPROVAL_CMD` with `{user}` substitution, `AGENTS_APPROVAL_MODE=off|ask|strict`. Unset command = current behavior.
+- Tool output cap: `AGENTS_TOOL_OUTPUT_MAX` (default 32768 characters). Output over the cap keeps the head and the tail with `[... N chars omitted ...]`. Trace `stdout_tail` / `stderr_tail` stay 1000 characters; `execute_job` also returns the full `stdout` and `stderr`.
 - Skills: `~/.agents/skills/*/SKILL.md` (`AGENTS_SKILLS_DIR`, extra dirs in `AGENTS_SKILLS_EXTRA`). Tools `skill.list` / `skill.load`. `skill.catalog` remains an alias of `skill.list`.
 - Attachments: `python -m runner.loop --attach <path>` (repeatable). Images are vision parts when `AGENTS_VISION=1` or the provider manifest sets `vision` / `capabilities: ["vision"]`; otherwise the path is text.
 - Run specific flow: `python -m runner.executor --run <name>`

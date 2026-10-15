@@ -6,7 +6,7 @@ import json
 
 from mcp.server.fastmcp import FastMCP
 
-from .executor import execute_job, list_schedules
+from .executor import execute_job, list_schedules, present_job_result
 from .loop import build_payload
 from .modules import find_module, list_modules
 from .providers import list_providers
@@ -110,12 +110,12 @@ def call_job(name: str) -> str:
     """Run one module or schedule by name. Cordis: CLI verb + exit code only."""
     mod = find_module(name)
     if mod is not None:
-        res = execute_job(mod)
+        res = present_job_result(execute_job(mod))
         return json.dumps(res, default=str)
     match = [s for s in list_schedules() if s["name"].lower() == name.lower()]
     if not match:
         return json.dumps({"error": f"no module or schedule named '{name}'"})
-    res = execute_job(match[0])
+    res = present_job_result(execute_job(match[0]))
     return json.dumps(res, default=str)
 
 

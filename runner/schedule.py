@@ -28,7 +28,7 @@ import uuid
 from typing import Any, Callable, Dict, List, Optional
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from .executor import execute_job
+from .executor import clip_tool_output, execute_job, present_job_result
 
 DEFAULT_GRACE_MIN = 5
 DEFAULT_LLM_TIMEOUT = 300
@@ -190,7 +190,8 @@ def _normalize_handler_result(job: Dict[str, Any], value: Any) -> Dict[str, Any]
         "status": "SUCCESS",
         "job": job.get("name"),
         "exit_code": 0,
-        "stdout_tail": text[-1000:],
+        "stdout": text,
+        "stdout_tail": clip_tool_output(text),
         "stderr_tail": "",
     }
 
@@ -680,7 +681,7 @@ def _job_outcome(schedule: Dict[str, Any]) -> Dict[str, Any]:
             "stdout_tail": "",
             "stderr_tail": str(exc),
         }
-    return {"schedule": name, "result": result}
+    return {"schedule": name, "result": present_job_result(result)}
 
 
 def _start_workers(claimed: List[Dict[str, Any]]) -> tuple[List[Optional[Dict[str, Any]]], List[threading.Thread]]:

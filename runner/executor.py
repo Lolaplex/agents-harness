@@ -39,6 +39,111 @@ def _default_log_file() -> Optional[Path]:
 
 DEFAULT_LOG_FILE = _default_log_file()
 
+# Trace records stay small. Model- and user-visible text uses a larger cap.
+TRACE_TAIL_CHARS = 1000
+DEFAULT_TOOL_OUTPUT_MAX = 32768
+
+
+def tool_output_max() -> int:
+    """Character cap for tool text shown to a model or a schedule caller.
+
+    ``AGENTS_TOOL_OUTPUT_MAX`` overrides the default. A non-integer or a
+    negative value falls back to the default. Zero is a real cap.
+    """
+    raw = os.environ.get("AGENTS_TOOL_OUTPUT_MAX", "").strip()
+    if not raw:
+        return DEFAULT_TOOL_OUTPUT_MAX
+    try:
+        value = int(raw)
+    except ValueError:
+        return DEFAULT_TOOL_OUTPUT_MAX
+    if value < 0:
+        return DEFAULT_TOOL_OUTPUT_MAX
+    return value
+
+
+def clip_tool_output(text: str, limit: int | None = None) -> str:
+    """Return ``text`` unchanged when it fits, else head + marker + tail.
+
+    The marker is ``[... N chars omitted ...]`` with ``N`` the exact number of
+    characters removed from the middle. The result is at most ``limit``
+    characters when the cap can hold the marker.
+    """
+    if not isinstance(text, str):
+        text = "" if text is None else str(text)
+    cap = tool_output_max() if limit is None else limit
+    try:
+        cap = int(cap)
+    except (TypeError, ValueError):
+        cap = DEFAULT_TOOL_OUTPUT_MAX
+    if cap < 0:
+        cap = DEFAULT_TOOL_OUTPUT_MAX
+    if len(text) <= cap:
+        return text
+    if cap == 0:
+        return ""
+
+    def _marker(omitted: int) -> str:
+        return f"[... {omitted} chars omitted ...]"
+
+    omitted = max(1, len(text) - cap)
+    for _ in range(8):
+        keep = cap - len(_marker(omitted))
+        if keep < 0:
+            keep = 0
+        next_omitted = len(text) - keep
+        if next_omitted < 1:
+            next_omitted = len(text)
+        if next_omitted == omitted:
+            break
+        omitted = next_omitted
+
+    marker = _marker(omitted)
+    if len(marker) > cap:
+        return marker[:cap]
+
+    keep = cap - len(marker)
+    head_len = keep // 2
+    tail_len = keep - head_len
+    omitted = len(text) - head_len - tail_len
+    marker = _marker(omitted)
+    while head_len + tail_len + len(marker) > cap and head_len + tail_len > 0:
+        if tail_len > head_len and tail_len > 0:
+            tail_len -= 1
+        elif head_len > 0:
+            head_len -= 1
+        else:
+            tail_len -= 1
+        omitted = len(text) - head_len - tail_len
+        marker = _marker(max(omitted, 0))
+
+    head = text[:head_len]
+    tail = text[-tail_len:] if tail_len else ""
+    return head + marker + tail
+
+
+def present_job_result(record: Dict[str, Any]) -> Dict[str, Any]:
+    """Copy a job record for a model or a user.
+
+    Full ``stdout`` and ``stderr`` are not included. Those strings are clipped
+    into the tail fields. The trace record written by ``execute_job`` is separate
+    and still holds only the short tail.
+    """
+    out = dict(record)
+    stdout = out.pop("stdout", None)
+    stderr = out.pop("stderr", None)
+    if isinstance(stdout, str):
+        out["stdout_tail"] = clip_tool_output(stdout)
+    if isinstance(stderr, str):
+        out["stderr_tail"] = clip_tool_output(stderr)
+    return out
+
+
+def _trace_tail(text: str) -> str:
+    if not text:
+        return ""
+    return text[-TRACE_TAIL_CHARS:]
+
 
 def _schedule_dirs() -> list[Path]:
     dirs: list[Path] = []
@@ -181,17 +286,21 @@ def execute_job(
         "exit_code": exit_code,
         "expected_exit": expected_exit,
         "duration_ms": round(duration_ms, 2),
-        "stdout_tail": stdout_text[-1000:] if stdout_text else "",
-        "stderr_tail": stderr_text[-1000:] if stderr_text else "",
+        "stdout_tail": _trace_tail(stdout_text),
+        "stderr_tail": _trace_tail(stderr_text),
         "extra_argv": extra_argv or [],
     }
 
-    # Local repo log, plus user-agent traces when enabled (env or existing dir)
+    # Local repo log, plus user-agent traces when enabled (env or existing dir).
+    # The log keeps the short tail only. Callers receive the full strings too.
     append_log(record, log_path)
     if traces_logging_enabled():
         append_log(record, traces_dir() / "runner.jsonl")
 
-    return record
+    returned = dict(record)
+    returned["stdout"] = stdout_text
+    returned["stderr"] = stderr_text
+    return returned
 
 
 def append_log(record: Dict[str, Any], path: Optional[Path]) -> None:
