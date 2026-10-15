@@ -69,6 +69,34 @@ class TestHarnessExecutor(unittest.TestCase):
         self.assertEqual(len(lines), 1)
         self.assertEqual(lines[0]["job"], "quick_echo")
         self.assertEqual(lines[0]["status"], "SUCCESS")
+        self.assertNotIn("stdout", lines[0])
+        self.assertNotIn("stderr", lines[0])
+
+    def test_execute_job_log_keeps_tail_and_returns_full_stdout(self):
+        body = "S" + ("a" * 2500) + "E"
+        manifest = {
+            "name": "long_echo",
+            "verb": 'python -c "import sys; sys.stdout.write(%s)"' % repr(body),
+            "cadence": "on_boot",
+            "rests_on": "python stdlib write, exit 0 = healthy",
+            "expected_exit": 0,
+            "timeout_sec": 10,
+            "cwd": None,
+        }
+        res = execute_job(manifest, log_path=self.log_file)
+        self.assertEqual(res["status"], "SUCCESS")
+        self.assertEqual(res["stdout"], body)
+        self.assertEqual(res["stderr"], "")
+        self.assertEqual(res["stdout_tail"], body[-1000:])
+        self.assertEqual(len(res["stdout_tail"]), 1000)
+
+        with open(self.log_file, "r", encoding="utf-8") as f:
+            logged = json.loads(f.readline())
+        self.assertNotIn("stdout", logged)
+        self.assertNotIn("stderr", logged)
+        self.assertEqual(logged["stdout_tail"], body[-1000:])
+        self.assertFalse(logged["stdout_tail"].startswith("S"))
+        self.assertTrue(logged["stdout_tail"].endswith("E"))
 
     def test_execute_job_failure_exit_code(self):
         manifest = {

@@ -4,7 +4,7 @@
   "when": "on_request",
   "cadence": "on_request",
   "verb": "python -m agents_calendar list",
-  "rests_on": "agents-calendar CLI list VEVENTs; extra argv is --from/--to ISO; exit 0 = listed",
+  "rests_on": "agents-calendar CLI list VEVENTs; --from/--to are ISO-8601 with a UTC offset (a time without an offset is treated as UTC); returns a JSON array sorted by start time, so keep the range narrow; exit 0 = listed",
   "expected_exit": 0,
   "timeout_sec": 30,
   "as_tool": true,
@@ -14,11 +14,11 @@
     "properties": {
       "from": {
         "type": "string",
-        "description": "Range start ISO-8601 (UTC Z ok)"
+        "description": "Range start, ISO-8601 with a UTC offset (e.g. 2026-11-29T16:00:00+01:00). A time without an offset is treated as UTC. Returns a JSON array sorted by start time; keep the range narrow."
       },
       "to": {
         "type": "string",
-        "description": "Range end ISO-8601 (UTC Z ok)"
+        "description": "Range end, ISO-8601 with a UTC offset (e.g. 2026-11-29T16:00:00+01:00). A time without an offset is treated as UTC. Returns a JSON array sorted by start time; keep the range narrow."
       },
       "calendar": {
         "type": "string",

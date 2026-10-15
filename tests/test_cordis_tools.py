@@ -83,6 +83,81 @@ class TestCordisTools(unittest.TestCase):
             run.return_value.stderr = ""
             rec = execute_job(mod)
         self.assertNotIn("sk-1234567890123456", rec["stdout_tail"])
+        self.assertNotIn("sk-1234567890123456", rec["stdout"])
+
+    def test_call_job_under_cap_returns_full_stdout(self):
+        full = "only two events"
+        rec = {"status": "SUCCESS", "stdout": full, "stdout_tail": full[-1000:]}
+        call = {
+            "function": {
+                "arguments": json.dumps(
+                    {
+                        "name": "mcp.calendar.list",
+                        "arguments": {
+                            "from": "2026-11-01T00:00:00+01:00",
+                            "to": "2026-11-02T00:00:00+01:00",
+                        },
+                    }
+                )
+            }
+        }
+        with patch.dict(os.environ, {"AGENTS_TOOL_OUTPUT_MAX": "200"}, clear=False):
+            with patch("runner.cordis_tools.execute_job", return_value=rec):
+                out = handle_cordis_tool("call_job", call)
+        self.assertEqual(out, full)
+
+    def test_call_job_over_cap_keeps_head_tail_and_marker(self):
+        full = "START" + ("m" * 4000) + "END"
+        rec = {
+            "status": "SUCCESS",
+            "stdout": full,
+            "stderr": "",
+            "stdout_tail": full[-1000:],
+            "stderr_tail": "",
+        }
+        call = {
+            "function": {
+                "arguments": json.dumps(
+                    {
+                        "name": "mcp.calendar.list",
+                        "arguments": {
+                            "from": "2026-11-01T00:00:00+01:00",
+                            "to": "2026-11-02T00:00:00+01:00",
+                        },
+                    }
+                )
+            }
+        }
+        with patch.dict(os.environ, {"AGENTS_TOOL_OUTPUT_MAX": "180"}, clear=False):
+            with patch("runner.cordis_tools.execute_job", return_value=rec):
+                out = handle_cordis_tool("call_job", call)
+        self.assertLessEqual(len(out), 180)
+        self.assertTrue(out.startswith("START"), out)
+        self.assertTrue(out.endswith("END"), out)
+        self.assertIn("chars omitted", out)
+        self.assertNotEqual(out, full[-1000:])
+
+    def test_call_job_failure_clips_stderr(self):
+        err = "ERRHEAD" + ("e" * 2000) + "ERRTAIL"
+        rec = {
+            "status": "FAILED",
+            "stdout": "ignored-stdout",
+            "stderr": err,
+            "stdout_tail": "ignored-stdout",
+            "stderr_tail": err[-1000:],
+        }
+        call = {
+            "function": {
+                "arguments": json.dumps({"name": "mcp.calendar.calendars", "arguments": {}})
+            }
+        }
+        with patch.dict(os.environ, {"AGENTS_TOOL_OUTPUT_MAX": "160"}, clear=False):
+            with patch("runner.cordis_tools.execute_job", return_value=rec):
+                out = handle_cordis_tool("call_job", call)
+        self.assertTrue(out.startswith("ERRHEAD"), out)
+        self.assertTrue(out.endswith("ERRTAIL"), out)
+        self.assertIn("chars omitted", out)
+        self.assertNotIn("ignored-stdout", out)
 
     def test_enabled_json_can_disable_tools(self):
         with tempfile.TemporaryDirectory() as tmp:

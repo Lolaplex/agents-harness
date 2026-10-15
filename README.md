@@ -33,7 +33,7 @@ Optional trace sealing and audit (`--seal`, `mcp.traces.seal`, `mcp.traces.audit
 pip install "agents-harness[traces]"
 ```
 
-Calendar tools (`mcp.calendar.add`, `mcp.calendar.list`) forward `--calendar`, which needs agents-calendar 0.1.0 or newer.
+Calendar tools (`mcp.calendar.add`, `mcp.calendar.list`) forward `--calendar`, which needs agents-calendar 0.1.0 or newer. `dtstart`, `dtend`, and list ranges are ISO-8601 with a UTC offset (for example `2026-11-29T16:00:00+01:00`). A time without an offset is treated as UTC. `mcp.calendar.list` returns a JSON array sorted by start time; keep the range narrow.
 
 > [!TIP]
 > **🤖 Agent-Driven Setup:**
@@ -131,6 +131,8 @@ Mutating `call_job` tools ask first when `AGENTS_APPROVAL_CMD` is set. `{user}` 
 
 Every tool result the model sees is wrapped in `<untrusted_data source="...">...</untrusted_data>` after redaction. Only messages the harness builds itself (approval denials, loop notices) stay outside that fence; tool text that merely starts with `Denied:` is still fenced.
 
+Tool stdout and stderr shown to the model are capped at `AGENTS_TOOL_OUTPUT_MAX` characters (default 32768). Shorter output is unchanged. Longer output keeps the head and the tail and marks the gap as `[... N chars omitted ...]`. The same cap applies to schedule tick results and to `call_job` on the harness MCP server. Trace records (`logs/runner.jsonl` and `~/.agents/traces/runner.jsonl`) still store only a 1000-character tail. The full strings are on the in-process `execute_job` result (`stdout`, `stderr`).
+
 Skills live in `~/.agents/skills/<name>/SKILL.md` (`AGENTS_SKILLS_DIR`, plus `AGENTS_SKILLS_EXTRA`). The system prompt lists name and description. `skill.load` returns the file. `skill.catalog` is a compatibility alias of `skill.list`.
 
 Cron uses the job's `timezone` (else `AGENTS_TIMEZONE`, `TZ`, or `timezone` in `~/.agents/config.json`). The last fired minute is stored next to the manifests so a double tick does not double-fire, and a miss inside `grace_min` (default 5) still runs once. LLM reminders and routines default to `timeout_sec` 300. `tick()` holds its file lock only while claiming or finalizing, then runs jobs outside the lock. `tick(wait=False)` returns after the claim; `python -m runner.schedule tick` waits. A failed or timed-out one-shot is removed and not retried. The failure is logged, and `last_result` stays in `tick-state.json`. Routine jobs (`--prompt`) are not executed here: register `runner.schedule.register_routine_handler`. With no handler, a routine that has a verb runs that verb; a routine with only a prompt is skipped and its slot or one-shot file is left in place. `mcp.schedule.add` copies the turn's `channel` and `user` onto the job when the call omits them.
@@ -139,6 +141,7 @@ Cron uses the job's `timezone` (else `AGENTS_TIMEZONE`, `TZ`, or `timezone` in `
 
 | Variable | Default | Effect |
 | --- | --- | --- |
+| `AGENTS_TOOL_OUTPUT_MAX` | 32768 | Max characters of a tool result shown to the model or a schedule caller. Over the cap, the middle is omitted and marked |
 | `AGENTS_APPROVAL_TIMEOUT` | `--timeout` in the command + 15 s, else 330 s | Seconds to wait for the approval command before denying |
 | `AGENTS_SCHEDULE_GRACE_MIN` | 5 | Minutes a missed cron slot still runs once (a job's `grace_min` wins) |
 | `AGENTS_SCHEDULES_DIR` | `~/.agents/schedules` | Dynamic reminder manifests; also an overlay for `runner.executor` schedules |
