@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-10-21
+
 ### Changed
 - Bundled `mcp.calendar.add`, `mcp.calendar.update`, and `mcp.calendar.list` describe `dtstart` / `dtend` (and list ranges) as ISO-8601 with a UTC offset. A time without an offset is treated as UTC. List returns a JSON array sorted by start time, so the range should stay narrow.
 
