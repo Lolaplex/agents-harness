@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-10-21
+
+### Changed
+- Bundled `mcp.calendar.add`, `mcp.calendar.update`, and `mcp.calendar.list` describe `dtstart` / `dtend` (and list ranges) as ISO-8601 with a UTC offset. A time without an offset is treated as UTC. List returns a JSON array sorted by start time, so the range should stay narrow.
+
+### Fixed
+- Tool output is no longer a silent 1000-character tail. Trace logs still store that tail. Callers also receive the full stdout and stderr. Text shown to the model, and schedule or MCP job results shown to a caller, keep up to `AGENTS_TOOL_OUTPUT_MAX` characters (default 32768). Output over the cap keeps the head and the tail with `[... N chars omitted ...]` in the middle.
+
 ## [0.1.0] - 2026-10-06
 
 ### Added

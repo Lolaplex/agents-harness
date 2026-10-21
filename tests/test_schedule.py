@@ -7,6 +7,7 @@ import os
 import shutil
 import tempfile
 import unittest
+from unittest.mock import patch
 
 import threading
 
@@ -221,6 +222,50 @@ class TestSchedule(unittest.TestCase):
         again = tick(base_time=datetime(2026, 9, 5, 9, 0, tzinfo=timezone.utc))
         self.assertEqual(again[0]["schedule"], "orphan")
         self.assertEqual(again[0]["result"]["status"], "SKIPPED")
+
+    def test_routine_output_respects_tool_cap(self):
+        short = "two events"
+
+        def short_handler(_job):
+            return short
+
+        register_routine_handler(short_handler)
+        add_schedule(
+            name="short-list",
+            cron="0 8 * * *",
+            prompt="list",
+            user="1",
+            timezone_name="UTC",
+        )
+        with patch.dict(os.environ, {"AGENTS_TOOL_OUTPUT_MAX": "120"}, clear=False):
+            fired = tick(base_time=datetime(2026, 9, 5, 8, 0, tzinfo=timezone.utc))
+        self.assertEqual(fired[0]["result"]["stdout_tail"], short)
+        self.assertNotIn("stdout", fired[0]["result"])
+
+        register_routine_handler(None)
+        remove_schedule("short-list")
+        payload = "HEAD" + ("m" * 3000) + "TAIL"
+
+        def long_handler(_job):
+            return payload
+
+        register_routine_handler(long_handler)
+        add_schedule(
+            name="long-list",
+            cron="0 9 * * *",
+            prompt="list",
+            user="1",
+            timezone_name="UTC",
+        )
+        with patch.dict(os.environ, {"AGENTS_TOOL_OUTPUT_MAX": "120"}, clear=False):
+            fired = tick(base_time=datetime(2026, 9, 5, 9, 0, tzinfo=timezone.utc))
+        shown = fired[0]["result"]["stdout_tail"]
+        self.assertNotIn("stdout", fired[0]["result"])
+        self.assertLessEqual(len(shown), 120)
+        self.assertTrue(shown.startswith("HEAD"), shown)
+        self.assertTrue(shown.endswith("TAIL"), shown)
+        self.assertIn("chars omitted", shown)
+        self.assertNotEqual(shown, payload[-1000:])
 
     def test_skipped_one_shot_routine_is_not_consumed(self):
         add_schedule(

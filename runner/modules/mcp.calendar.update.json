@@ -4,7 +4,7 @@
   "when": "on_request",
   "cadence": "on_request",
   "verb": "python -m agents_calendar update",
-  "rests_on": "agents-calendar CLI update VEVENT; extra argv is href etag then optional fields; exit 0 = updated",
+  "rests_on": "agents-calendar CLI update VEVENT; extra argv is href etag then optional fields; dtstart and dtend are ISO-8601 with a UTC offset (a time without an offset is treated as UTC); exit 0 = updated",
   "expected_exit": 0,
   "timeout_sec": 30,
   "as_tool": true,
@@ -26,11 +26,11 @@
       },
       "dtstart": {
         "type": "string",
-        "description": "Optional new start ISO-8601"
+        "description": "Optional new start, ISO-8601 with a UTC offset (e.g. 2026-11-29T16:00:00+01:00). A time without an offset is treated as UTC."
       },
       "dtend": {
         "type": "string",
-        "description": "Optional new end ISO-8601"
+        "description": "Optional new end, ISO-8601 with a UTC offset (e.g. 2026-11-29T17:00:00+01:00). A time without an offset is treated as UTC."
       }
     },
     "required": ["href", "etag"]

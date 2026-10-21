@@ -7,7 +7,7 @@ from typing import Any
 
 from .approval import gate_module
 from .fence import HarnessMessage
-from .executor import execute_job
+from .executor import clip_tool_output, execute_job
 from .modules import find_module, find_module_for_tool, list_modules, openai_tool_name
 from .redact import redact_tool_output
 from .skills import format_skill_list, load_skill
@@ -308,6 +308,24 @@ def _remote_arguments(job_args: Any) -> dict[str, Any]:
     return {k: v for k, v in job_args.items() if k != "name"}
 
 
+def _visible_output(text: str) -> str:
+    """Redact, then cap, text the model will read."""
+    return clip_tool_output(redact_tool_output(text or ""))
+
+
+def _job_visible_text(rec: dict[str, Any], *, failed: bool) -> str:
+    """Prefer the full stream. Fall back to the trace tail for older records."""
+    if failed:
+        full = rec.get("stderr")
+        if not full:
+            full = rec.get("stderr_tail") or rec.get("status") or "tool failed"
+        return _visible_output(str(full))
+    full = rec.get("stdout")
+    if full is None:
+        full = rec.get("stdout_tail") or ""
+    return _visible_output(str(full))
+
+
 def handle_cordis_tool(
     name: str,
     call: dict[str, Any],
@@ -328,7 +346,7 @@ def handle_cordis_tool(
             f"{m['name']}\tkind={m.get('kind')}\twhen={m.get('when')}\t{m.get('rests_on', '')}"
             for m in rows
         ]
-        return "\n".join(lines) if lines else "(empty catalog)"
+        return clip_tool_output("\n".join(lines) if lines else "(empty catalog)")
     if tool == "load_schema":
         mod_name = str(args.get("name") or "").strip()
         mod = find_module(mod_name)
@@ -340,16 +358,18 @@ def handle_cordis_tool(
                 "query": {"type": "string", "description": "Search query or CLI argument"}
             },
         }
-        return json.dumps(
-            {
-                "name": mod["name"],
-                "kind": mod.get("kind"),
-                "verb": mod.get("verb"),
-                "tool_name": openai_tool_name(mod),
-                "parameters": schema,
-            },
-            ensure_ascii=False,
-            indent=2,
+        return clip_tool_output(
+            json.dumps(
+                {
+                    "name": mod["name"],
+                    "kind": mod.get("kind"),
+                    "verb": mod.get("verb"),
+                    "tool_name": openai_tool_name(mod),
+                    "parameters": schema,
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
         )
     if tool == "call_job":
         mod_name = str(args.get("name") or "").strip()
@@ -389,7 +409,7 @@ def handle_cordis_tool(
             return HarnessMessage(redact_tool_output(denial))
         mod_name = str(mod.get("name") or "")
         if mod_name in _SKILL_MODULES:
-            return redact_tool_output(_run_skill(mod_name, job_args))
+            return _visible_output(_run_skill(mod_name, job_args))
         if str(mod.get("kind") or "") == "mcp_remote":
             from .mcp_client import call_remote
 
@@ -400,13 +420,11 @@ def handle_cordis_tool(
                     _remote_arguments(job_args),
                 )
             except Exception as exc:
-                return redact_tool_output(f"mcp remote failed: {exc}")
-            return redact_tool_output(remote_out or "")
+                return _visible_output(f"mcp remote failed: {exc}")
+            return _visible_output(remote_out or "")
         extra = _arguments_to_argv(mod, job_args)
         rec = execute_job(mod, extra_argv=extra or None)
-        if rec.get("status") != "SUCCESS":
-            return redact_tool_output(rec.get("stderr_tail") or rec.get("status") or "tool failed")
-        return redact_tool_output(rec.get("stdout_tail") or "")
+        return _job_visible_text(rec, failed=rec.get("status") != "SUCCESS")
     return f"unknown cordis tool {name}"
 
 
