@@ -33,7 +33,7 @@ Optional trace sealing and audit (`--seal`, `mcp.traces.seal`, `mcp.traces.audit
 pip install "agents-harness[traces]"
 ```
 
-Calendar tools (`mcp.calendar.add`, `mcp.calendar.list`) forward `--calendar`, which needs agents-calendar 0.1.0 or newer. `dtstart`, `dtend`, and list ranges are ISO-8601 with a UTC offset (for example `2026-11-29T16:00:00+01:00`). A time without an offset is treated as UTC. `mcp.calendar.list` returns a JSON array sorted by start time; keep the range narrow.
+Calendar tools (`mcp.calendar.add`, `mcp.calendar.update`, `mcp.calendar.list`) forward to the agents-calendar CLI. `--calendar` needs agents-calendar 0.1.0 or newer. Prefer local wall time (`2026-11-29T16:00:00`) plus an optional IANA `timezone`. When `timezone` is omitted the zone is `CALDAV_TIMEZONE` or `timezone` in the credentials file, then the calendar's CalDAV calendar-timezone, then the host zone, then UTC. `Z` and numeric offsets stay absolute instants. Do not convert a wall time to UTC first. All-day events are `YYYY-MM-DD` or `all_day=true` on add (`dtend` is exclusive). Returned all-day fields are dates. Timed `dtstart` stays the UTC instant; show `dtstart_local`, `timezone`, and `all_day`. A daylight-saving gap or ambiguous naive time is an error; retry that instant with an explicit offset. `mcp.calendar.list` returns a JSON array sorted by start time; keep the range narrow.
 
 > [!TIP]
 > **🤖 Agent-Driven Setup:**

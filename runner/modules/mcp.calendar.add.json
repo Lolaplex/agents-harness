@@ -4,7 +4,7 @@
   "when": "on_request",
   "cadence": "on_request",
   "verb": "python -m agents_calendar add",
-  "rests_on": "agents-calendar CLI create VEVENT; summary plus dtstart and dtend as ISO-8601 with a UTC offset (a time without an offset is treated as UTC); exit 0 = created",
+  "rests_on": "agents-calendar CLI create VEVENT; prefer local wall time for dtstart and dtend plus an optional IANA timezone (explicit timezone, else CALDAV_TIMEZONE or timezone in the credentials file, else the calendar's CalDAV calendar-timezone, else the host zone, else UTC); Z and numeric offsets stay absolute instants; all-day is YYYY-MM-DD or all_day=true with an exclusive dtend; a DST gap or ambiguous naive time errors, retry that instant with an explicit offset; exit 0 = created",
   "expected_exit": 0,
   "timeout_sec": 30,
   "as_tool": true,
@@ -18,15 +18,23 @@
       },
       "dtstart": {
         "type": "string",
-        "description": "Start, ISO-8601 with a UTC offset (e.g. 2026-11-29T16:00:00+01:00). A time without an offset is treated as UTC."
+        "description": "Start as local wall time, for example 2026-11-29T16:00:00. Do not convert that wall time to UTC first. Z or a numeric offset (2026-11-29T16:00:00+01:00) is an absolute instant. All-day: YYYY-MM-DD or all_day=true; dtend is exclusive. If the zone reports a gap or an ambiguous time, retry that instant with an explicit offset."
       },
       "dtend": {
         "type": "string",
-        "description": "End, ISO-8601 with a UTC offset (e.g. 2026-11-29T17:00:00+01:00). A time without an offset is treated as UTC."
+        "description": "End, same rules as dtstart. For an all-day event, dtend is exclusive: the same date as dtstart is one civil day."
+      },
+      "timezone": {
+        "type": "string",
+        "description": "Optional IANA zone for naive wall times, for example Europe/Berlin. When omitted: CALDAV_TIMEZONE or timezone in the credentials file, then the calendar's CalDAV calendar-timezone, then the host zone, then UTC."
+      },
+      "all_day": {
+        "type": "boolean",
+        "description": "When true, store an all-day event (VALUE=DATE). YYYY-MM-DD for dtstart and dtend does the same. dtend is exclusive."
       },
       "calendar": {
         "type": "string",
-        "description": "Target calendar collection name (e.g. Arbeit) or URL (optional)"
+        "description": "Target calendar collection name (for example Work) or URL (optional)"
       }
     },
     "required": ["summary", "dtstart", "dtend"]

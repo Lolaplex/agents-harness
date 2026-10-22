@@ -228,6 +228,139 @@ class TestCordisTools(unittest.TestCase):
         self.assertEqual(_arguments_to_argv(mod, {"arguments": ["USER.md"]}), ["USER.md"])
         self.assertEqual(_arguments_to_argv(mod, {"arguments": "USER.md"}), ["USER.md"])
 
+    def test_calendar_argv_wall_time_timezone_and_all_day(self):
+        from runner.cordis_tools import _arguments_to_argv
+
+        timed = _arguments_to_argv(
+            {"name": "mcp.calendar.add"},
+            {
+                "summary": "Standup",
+                "dtstart": "2026-11-29T16:00:00",
+                "dtend": "2026-11-29T17:00:00",
+                "timezone": "Europe/Berlin",
+                "all_day": False,
+                "calendar": "Work",
+            },
+        )
+        self.assertEqual(
+            timed,
+            [
+                "--summary",
+                "Standup",
+                "--dtstart",
+                "2026-11-29T16:00:00",
+                "--dtend",
+                "2026-11-29T17:00:00",
+                "--calendar",
+                "Work",
+                "--timezone",
+                "Europe/Berlin",
+            ],
+        )
+        allday = _arguments_to_argv(
+            {"name": "mcp.calendar.add"},
+            {
+                "summary": "Off",
+                "dtstart": "2026-11-29",
+                "dtend": "2026-11-30",
+                "all_day": True,
+            },
+        )
+        self.assertEqual(
+            allday,
+            [
+                "--summary",
+                "Off",
+                "--dtstart",
+                "2026-11-29",
+                "--dtend",
+                "2026-11-30",
+                "--all-day",
+            ],
+        )
+        self.assertEqual(
+            _arguments_to_argv(
+                {"name": "mcp.calendar.add"},
+                {"summary": "Off", "dtstart": "2026-11-29", "dtend": "2026-11-30", "all_day": "true"},
+            )[-1],
+            "--all-day",
+        )
+        self.assertNotIn(
+            "--all-day",
+            _arguments_to_argv(
+                {"name": "mcp.calendar.add"},
+                {"summary": "Off", "dtstart": "2026-11-29", "dtend": "2026-11-30", "all_day": "false"},
+            ),
+        )
+        listed = _arguments_to_argv(
+            {"name": "mcp.calendar.list"},
+            {
+                "from": "2026-11-29T00:00:00",
+                "to": "2026-11-30T00:00:00",
+                "calendar": "Work",
+                "timezone": "Europe/Berlin",
+            },
+        )
+        self.assertEqual(
+            listed,
+            [
+                "--from",
+                "2026-11-29T00:00:00",
+                "--to",
+                "2026-11-30T00:00:00",
+                "--calendar",
+                "Work",
+                "--timezone",
+                "Europe/Berlin",
+            ],
+        )
+        updated = _arguments_to_argv(
+            {"name": "mcp.calendar.update"},
+            {
+                "href": "/ev",
+                "etag": "x",
+                "dtstart": "2026-11-29",
+                "timezone": "Europe/Berlin",
+                "all_day": True,
+            },
+        )
+        self.assertEqual(
+            updated,
+            ["--href", "/ev", "--etag", "x", "--dtstart", "2026-11-29", "--timezone", "Europe/Berlin"],
+        )
+        self.assertNotIn("--all-day", updated)
+
+    def test_calendar_manifests_describe_wall_time(self):
+        env = {k: v for k, v in os.environ.items() if k != "AGENTS_MODULES_DIR"}
+        with patch.dict(os.environ, env, clear=True):
+            add = find_module("mcp.calendar.add")
+            update = find_module("mcp.calendar.update")
+            listing = find_module("mcp.calendar.list")
+        self.assertIsNotNone(add)
+        self.assertIsNotNone(update)
+        self.assertIsNotNone(listing)
+        assert add is not None and update is not None and listing is not None
+        for mod in (add, update, listing):
+            blob = json.dumps(mod)
+            self.assertNotIn("treated as UTC", blob)
+            self.assertNotIn("with a UTC offset", blob)
+            self.assertIn("timezone", mod["parameters"]["properties"])
+            tz = mod["parameters"]["properties"]["timezone"]["description"]
+            self.assertIn("CALDAV_TIMEZONE", tz)
+            self.assertIn("calendar-timezone", tz)
+            self.assertIn("host zone", tz)
+            self.assertIn("UTC", tz)
+            time_key = "dtstart" if "dtstart" in mod["parameters"]["properties"] else "from"
+            self.assertIn("wall time", mod["parameters"]["properties"][time_key]["description"])
+        self.assertIn("all_day", add["parameters"]["properties"])
+        self.assertNotIn("all_day", update["parameters"]["properties"])
+        listed = json.dumps(listing["parameters"])
+        self.assertIn("dtstart_local", listed)
+        self.assertIn("all_day", listed)
+        self.assertIn("explicit offset", add["parameters"]["properties"]["dtstart"]["description"])
+        self.assertIn("ambiguous", add["parameters"]["properties"]["dtstart"]["description"])
+        self.assertIn("gap", listing["parameters"]["properties"]["from"]["description"])
+
     def test_schedule_add_inherits_turn_channel_and_user(self):
         with tempfile.TemporaryDirectory() as tmp:
             with patch.dict(os.environ, {"AGENTS_SCHEDULES_DIR": tmp}):
