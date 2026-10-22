@@ -4,7 +4,7 @@
   "when": "on_request",
   "cadence": "on_request",
   "verb": "python -m agents_calendar update",
-  "rests_on": "agents-calendar CLI update VEVENT; extra argv is href etag then optional fields; dtstart and dtend are ISO-8601 with a UTC offset (a time without an offset is treated as UTC); exit 0 = updated",
+  "rests_on": "agents-calendar CLI update VEVENT; extra argv is href etag then optional fields; dtstart and dtend prefer local wall time plus an optional IANA timezone (explicit timezone, else CALDAV_TIMEZONE or timezone in the credentials file, else the calendar's CalDAV calendar-timezone, else the host zone, else UTC); Z and numeric offsets stay absolute; all-day edits are YYYY-MM-DD with an exclusive dtend; a DST gap or ambiguous naive time errors, retry that instant with an explicit offset; exit 0 = updated",
   "expected_exit": 0,
   "timeout_sec": 30,
   "as_tool": true,
@@ -26,11 +26,15 @@
       },
       "dtstart": {
         "type": "string",
-        "description": "Optional new start, ISO-8601 with a UTC offset (e.g. 2026-11-29T16:00:00+01:00). A time without an offset is treated as UTC."
+        "description": "Optional new start as local wall time (2026-11-29T16:00:00). Do not convert that wall time to UTC first. Z or a numeric offset is an absolute instant. All-day: YYYY-MM-DD (dtend exclusive). A gap or ambiguous time returns an error; retry that instant with an explicit offset."
       },
       "dtend": {
         "type": "string",
-        "description": "Optional new end, ISO-8601 with a UTC offset (e.g. 2026-11-29T17:00:00+01:00). A time without an offset is treated as UTC."
+        "description": "Optional new end, same rules as dtstart. All-day dtend is exclusive."
+      },
+      "timezone": {
+        "type": "string",
+        "description": "Optional IANA zone for naive wall times, for example Europe/Berlin. When omitted: CALDAV_TIMEZONE or timezone in the credentials file, then the calendar's CalDAV calendar-timezone, then the host zone, then UTC."
       }
     },
     "required": ["href", "etag"]

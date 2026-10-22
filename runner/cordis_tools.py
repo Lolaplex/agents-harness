@@ -97,6 +97,17 @@ def _parse_arguments(call: dict[str, Any]) -> dict[str, Any]:
     return args if isinstance(args, dict) else {"arguments": args}
 
 
+def _cli_flag_set(val: Any) -> bool:
+    """True for a boolean CLI switch. False, missing, and the string false stay off."""
+    if isinstance(val, bool):
+        return val
+    if isinstance(val, int):
+        return val == 1
+    if isinstance(val, str):
+        return val.strip().lower() in {"1", "true", "yes", "on"}
+    return False
+
+
 def _arguments_to_argv(mod: dict[str, Any], arguments: Any) -> list[str]:
     if not arguments:
         return []
@@ -215,10 +226,12 @@ def _arguments_to_argv(mod: dict[str, Any], arguments: Any) -> list[str]:
             out.extend(["--dtstart", str(dtstart)])
         if dtend:
             out.extend(["--dtend", str(dtend)])
-        for k in ("calendar", "location", "description"):
+        for k in ("calendar", "location", "description", "timezone"):
             val = arguments.get(k)
             if val not in (None, ""):
                 out.extend([f"--{k}", str(val)])
+        if _cli_flag_set(arguments.get("all_day")):
+            out.append("--all-day")
         return out
     if name == "mcp.calendar.list":
         out = []
@@ -228,9 +241,10 @@ def _arguments_to_argv(mod: dict[str, Any], arguments: Any) -> list[str]:
             out.extend(["--from", str(start)])
         if end:
             out.extend(["--to", str(end)])
-        cal = arguments.get("calendar")
-        if cal not in (None, ""):
-            out.extend(["--calendar", str(cal)])
+        for k in ("calendar", "timezone"):
+            val = arguments.get(k)
+            if val not in (None, ""):
+                out.extend([f"--{k}", str(val)])
         return out
     if name == "mcp.calendar.calendars":
         return []
@@ -244,6 +258,7 @@ def _arguments_to_argv(mod: dict[str, Any], arguments: Any) -> list[str]:
             ("--dtend", "dtend"),
             ("--location", "location"),
             ("--description", "description"),
+            ("--timezone", "timezone"),
         ):
             val = arguments.get(key)
             if val not in (None, ""):

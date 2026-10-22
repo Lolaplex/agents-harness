@@ -4,7 +4,7 @@
   "when": "on_request",
   "cadence": "on_request",
   "verb": "python -m agents_calendar list",
-  "rests_on": "agents-calendar CLI list VEVENTs; --from/--to are ISO-8601 with a UTC offset (a time without an offset is treated as UTC); returns a JSON array sorted by start time, so keep the range narrow; exit 0 = listed",
+  "rests_on": "agents-calendar CLI list VEVENTs; --from/--to prefer local wall time plus an optional IANA timezone (explicit timezone, else CALDAV_TIMEZONE or timezone in the credentials file, else the calendar's CalDAV calendar-timezone, else the host zone, else UTC); a date is 00:00 in that zone; Z and numeric offsets stay absolute; each event includes dtstart_local (with an offset when timed), timezone, and all_day; timed dtstart stays the UTC instant; all-day fields are dates and dtend is exclusive; JSON array sorted by start time, so keep the range narrow; a DST gap or ambiguous naive bound errors, retry that instant with an explicit offset; exit 0 = listed",
   "expected_exit": 0,
   "timeout_sec": 30,
   "as_tool": true,
@@ -14,11 +14,15 @@
     "properties": {
       "from": {
         "type": "string",
-        "description": "Range start, ISO-8601 with a UTC offset (e.g. 2026-11-29T16:00:00+01:00). A time without an offset is treated as UTC. Returns a JSON array sorted by start time; keep the range narrow."
+        "description": "Range start as local wall time (2026-11-29T16:00:00) or a date (2026-11-29, meaning 00:00 in the resolved zone). Do not convert wall time to UTC first. Z or a numeric offset is an absolute instant. A gap or ambiguous time returns an error; retry that instant with an explicit offset. Returns a JSON array sorted by start time; keep the range narrow. Show dtstart_local, timezone, and all_day. Timed dtstart is the UTC instant. All-day fields are dates and dtend is exclusive."
       },
       "to": {
         "type": "string",
-        "description": "Range end, ISO-8601 with a UTC offset (e.g. 2026-11-29T16:00:00+01:00). A time without an offset is treated as UTC. Returns a JSON array sorted by start time; keep the range narrow."
+        "description": "Range end, same rules as from. A date is 00:00 in the resolved zone. Show dtstart_local, timezone, and all_day."
+      },
+      "timezone": {
+        "type": "string",
+        "description": "Optional IANA zone for naive bounds and for dtstart_local, for example Europe/Berlin. When omitted: CALDAV_TIMEZONE or timezone in the credentials file, then the calendar's CalDAV calendar-timezone, then the host zone, then UTC."
       },
       "calendar": {
         "type": "string",

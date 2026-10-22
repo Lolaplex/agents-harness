@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Calendar tools no longer require a UTC offset on `dtstart`, `dtend`, or list bounds. Prefer local wall time plus an optional IANA `timezone` (explicit argument, else `CALDAV_TIMEZONE` or `timezone` in the credentials file, else the calendar's CalDAV calendar-timezone, else the host zone, else UTC). `Z` and numeric offsets stay absolute instants. All-day events are `YYYY-MM-DD` or `all_day=true` on add; returned all-day fields are dates and `dtend` is exclusive. Timed `dtstart` stays the UTC instant; show `dtstart_local`, `timezone`, and `all_day`. A daylight-saving gap or ambiguous naive time is an error; retry that instant with an explicit offset.
+
 ## [0.1.1] - 2026-10-21
 
 ### Changed
