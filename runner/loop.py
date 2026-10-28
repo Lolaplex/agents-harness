@@ -37,7 +37,28 @@ def _assemble(session: str, limit: int) -> list[dict[str, Any]]:
         from agents_traces.assemble import assemble_messages
     except ImportError:
         return []
-    return assemble_messages(session, limit=limit)
+    msgs = assemble_messages(session, limit=limit)
+    if os.environ.get("AGENTS_HISTORY_TOOLS", "1").strip().lower() not in ("0", "false", "no", "off"):
+        try:
+            from agents_traces.store import TraceStore
+            tool_evts = [
+                e for e in TraceStore().get_events_for_session(session)
+                if e.type == "tool_call" and e.result
+            ][-3:]
+            if tool_evts:
+                snippets = []
+                for te in tool_evts:
+                    arg_name = te.args.get("name") if isinstance(te.args, dict) else ""
+                    label = f"{te.tool}({arg_name})" if arg_name else (te.tool or "tool")
+                    res = str(te.result).strip()[:400]
+                    snippets.append(f"- {label}: {res}")
+                msgs.append({
+                    "role": "system",
+                    "content": "<recent_tool_context>\n" + "\n".join(snippets) + "\n</recent_tool_context>",
+                })
+        except Exception:
+            pass
+    return msgs
 
 
 def _record(

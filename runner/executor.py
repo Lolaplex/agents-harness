@@ -168,6 +168,8 @@ def list_schedules(schedules_dir: Path | None = None) -> List[Dict[str, Any]]:
         if not folder.exists():
             continue
         for p in sorted(folder.glob("*.json")):
+            if p.name in ("tick-state.json", "enabled.json"):
+                continue
             try:
                 row = load_manifest(p)
                 seen[str(row["name"])] = row
