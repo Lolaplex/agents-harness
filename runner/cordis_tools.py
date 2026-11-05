@@ -3,13 +3,17 @@
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from typing import Any
 
-from .approval import gate_module
+from .approval import call_is_mutator, gate_module
 from .fence import HarnessMessage
-from .executor import clip_tool_output, execute_job
+from .executor import execute_job
+from .helpjson import declared_argv, with_discovered_commands
 from .modules import find_module, find_module_for_tool, list_modules, openai_tool_name
+from .receipts import make_receipt
 from .redact import redact_tool_output
+from .retrieve import DEFAULT_READ_LIMIT, annotate_clip, read_content, render_read_result
 from .skills import format_skill_list, load_skill
 
 _SKILL_MODULES = ("skill.list", "skill.load", "skill.catalog")
@@ -127,6 +131,10 @@ def _arguments_to_argv(mod: dict[str, Any], arguments: Any) -> list[str]:
             return [str(a) for a in inner if str(a).strip()]
         elif isinstance(inner, str):
             return [inner.strip()] if inner.strip() else []
+
+    built = declared_argv(mod, arguments)
+    if built is not None:
+        return built
 
     name = str(mod.get("name") or "")
     if name == "mcp.terminal":
@@ -323,25 +331,93 @@ def _remote_arguments(job_args: Any) -> dict[str, Any]:
     return {k: v for k, v in job_args.items() if k != "name"}
 
 
-def _visible_output(text: str) -> str:
-    """Redact, then cap, text the model will read."""
-    return clip_tool_output(redact_tool_output(text or ""))
+def _visible_output(text: str, *, session_id: str = "") -> str:
+    """Redact, then cap. Clipped bodies stay retrievable by digest."""
+    return annotate_clip(redact_tool_output(text or ""), session_id=session_id)
 
 
-def _job_visible_text(rec: dict[str, Any], *, failed: bool) -> str:
-    """Prefer the full stream. Fall back to the trace tail for older records."""
+def _job_visible_text(rec: dict[str, Any], *, failed: bool, session_id: str = "") -> tuple[str, str]:
+    """Prefer the full stream. Fall back to the trace tail for older records.
+
+    The first string is what the model sees. The second is the full redacted
+    stream a receipt payload is taken from, before the cap.
+    """
     if failed:
         full = rec.get("stderr")
         if not full:
             full = rec.get("stderr_tail") or rec.get("status") or "tool failed"
-        return _visible_output(str(full))
+        redacted = redact_tool_output(str(full))
+        return _visible_output(str(full), session_id=session_id), redacted
     full = rec.get("stdout")
     if full is None:
         full = rec.get("stdout_tail") or ""
-    return _visible_output(str(full))
+    redacted = redact_tool_output(str(full))
+    return _visible_output(str(full), session_id=session_id), redacted
 
 
-def handle_cordis_tool(
+@dataclass
+class CordisOutcome:
+    """In-process result. ``text`` is what ``handle_cordis_tool`` already returned."""
+
+    text: str
+    success: bool
+    tool: str
+    mutating: bool
+    arguments: Any
+    receipt_source: str = ""
+
+
+def _outcome(
+    text: str,
+    *,
+    success: bool,
+    tool: str,
+    mutating: bool = False,
+    arguments: Any = None,
+    receipt_source: str = "",
+) -> CordisOutcome:
+    return CordisOutcome(
+        text=text,
+        success=success,
+        tool=tool,
+        mutating=mutating,
+        arguments=arguments if arguments is not None else {},
+        receipt_source=receipt_source if receipt_source else text,
+    )
+
+
+def _read_int(value: Any, default: int) -> int | None:
+    if value in (None, ""):
+        return default
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _run_read_content(arguments: Any, *, session: str) -> CordisOutcome:
+    args = arguments if isinstance(arguments, dict) else {}
+    if set(args.keys()) == {"arguments"} and isinstance(args.get("arguments"), dict):
+        args = args["arguments"]
+    digest = str(args.get("digest") or args.get("sha256") or "").strip()
+    if not digest:
+        return _outcome("read_content requires digest", success=False, tool="read_content")
+    offset = _read_int(args.get("offset"), 0)
+    if offset is None:
+        return _outcome("read_content offset must be an integer", success=False, tool="read_content")
+    if "limit" in args and args.get("limit") not in (None, ""):
+        limit = _read_int(args.get("limit"), 0)
+        if limit is None:
+            return _outcome("read_content limit must be an integer", success=False, tool="read_content")
+    else:
+        limit = DEFAULT_READ_LIMIT
+    session_id = str(args.get("session_id") or args.get("session") or session or "")
+    page = read_content(session_id, digest, offset=offset, limit=limit)
+    text = render_read_result(page)
+    return _outcome(text, success=bool(page.get("available")), tool="read_content", arguments=args)
+
+
+def run_cordis_tool(
     name: str,
     call: dict[str, Any],
     *,
@@ -349,7 +425,8 @@ def handle_cordis_tool(
     default_channel: str = "",
     default_timezone: str = "",
     session: str = "",
-) -> str:
+) -> CordisOutcome:
+    """Execute one Cordis tool. Receipts are derived from this outcome."""
     tool = name.strip().lower()
     args = _parse_arguments(call)
     if tool == "list_catalog":
@@ -361,36 +438,43 @@ def handle_cordis_tool(
             f"{m['name']}\tkind={m.get('kind')}\twhen={m.get('when')}\t{m.get('rests_on', '')}"
             for m in rows
         ]
-        return clip_tool_output("\n".join(lines) if lines else "(empty catalog)")
+        text = _visible_output("\n".join(lines) if lines else "(empty catalog)", session_id=session)
+        return _outcome(text, success=True, tool="list_catalog", arguments=args)
     if tool == "load_schema":
         mod_name = str(args.get("name") or "").strip()
         mod = find_module(mod_name)
         if mod is None:
-            return f"unknown module {mod_name}"
+            return _outcome(f"unknown module {mod_name}", success=False, tool="load_schema")
         schema = mod.get("parameters") or {
             "type": "object",
             "properties": {
                 "query": {"type": "string", "description": "Search query or CLI argument"}
             },
         }
-        return clip_tool_output(
-            json.dumps(
-                {
-                    "name": mod["name"],
-                    "kind": mod.get("kind"),
-                    "verb": mod.get("verb"),
-                    "tool_name": openai_tool_name(mod),
-                    "parameters": schema,
-                },
-                ensure_ascii=False,
-                indent=2,
-            )
+        body = json.dumps(
+            {
+                "name": mod["name"],
+                "kind": mod.get("kind"),
+                "verb": mod.get("verb"),
+                "tool_name": openai_tool_name(mod),
+                "parameters": schema,
+            },
+            ensure_ascii=False,
+            indent=2,
         )
+        return _outcome(
+            _visible_output(body, session_id=session),
+            success=True,
+            tool="load_schema",
+            arguments=args,
+        )
+    if tool == "read_content":
+        return _run_read_content(args, session=session)
     if tool == "call_job":
         mod_name = str(args.get("name") or "").strip()
         if is_cordis_tool(mod_name) and mod_name != "call_job":
             inner_call = {"function": {"arguments": args.get("arguments") or args}}
-            return handle_cordis_tool(
+            inner = run_cordis_tool(
                 mod_name,
                 inner_call,
                 default_user=default_user,
@@ -398,11 +482,15 @@ def handle_cordis_tool(
                 default_timezone=default_timezone,
                 session=session,
             )
+            return inner
+        if mod_name == "read_content":
+            return _run_read_content(args.get("arguments") if args.get("arguments") is not None else args, session=session)
         mod = find_module(mod_name)
         if mod is None:
             mod = find_module_for_tool(mod_name)
         if mod is None:
-            return f"refused: unknown module {mod_name}"
+            return _outcome(f"refused: unknown module {mod_name}", success=False, tool=mod_name or "call_job")
+        mod = with_discovered_commands(mod)
         job_args = args.get("arguments")
         if job_args is None:
             job_args = {k: v for k, v in args.items() if k != "name"}
@@ -414,19 +502,37 @@ def handle_cordis_tool(
                 job_args["channel"] = default_channel
             if not job_args.get("timezone") and default_timezone:
                 job_args["timezone"] = default_timezone
+        mutating = call_is_mutator(mod, job_args)
         allowed, denial = gate_module(
             mod,
             job_args if isinstance(job_args, dict) else {"arguments": job_args},
             session=session,
             user=default_user,
         )
+        tool_name = str(mod.get("name") or mod_name)
         if not allowed:
-            return HarnessMessage(redact_tool_output(denial))
-        mod_name = str(mod.get("name") or "")
-        if mod_name in _SKILL_MODULES:
-            return _visible_output(_run_skill(mod_name, job_args))
+            return _outcome(
+                HarnessMessage(redact_tool_output(denial)),
+                success=False,
+                tool=tool_name,
+                mutating=mutating,
+                arguments=job_args,
+            )
+        if tool_name in _SKILL_MODULES:
+            text = _visible_output(_run_skill(tool_name, job_args), session_id=session)
+            failed = text.startswith("unknown skill")
+            return _outcome(
+                text,
+                success=not failed,
+                tool=tool_name,
+                mutating=mutating,
+                arguments=job_args,
+                receipt_source=text,
+            )
+        if tool_name == "read_content":
+            return _run_read_content(job_args, session=session)
         if str(mod.get("kind") or "") == "mcp_remote":
-            from .mcp_client import call_remote
+            from .mcp_client import RemoteToolError, call_remote
 
             try:
                 remote_out = call_remote(
@@ -435,12 +541,65 @@ def handle_cordis_tool(
                     _remote_arguments(job_args),
                 )
             except Exception as exc:
-                return _visible_output(f"mcp remote failed: {exc}")
-            return _visible_output(remote_out or "")
+                return _outcome(
+                    _visible_output(f"mcp remote failed: {exc}", session_id=session),
+                    success=False,
+                    tool=tool_name,
+                    mutating=mutating,
+                    arguments=job_args,
+                )
+            failed = isinstance(remote_out, RemoteToolError)
+            redacted = redact_tool_output(remote_out or "")
+            return _outcome(
+                _visible_output(remote_out or "", session_id=session),
+                success=not failed,
+                tool=tool_name,
+                mutating=mutating,
+                arguments=job_args,
+                receipt_source=redacted,
+            )
         extra = _arguments_to_argv(mod, job_args)
         rec = execute_job(mod, extra_argv=extra or None)
-        return _job_visible_text(rec, failed=rec.get("status") != "SUCCESS")
-    return f"unknown cordis tool {name}"
+        failed = rec.get("status") != "SUCCESS"
+        shown, source = _job_visible_text(rec, failed=failed, session_id=session)
+        return _outcome(
+            shown,
+            success=not failed,
+            tool=tool_name,
+            mutating=mutating,
+            arguments=job_args,
+            receipt_source=source,
+        )
+    return _outcome(f"unknown cordis tool {name}", success=False, tool=name)
+
+
+def receipt_for(outcome: CordisOutcome) -> dict[str, Any] | None:
+    return make_receipt(
+        outcome.tool,
+        outcome.arguments,
+        outcome.receipt_source,
+        success=outcome.success,
+        mutating=outcome.mutating,
+    )
+
+
+def handle_cordis_tool(
+    name: str,
+    call: dict[str, Any],
+    *,
+    default_user: str = "",
+    default_channel: str = "",
+    default_timezone: str = "",
+    session: str = "",
+) -> str:
+    return run_cordis_tool(
+        name,
+        call,
+        default_user=default_user,
+        default_channel=default_channel,
+        default_timezone=default_timezone,
+        session=session,
+    ).text
 
 
 def is_cordis_tool(name: str) -> bool:

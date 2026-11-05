@@ -126,16 +126,19 @@ def present_job_result(record: Dict[str, Any]) -> Dict[str, Any]:
     """Copy a job record for a model or a user.
 
     Full ``stdout`` and ``stderr`` are not included. Those strings are clipped
-    into the tail fields. The trace record written by ``execute_job`` is separate
-    and still holds only the short tail.
+    into the tail fields. A clipped field keeps a ``<ref>`` so ``read_content``
+    can load the full text. The trace record written by ``execute_job`` is
+    separate and still holds only the short tail.
     """
+    from .retrieve import annotate_clip
+
     out = dict(record)
     stdout = out.pop("stdout", None)
     stderr = out.pop("stderr", None)
     if isinstance(stdout, str):
-        out["stdout_tail"] = clip_tool_output(stdout)
+        out["stdout_tail"] = annotate_clip(stdout)
     if isinstance(stderr, str):
-        out["stderr_tail"] = clip_tool_output(stderr)
+        out["stderr_tail"] = annotate_clip(stderr)
     return out
 
 
