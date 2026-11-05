@@ -413,12 +413,12 @@ def read_content(
 
 def render_read_result(page: dict[str, Any]) -> str:
     """Model-facing JSON. Unavailable pages are a harness instruction."""
-    from .fence import HarnessMessage
+    from .fence import HarnessError
 
     if not page.get("available"):
         digest = str(page.get("digest") or "")
         error = str(page.get("error") or "not_found")
-        return HarnessMessage(
+        return HarnessError(
             "Content unavailable "
             f"(digest={digest}, error={error}). "
             "Do not invent the missing text."

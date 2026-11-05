@@ -18,7 +18,7 @@ from typing import Any, Callable
 
 from .attachments import render_user_content, vision_enabled
 from .cordis_tools import is_cordis_tool, receipt_for, run_cordis_tool
-from .fence import FENCE_SYSTEM_NOTE, HarnessMessage, fence_untrusted, present_tool_result
+from .fence import FENCE_SYSTEM_NOTE, HarnessError, HarnessMessage, fence_untrusted, present_tool_result
 from .delivery import bind_delivery
 from .executor import execute_job, list_schedules
 from .modules import (
@@ -309,7 +309,7 @@ def _run_tool_calls(
                     else:
                         turn_cache[call_key] = content
         else:
-            content = f"refused: unknown tool {name} (use call_job with a catalog name)"
+            content = HarnessError(f"refused: unknown tool {name} (use call_job with a catalog name)")
 
         _record_tool(
             session=session,

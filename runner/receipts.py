@@ -15,7 +15,7 @@ import hashlib
 import json
 from typing import Any, Callable
 
-from .fence import fence_untrusted
+from .fence import HarnessError, fence_untrusted
 
 RECEIPT_SCHEMA = "agents_harness.tool_receipt.v1"
 
@@ -95,8 +95,44 @@ def extract_receipt_payload(text: str) -> dict[str, Any] | None:
     return schemas[0]
 
 
+def subprocess_succeeded(record: dict[str, Any]) -> bool:
+    """Whether a CLI job record is a successful side effect.
+
+    The exit code decides. Output text is not read. A present ``exit_code``
+    other than 0 is failure, including when ``status`` says ``SUCCESS``.
+    ``FAILED``, ``TIMEOUT``, ``ERROR``, and ``SKIPPED`` are failure. A record
+    with status ``SUCCESS`` and no ``exit_code`` stays success.
+    """
+    status = str(record.get("status") or "").strip().upper()
+    if status in {"FAILED", "TIMEOUT", "ERROR", "SKIPPED"}:
+        return False
+    if "exit_code" in record and record.get("exit_code") not in (None, ""):
+        try:
+            code = int(record["exit_code"])
+        except (TypeError, ValueError):
+            return False
+        if code != 0:
+            return False
+    if status == "SUCCESS":
+        return True
+    if "exit_code" in record and record.get("exit_code") not in (None, ""):
+        return True
+    return False
+
+
+def harness_failure(text: object) -> bool:
+    """True only for a failure the harness constructed, never for tool output."""
+    return isinstance(text, HarnessError)
+
+
 def make_receipt(tool: str, args: Any, output: str, *, success: bool, mutating: bool) -> dict[str, Any] | None:
-    """Receipt for a successful mutating call, else None."""
+    """Receipt for a successful mutating call, else None.
+
+    ``success`` is the call outcome (exit code or harness error), not a guess
+    from the output text. A schema object in that text does not override it.
+    """
+    if harness_failure(output):
+        success = False
     if not success or not mutating:
         return None
     payload = extract_receipt_payload(output)
