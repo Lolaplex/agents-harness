@@ -7,7 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Optional content retrieval. Hosts register `register_content_backend(fn)` or set `AGENTS_CONTENT_READ_CMD`. The model calls `read_content` (`call_job`) with `digest`, `offset`, and `limit` (default 8000). A page reports `text`, `digest` (SHA-256 of the full body), `total_chars`, and `truncated`. With no backend and no stored body the tool says the content is unavailable. The harness does not import agents-traces or agents-memory for this.
+- Tool text the harness clips (head, `[... N chars omitted ...]`, tail) keeps a `<ref digest="..." sha256="..." chars="..." truncated="1"/>` for the full redacted body, readable through the same `read_content` path.
+- Successful mutating tool calls add an `agents_harness.tool_receipt.v1` receipt to the rest of the turn: tool name, arguments digest, `success`, and any JSON object with a `schema` that the tool returned.
+- `register_final_check(hook)` inspects the draft reply and this turn's receipts. There is no built-in product heuristic. Remaining findings are `response_flags` on the loop trailer after one revision turn.
+- Help-json side effects. A command is classified from `side_effects`, then `mutates`, then `annotations.readOnlyHint`. Missing command metadata is mutating. The command name is not evidence. `commands_from: "help-json"` loads that verb's `--help-json` when the module does not already embed `commands`.
+
 ### Changed
+- Recent tool context keeps up to 12 tool results (`AGENTS_HISTORY_TOOL_EVENTS`, default 12), each with at most 400 characters of preview (`AGENTS_HISTORY_TOOL_PREVIEW`). Longer bodies keep a retrievable ref instead of dropping every result except the last three.
+- The system prompt tells the model to fetch a ref or omission before summarizing it, and to claim a side effect only when this turn has a successful receipt.
+- `mcp.terminal` sets `commands_from` to `help-json`. A declared command is invoked as itself and approved from that command's metadata. Undeclared argv still uses `run --`. If help-json cannot be loaded, the module stays mutating.
+- Shown tool text and schedule `stdout_tail` may exceed `AGENTS_TOOL_OUTPUT_MAX` by one trailing `<ref .../>` line. The clipped body before that line still fits the cap. Callers that required the whole string to stay inside the cap, or to end on the original tail, should strip a trailing ref.
+- Ask and strict approval no longer classifies a tool from its name or from words in the arguments. A module with no `side_effects`, `mutates`, or `readOnlyHint` is mutating, so a host manifest that used to skip the prompt only because it was named `search` or `list` is now asked. Bundled manifests set `mutates`, and the default mode is still `off` (no command, no prompt). `ask` still does not prompt for schedule create or list. `strict` still does.
+
 - Calendar tools no longer require a UTC offset on `dtstart`, `dtend`, or list bounds. Prefer local wall time plus an optional IANA `timezone` (explicit argument, else `CALDAV_TIMEZONE` or `timezone` in the credentials file, else the calendar's CalDAV calendar-timezone, else the host zone, else UTC). `Z` and numeric offsets stay absolute instants. All-day events are `YYYY-MM-DD` or `all_day=true` on add; returned all-day fields are dates and `dtend` is exclusive. Timed `dtstart` stays the UTC instant; show `dtstart_local`, `timezone`, and `all_day`. A daylight-saving gap or ambiguous naive time is an error; retry that instant with an explicit offset.
 
 ## [0.1.1] - 2026-10-21

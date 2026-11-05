@@ -261,11 +261,22 @@ class TestSchedule(unittest.TestCase):
             fired = tick(base_time=datetime(2026, 9, 5, 9, 0, tzinfo=timezone.utc))
         shown = fired[0]["result"]["stdout_tail"]
         self.assertNotIn("stdout", fired[0]["result"])
-        self.assertLessEqual(len(shown), 120)
-        self.assertTrue(shown.startswith("HEAD"), shown)
-        self.assertTrue(shown.endswith("TAIL"), shown)
-        self.assertIn("chars omitted", shown)
-        self.assertNotEqual(shown, payload[-1000:])
+        self.assertIn("<ref ", shown)
+        body, ref = shown.split("\n<ref ", 1)
+        ref_line = "<ref " + ref
+        self.assertNotIn("\n", ref_line)
+        self.assertLessEqual(len(body), 120)
+        self.assertEqual(len(shown), len(body) + 1 + len(ref_line))
+        self.assertLessEqual(len(shown), 120 + 1 + len(ref_line))
+        self.assertTrue(body.startswith("HEAD"), shown)
+        self.assertTrue(body.endswith("TAIL"), shown)
+        self.assertIn("chars omitted", body)
+        self.assertNotEqual(body, payload[-1000:])
+        from runner.retrieve import read_content
+
+        digest = ref.split('digest="', 1)[1].split('"', 1)[0]
+        page = read_content("", digest, offset=0, limit=-1)
+        self.assertEqual(page["text"], payload)
 
     def test_skipped_one_shot_routine_is_not_consumed(self):
         add_schedule(

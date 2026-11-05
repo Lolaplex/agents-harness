@@ -20,8 +20,9 @@ supported. SSE is used when ``transport`` is ``sse`` or the URL path ends with
 ``/sse``. The ``mcp`` SDK is the optional ``agents-harness[mcp]`` extra; the
 executor stays stdlib.
 
-Catalog names are ``mcp.<server>.<tool>`` with kind ``mcp_remote``. A missing
-``readOnlyHint`` means the tool mutates (approval gate). Hand-written modules
+Catalog names are ``mcp.<server>.<tool>`` with kind ``mcp_remote``. Side
+effects follow ``side_effects``, then ``mutates``, then ``readOnlyHint``.
+A missing class means the tool mutates (approval gate). Hand-written modules
 of the same name win.
 """
 
@@ -136,13 +137,39 @@ def _safe(part: str) -> str:
     return cleaned or "tool"
 
 
+def _descriptor_effects(tool: dict[str, Any]) -> tuple[bool, dict[str, Any]]:
+    """Effective mutates flag plus the metadata fields worth keeping.
+
+    ``side_effects`` wins over ``mutates`` over ``readOnlyHint``. A descriptor
+    with none of them stays mutating, which matches a missing readOnlyHint.
+    """
+    from .helpjson import READ_ONLY, classify_spec
+
+    meta: dict[str, Any] = {}
+    if "side_effects" in tool:
+        meta["side_effects"] = tool.get("side_effects")
+    if "mutates" in tool:
+        meta["mutates"] = tool.get("mutates")
+    ann = tool.get("annotations")
+    if isinstance(ann, dict):
+        meta["annotations"] = ann
+    elif "readOnlyHint" in tool:
+        meta["readOnlyHint"] = tool.get("readOnlyHint")
+    effects = classify_spec(meta, default=None)
+    if effects is None:
+        read_only = bool(tool.get("readOnlyHint"))
+    else:
+        read_only = effects == READ_ONLY
+    return (not read_only), meta
+
+
 def modules_from_descriptors(
     server: str,
     tools: list[dict[str, Any]],
     *,
     used: set[str] | None = None,
 ) -> list[dict[str, Any]]:
-    """Build catalog rows from plain tool dicts (name, description, inputSchema, readOnlyHint)."""
+    """Build catalog rows from plain tool dicts (name, description, inputSchema, side effects)."""
     names = used if used is not None else set()
     rows: list[dict[str, Any]] = []
     safe_server = _safe(server)
@@ -150,7 +177,8 @@ def modules_from_descriptors(
         tool_name = str(tool.get("name") or "").strip()
         if not tool_name:
             continue
-        read_only = bool(tool.get("readOnlyHint"))
+        mutates, meta = _descriptor_effects(tool)
+        read_only = not mutates
         schema = tool.get("inputSchema") if isinstance(tool.get("inputSchema"), dict) else {
             "type": "object",
             "properties": {},
@@ -173,13 +201,17 @@ def modules_from_descriptors(
                 "rests_on": description or f"remote MCP {server}/{tool_name}",
                 "expected_exit": 0,
                 "timeout_sec": 60,
-                "mutates": not read_only,
+                "mutates": mutates,
                 "readOnlyHint": read_only,
                 "parameters": schema,
                 "mcp_server": server,
                 "mcp_tool": tool_name,
             }
         )
+        if "side_effects" in meta:
+            rows[-1]["side_effects"] = meta["side_effects"]
+        if isinstance(meta.get("annotations"), dict):
+            rows[-1]["annotations"] = meta["annotations"]
     return rows
 
 
@@ -278,18 +310,33 @@ def _tool_dict(tool: Any) -> dict[str, Any]:
     ann = getattr(tool, "annotations", None)
     read_only = bool(getattr(ann, "readOnlyHint", False)) if ann is not None else False
     schema = getattr(tool, "inputSchema", None)
-    if not isinstance(schema, dict):
-        model_dump = getattr(tool, "model_dump", None)
-        if callable(model_dump):
-            dumped = model_dump()
-            if isinstance(dumped, dict) and isinstance(dumped.get("inputSchema"), dict):
-                schema = dumped["inputSchema"]
-    return {
+    dumped: dict[str, Any] = {}
+    model_dump = getattr(tool, "model_dump", None)
+    if callable(model_dump):
+        raw = model_dump()
+        if isinstance(raw, dict):
+            dumped = raw
+    if not isinstance(schema, dict) and isinstance(dumped.get("inputSchema"), dict):
+        schema = dumped["inputSchema"]
+    row = {
         "name": str(getattr(tool, "name", "") or ""),
         "description": str(getattr(tool, "description", "") or ""),
         "inputSchema": schema if isinstance(schema, dict) else {"type": "object", "properties": {}},
         "readOnlyHint": read_only,
     }
+    side = dumped.get("side_effects", getattr(tool, "side_effects", None))
+    if side not in (None, ""):
+        row["side_effects"] = side
+    if "mutates" in dumped:
+        row["mutates"] = dumped.get("mutates")
+    annotations = dumped.get("annotations")
+    if isinstance(annotations, dict):
+        row["annotations"] = annotations
+        if "readOnlyHint" in annotations:
+            row["readOnlyHint"] = bool(annotations.get("readOnlyHint"))
+    elif isinstance(ann, dict):
+        row["annotations"] = ann
+    return row
 
 
 async def _list_server_tools(spec: dict[str, Any]) -> list[dict[str, Any]]:
@@ -356,6 +403,16 @@ def remote_modules() -> list[dict[str, Any]]:
     return list(modules)
 
 
+class RemoteToolError(str):
+    """Model-facing text of an MCP result whose ``isError`` flag is set.
+
+    A plain ``str`` that happens to start with ``MCP error:`` is not this type.
+    Callers use the type, not the prefix, to decide success.
+    """
+
+    __slots__ = ()
+
+
 def _content_text(result: Any) -> str:
     chunks: list[str] = []
     for block in getattr(result, "content", None) or []:
@@ -369,7 +426,7 @@ def _content_text(result: Any) -> str:
         chunks.append(str(block))
     body = "\n".join(chunks).strip()
     if getattr(result, "isError", False):
-        return "MCP error: " + (body or "tool failed")
+        return RemoteToolError("MCP error: " + (body or "tool failed"))
     return body
 
 

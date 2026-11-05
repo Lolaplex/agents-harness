@@ -613,12 +613,28 @@ def _collect_due(now: datetime) -> tuple[List[Dict[str, Any]], List[Dict[str, An
     return claimed, skipped
 
 
+def _bounded_with_ref(text: str, limit: int) -> str:
+    """Keep a trailing ``<ref>`` when a persisted tail is shortened."""
+    if len(text) <= limit:
+        return text
+    from .retrieve import iter_refs
+
+    refs = iter_refs(text)
+    if not refs:
+        return text[:limit]
+    ref = refs[-1]
+    if len(ref) >= limit:
+        return ref[:limit]
+    head = text[: max(0, limit - len(ref) - 1)]
+    return head + "\n" + ref
+
+
 def _last_result(result: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "status": str(result.get("status") or "FAILED"),
         "exit_code": result.get("exit_code"),
-        "stdout_tail": str(result.get("stdout_tail") or "")[:500],
-        "stderr_tail": str(result.get("stderr_tail") or "")[:500],
+        "stdout_tail": _bounded_with_ref(str(result.get("stdout_tail") or ""), 500),
+        "stderr_tail": _bounded_with_ref(str(result.get("stderr_tail") or ""), 500),
         "finished_at": datetime.now(timezone.utc).isoformat(),
     }
 
