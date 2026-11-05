@@ -316,5 +316,110 @@ class TestReceiptLoop(unittest.TestCase):
         self.assertNotIn("response flagged", err)
 
 
+class TestCliExitReceipt(unittest.TestCase):
+    """CLI success is the exit code. Tool text is not a success signal."""
+
+    def _run(self, record: dict):
+        from runner.cordis_tools import receipt_for, run_cordis_tool
+
+        call = {
+            "function": {
+                "arguments": json.dumps(
+                    {"name": "mcp.memory.add", "arguments": {"fact": "note"}}
+                )
+            }
+        }
+        env = {
+            k: v
+            for k, v in os.environ.items()
+            if k not in ("AGENTS_APPROVAL_CMD", "AGENTS_APPROVAL_MODE")
+        }
+        with patch.dict(os.environ, env, clear=True):
+            with patch("runner.cordis_tools.execute_job", return_value=record) as run:
+                outcome = run_cordis_tool("call_job", call)
+        return outcome, receipt_for(outcome), run
+
+    def test_nonzero_exit_has_no_receipt_even_with_a_receipt_payload(self) -> None:
+        body = "error: could not save\n" + json.dumps(MEMORY_RECEIPT)
+        outcome, receipt, _run = self._run(
+            {
+                "status": "SUCCESS",
+                "exit_code": 1,
+                "expected_exit": 0,
+                "stdout": body,
+                "stderr": "error: could not save",
+            }
+        )
+        self.assertFalse(outcome.success)
+        self.assertIsNone(receipt)
+        self.assertIn("error: could not save", outcome.text)
+        self.assertNotIn("agents_harness.tool_receipt.v1", outcome.text)
+
+    def test_failed_status_with_zero_exit_has_no_receipt(self) -> None:
+        outcome, receipt, _run = self._run(
+            {
+                "status": "FAILED",
+                "exit_code": 0,
+                "stdout": json.dumps(MEMORY_RECEIPT),
+                "stderr": "error: partial write",
+            }
+        )
+        self.assertFalse(outcome.success)
+        self.assertIsNone(receipt)
+
+    def test_timeout_has_no_receipt(self) -> None:
+        outcome, receipt, _run = self._run(
+            {
+                "status": "TIMEOUT",
+                "exit_code": -1,
+                "stdout": json.dumps(MEMORY_RECEIPT),
+                "stderr": "",
+            }
+        )
+        self.assertFalse(outcome.success)
+        self.assertIsNone(receipt)
+        self.assertIn("timeout", outcome.text.lower())
+
+    def test_approval_denial_has_no_receipt(self) -> None:
+        from runner.cordis_tools import receipt_for, run_cordis_tool
+
+        call = {
+            "function": {
+                "arguments": json.dumps(
+                    {"name": "mcp.memory.add", "arguments": {"fact": "note"}}
+                )
+            }
+        }
+        with patch.dict(
+            os.environ,
+            {"AGENTS_APPROVAL_CMD": "false", "AGENTS_APPROVAL_MODE": "ask"},
+            clear=False,
+        ):
+            with patch("runner.cordis_tools.execute_job") as run:
+                outcome = run_cordis_tool("call_job", call)
+        run.assert_not_called()
+        self.assertFalse(outcome.success)
+        self.assertTrue(str(outcome.text).startswith("Denied:"))
+        self.assertIsNone(receipt_for(outcome))
+
+    def test_zero_exit_is_success_even_if_the_text_says_error(self) -> None:
+        stdout = "error: the word error is data\n" + json.dumps(MEMORY_RECEIPT)
+        outcome, receipt, _run = self._run(
+            {
+                "status": "SUCCESS",
+                "exit_code": 0,
+                "stdout": stdout,
+                "stderr": "",
+            }
+        )
+        self.assertTrue(outcome.success)
+        self.assertIsNotNone(receipt)
+        assert receipt is not None
+        self.assertTrue(receipt["success"])
+        self.assertEqual(receipt["tool"], "mcp.memory.add")
+        self.assertEqual(receipt["receipt"]["schema"], "agents_memory.write_receipt.v1")
+        self.assertIn("error: the word error is data", outcome.text)
+
+
 if __name__ == "__main__":
     unittest.main()

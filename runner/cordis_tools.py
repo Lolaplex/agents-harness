@@ -7,11 +7,11 @@ from dataclasses import dataclass
 from typing import Any
 
 from .approval import call_is_mutator, gate_module
-from .fence import HarnessMessage
+from .fence import HarnessError
 from .executor import execute_job
 from .helpjson import declared_argv, with_discovered_commands
 from .modules import find_module, find_module_for_tool, list_modules, openai_tool_name
-from .receipts import make_receipt
+from .receipts import harness_failure, make_receipt, subprocess_succeeded
 from .redact import redact_tool_output
 from .retrieve import DEFAULT_READ_LIMIT, annotate_clip, read_content, render_read_result
 from .skills import format_skill_list, load_skill
@@ -311,13 +311,10 @@ def _skill_arguments_name(job_args: Any) -> str:
     return ""
 
 
-def _run_skill(mod_name: str, job_args: Any) -> str:
+def _run_skill(mod_name: str, job_args: Any) -> str | None:
     if mod_name in ("skill.list", "skill.catalog"):
         return format_skill_list()
-    text = load_skill(_skill_arguments_name(job_args))
-    if text is None:
-        return f"unknown skill {_skill_arguments_name(job_args)}"
-    return text
+    return load_skill(_skill_arguments_name(job_args))
 
 
 def _remote_arguments(job_args: Any) -> dict[str, Any]:
@@ -401,14 +398,14 @@ def _run_read_content(arguments: Any, *, session: str) -> CordisOutcome:
         args = args["arguments"]
     digest = str(args.get("digest") or args.get("sha256") or "").strip()
     if not digest:
-        return _outcome("read_content requires digest", success=False, tool="read_content")
+        return _outcome(HarnessError("error: read_content requires digest"), success=False, tool="read_content")
     offset = _read_int(args.get("offset"), 0)
     if offset is None:
-        return _outcome("read_content offset must be an integer", success=False, tool="read_content")
+        return _outcome(HarnessError("error: read_content offset must be an integer"), success=False, tool="read_content")
     if "limit" in args and args.get("limit") not in (None, ""):
         limit = _read_int(args.get("limit"), 0)
         if limit is None:
-            return _outcome("read_content limit must be an integer", success=False, tool="read_content")
+            return _outcome(HarnessError("error: read_content limit must be an integer"), success=False, tool="read_content")
     else:
         limit = DEFAULT_READ_LIMIT
     session_id = str(args.get("session_id") or args.get("session") or session or "")
@@ -489,7 +486,11 @@ def run_cordis_tool(
         if mod is None:
             mod = find_module_for_tool(mod_name)
         if mod is None:
-            return _outcome(f"refused: unknown module {mod_name}", success=False, tool=mod_name or "call_job")
+            return _outcome(
+                HarnessError(f"refused: unknown module {mod_name}"),
+                success=False,
+                tool=mod_name or "call_job",
+            )
         mod = with_discovered_commands(mod)
         job_args = args.get("arguments")
         if job_args is None:
@@ -512,18 +513,28 @@ def run_cordis_tool(
         tool_name = str(mod.get("name") or mod_name)
         if not allowed:
             return _outcome(
-                HarnessMessage(redact_tool_output(denial)),
+                HarnessError(redact_tool_output(denial)),
                 success=False,
                 tool=tool_name,
                 mutating=mutating,
                 arguments=job_args,
             )
         if tool_name in _SKILL_MODULES:
-            text = _visible_output(_run_skill(tool_name, job_args), session_id=session)
-            failed = text.startswith("unknown skill")
+            loaded = _run_skill(tool_name, job_args)
+            if loaded is None:
+                missing = HarnessError(f"unknown skill {_skill_arguments_name(job_args)}")
+                return _outcome(
+                    missing,
+                    success=False,
+                    tool=tool_name,
+                    mutating=mutating,
+                    arguments=job_args,
+                    receipt_source=missing,
+                )
+            text = _visible_output(loaded, session_id=session)
             return _outcome(
                 text,
-                success=not failed,
+                success=not harness_failure(text),
                 tool=tool_name,
                 mutating=mutating,
                 arguments=job_args,
@@ -541,12 +552,14 @@ def run_cordis_tool(
                     _remote_arguments(job_args),
                 )
             except Exception as exc:
+                message = HarnessError(f"error: mcp remote failed: {exc}")
                 return _outcome(
-                    _visible_output(f"mcp remote failed: {exc}", session_id=session),
+                    message,
                     success=False,
                     tool=tool_name,
                     mutating=mutating,
                     arguments=job_args,
+                    receipt_source=message,
                 )
             failed = isinstance(remote_out, RemoteToolError)
             redacted = redact_tool_output(remote_out or "")
@@ -560,25 +573,43 @@ def run_cordis_tool(
             )
         extra = _arguments_to_argv(mod, job_args)
         rec = execute_job(mod, extra_argv=extra or None)
-        failed = rec.get("status") != "SUCCESS"
-        shown, source = _job_visible_text(rec, failed=failed, session_id=session)
+        ok = subprocess_succeeded(rec)
+        if ok:
+            shown, source = _job_visible_text(rec, failed=False, session_id=session)
+        else:
+            err = str(rec.get("stderr") or rec.get("stderr_tail") or "").strip()
+            if err:
+                shown, source = _job_visible_text(rec, failed=True, session_id=session)
+            else:
+                status = str(rec.get("status") or "").strip()
+                if status.upper() == "TIMEOUT":
+                    label = "error: timeout"
+                elif not status or status.upper() == "SUCCESS":
+                    label = "error: non-zero exit"
+                elif status.lower().startswith("error:"):
+                    label = status
+                else:
+                    label = f"error: {status}"
+                shown = HarnessError(label)
+                source = shown
         return _outcome(
             shown,
-            success=not failed,
+            success=ok and not harness_failure(shown),
             tool=tool_name,
             mutating=mutating,
             arguments=job_args,
             receipt_source=source,
         )
-    return _outcome(f"unknown cordis tool {name}", success=False, tool=name)
+    return _outcome(HarnessError(f"unknown cordis tool {name}"), success=False, tool=name)
 
 
 def receipt_for(outcome: CordisOutcome) -> dict[str, Any] | None:
+    success = bool(outcome.success) and not harness_failure(outcome.text) and not harness_failure(outcome.receipt_source)
     return make_receipt(
         outcome.tool,
         outcome.arguments,
         outcome.receipt_source,
-        success=outcome.success,
+        success=success,
         mutating=outcome.mutating,
     )
 
