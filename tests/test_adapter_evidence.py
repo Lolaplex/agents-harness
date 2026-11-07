@@ -13,7 +13,9 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from runner import adapter_evidence
 from runner.adapter_evidence import (
+    ArgumentDomainError,
     clear_result_validators,
     get_invocation,
     open_invocation,
@@ -462,6 +464,137 @@ class TestAdapterEvidence(unittest.TestCase):
         self.assertNotIn(record.evidence.target, shown)
         self.assertNotIn(SECRET, shown)
         self.assertNotIn(str(path), shown)
+
+    def _assert_domain_error(self, fn) -> None:
+        with self.assertRaises(ArgumentDomainError) as caught:
+            fn()
+        err = caught.exception
+        self.assertEqual(str(err), "unsupported arguments")
+        self.assertIsNone(err.__cause__)
+        self.assertIsNone(err.__context__)
+        self.assertNotIn("SECRET", str(err))
+        self.assertNotIn("SECRET_REPR", str(err))
+
+    def test_set_and_bytearray_are_not_shared_or_executed(self) -> None:
+        group = {"keep"}
+        buf = bytearray(b"orig")
+        nested = {"group": group, "buf": buf, "inner": [group, buf]}
+        ran = {"validator": False, "tool": False}
+
+        def evil(ctx, _raw):
+            ran["validator"] = True
+            return {
+                "operation": "create",
+                "target": "gen_bad",
+                "persisted_sha256": "ab" * 32,
+                "persisted_bytes": 1,
+            }
+
+        self._register(evil)
+        before = len(adapter_evidence._records)
+        self._assert_domain_error(lambda: open_invocation(TOOL, nested, "succeeded", {"ok": True}))
+        self.assertFalse(ran["validator"])
+        self.assertEqual(group, {"keep"})
+        self.assertEqual(bytes(buf), b"orig")
+        self.assertEqual(len(adapter_evidence._records), before)
+
+        def execute(mod, extra_argv=None):
+            ran["tool"] = True
+            group.add("tool")
+            buf.extend(b"T")
+            return _job(self.root / "nope", SECRET, write=False)
+
+        call = {
+            "function": {
+                "arguments": {
+                    "name": TOOL,
+                    "arguments": {"dest": str(self.root / "nope"), "nested": nested},
+                }
+            }
+        }
+        with patch("runner.cordis_tools.find_module", return_value=_module()):
+            with patch("runner.cordis_tools.execute_job", side_effect=execute):
+                outcome = run_cordis_tool("call_job", call)
+        self.assertFalse(ran["tool"])
+        self.assertFalse(outcome.success)
+        self.assertEqual(outcome.invocation_id, "")
+        self.assertEqual(outcome.arguments, {})
+        self.assertEqual(str(outcome.text), "error: unsupported arguments")
+        self.assertNotIn("SECRET", str(outcome.text))
+        self.assertEqual(group, {"keep"})
+        self.assertEqual(bytes(buf), b"orig")
+        self.assertIsNone(receipt_for(outcome))
+
+    def test_custom_repr_cycle_and_non_json_values_are_rejected(self) -> None:
+        class Boom:
+            def __hash__(self) -> int:
+                return 1
+
+            def __eq__(self, other: object) -> bool:
+                return False
+
+            def __repr__(self) -> str:
+                raise RuntimeError("SECRET_REPR")
+
+            def __str__(self) -> str:
+                raise RuntimeError("SECRET_REPR")
+
+        boom = Boom()
+        self._assert_domain_error(lambda: open_invocation(TOOL, {"x": boom}, "succeeded", None))
+        self._assert_domain_error(lambda: open_invocation(TOOL, {boom: "v"}, "succeeded", None))
+        cycle: list = []
+        cycle.append(cycle)
+        self._assert_domain_error(lambda: open_invocation(TOOL, {"c": cycle}, "succeeded", None))
+        loop = {"name": "loop"}
+        loop["self"] = loop
+        self._assert_domain_error(lambda: open_invocation(TOOL, loop, "succeeded", None))
+        self._assert_domain_error(lambda: open_invocation(TOOL, {"n": float("nan")}, "succeeded", None))
+        self._assert_domain_error(lambda: open_invocation(TOOL, {"n": float("inf")}, "succeeded", None))
+        self._assert_domain_error(lambda: open_invocation(TOOL, {"n": float("-inf")}, "succeeded", None))
+        self._assert_domain_error(lambda: open_invocation(TOOL, {1: "a"}, "succeeded", None))
+        deep: object = "x"
+        for _ in range(40):
+            deep = [deep]
+        self._assert_domain_error(lambda: open_invocation(TOOL, deep, "succeeded", None))
+        call = {"function": {"arguments": {"name": TOOL, "arguments": {"x": boom}}}}
+        with patch("runner.cordis_tools.find_module", return_value=_module()):
+            with patch("runner.cordis_tools.execute_job") as execute:
+                outcome = run_cordis_tool("call_job", call)
+        execute.assert_not_called()
+        self.assertEqual(str(outcome.text), "error: unsupported arguments")
+        self.assertNotIn("SECRET_REPR", str(outcome.text))
+        self.assertEqual(outcome.invocation_id, "")
+
+    def test_tuple_arguments_are_arrays_and_detached(self) -> None:
+        child = {"b": 1}
+        args = {"items": ("a", child), "also": child}
+        seen: dict = {}
+
+        def evil(ctx, _raw):
+            seen["kind"] = type(ctx.arguments["items"]).__name__
+            seen["same_tuple"] = ctx.arguments["items"] is args["items"]
+            seen["same_child"] = ctx.arguments["items"][1] is child
+            seen["shared"] = ctx.arguments["items"][1] is ctx.arguments["also"]
+            return {
+                "operation": "create",
+                "target": "gen_tuple",
+                "persisted_sha256": "ab" * 32,
+                "persisted_bytes": 2,
+            }
+
+        self._register(evil)
+        record = open_invocation(TOOL, args, "succeeded", {"ok": True})
+        self.assertEqual(seen["kind"], "tuple")
+        self.assertFalse(seen["same_tuple"])
+        self.assertFalse(seen["same_child"])
+        self.assertFalse(seen["shared"])
+        self.assertEqual(record.args_digest, args_digest(args))
+        self.assertEqual(record.args_digest, args_digest({"items": ["a", {"b": 1}], "also": {"b": 1}}))
+        child["b"] = 9
+        self.assertEqual(get_invocation(record.invocation_id).args_digest, args_digest({"items": ["a", {"b": 1}], "also": {"b": 1}}))
+        shown = json.dumps(public_envelope(record.invocation_id))
+        self.assertNotIn("args_digest", public_envelope(record.invocation_id))
+        self.assertNotIn(record.args_digest, shown)
 
 
 if __name__ == "__main__":

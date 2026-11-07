@@ -11,7 +11,7 @@ from .fence import HarnessError
 from .executor import execute_job
 from .helpjson import declared_argv, with_discovered_commands
 from .modules import find_module, find_module_for_tool, list_modules, openai_tool_name
-from .adapter_evidence import _snapshot_arguments, open_invocation
+from .adapter_evidence import ArgumentDomainError, _snapshot_arguments, open_invocation
 from .receipts import harness_failure, make_receipt, subprocess_succeeded
 from .redact import redact_tool_output
 from .retrieve import DEFAULT_READ_LIMIT, annotate_clip, read_content, render_read_result
@@ -518,16 +518,24 @@ def run_cordis_tool(
                 job_args["channel"] = default_channel
             if not job_args.get("timezone") and default_timezone:
                 job_args["timezone"] = default_timezone
-        mutating = call_is_mutator(mod, job_args)
+        tool_name = str(mod.get("name") or mod_name)
+        try:
+            # Detached JSON copy. The tool keeps job_args and cannot change this one.
+            sealed = _snapshot_arguments(job_args)
+        except ArgumentDomainError:
+            return _outcome(
+                HarnessError("error: unsupported arguments"),
+                success=False,
+                tool=tool_name,
+                arguments={},
+            )
+        mutating = call_is_mutator(mod, sealed)
         allowed, denial = gate_module(
             mod,
-            job_args if isinstance(job_args, dict) else {"arguments": job_args},
+            sealed if isinstance(sealed, dict) else {"arguments": sealed},
             session=session,
             user=default_user,
         )
-        tool_name = str(mod.get("name") or mod_name)
-        # Before the tool runs. The callee may mutate job_args; the record keeps this copy.
-        sealed = _snapshot_arguments(job_args)
         if not allowed:
             return _outcome(
                 HarnessError(redact_tool_output(denial)),

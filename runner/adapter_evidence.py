@@ -1,12 +1,15 @@
 """Optional per-call adapter evidence.
 
 A host registers one validator for a ``(tool, adapter, schema, version)`` key.
-The call arguments are snapshotted before the tool runs. After the tool
-returns, that snapshot is frozen and passed with that call's raw result.
-The validator may return typed evidence or nothing. It does not change the
-stored arguments or their digest. Stdout is not scanned. Legacy receipts are
-a separate path and are not upgraded by this one. The public envelope omits
-arguments and digests.
+The call arguments are copied before the tool runs. Only JSON values are
+accepted: null, bool, finite int and float, string, array, and object with
+string keys. Tuples are accepted and stored as arrays. A set, bytearray,
+non-finite number, cycle, non-string key, or other object is rejected before
+the tool runs. The error is ``unsupported arguments`` and does not quote the
+value. After a successful call, the copy is frozen and passed with that
+call's raw result. The validator cannot change the stored arguments or their
+digest. Stdout is not scanned. Legacy receipts are a separate path and are
+not upgraded by this one. The public envelope omits arguments and digests.
 
 Evidence is what the adapter reports about a succeeded call. It is not a host
 guarantee of the bytes on disk. A timeout can mean the effect already
@@ -15,6 +18,9 @@ happened; this module never reports that the write did not occur.
 
 from __future__ import annotations
 
+import hashlib
+import json
+import math
 import re
 import threading
 import uuid
@@ -22,10 +28,21 @@ from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Any, Callable
 
-from .receipts import args_digest
+_MAX_ARGUMENT_DEPTH = 32
 
 OUTCOMES = frozenset({"succeeded", "failed", "denied", "timed_out", "unknown"})
 _SHA = re.compile(r"^[0-9a-f]{64}$")
+
+
+class ArgumentDomainError(ValueError):
+    """Arguments are outside the supported JSON domain.
+
+    The message is fixed. It does not include the argument value.
+    """
+
+    def __init__(self) -> None:
+        super().__init__("unsupported arguments")
+
 
 Validator = Callable[["CallContext", Any], Any]
 
@@ -132,13 +149,14 @@ def public_envelope(invocation_id: str) -> dict[str, Any] | None:
 def open_invocation(tool: str, arguments: Any, outcome: str, raw: Any) -> InvocationRecord:
     """Record one attempt and, only when it succeeded, ask the single registered validator.
 
-    The digest is the snapshot taken on entry, before the validator runs.
+    The digest is the JSON copy taken on entry, before the validator runs.
+    Unsupported arguments raise ``ArgumentDomainError`` and store nothing.
     """
     name = str(tool or "")
     state = outcome if outcome in OUTCOMES else "unknown"
     invocation_id = "inv_" + uuid.uuid4().hex
     captured = _snapshot_arguments(arguments)
-    digest = args_digest(captured)
+    digest = _digest_json(captured)
     evidence = _evidence_for(name, _freeze_arguments(captured), state, raw, invocation_id)
     record = InvocationRecord(
         invocation_id=invocation_id,
@@ -153,14 +171,69 @@ def open_invocation(tool: str, arguments: Any, outcome: str, raw: Any) -> Invoca
 
 
 def _snapshot_arguments(value: Any) -> Any:
-    """Plain recursive copy of dicts, lists, and tuples. The input is not shared."""
-    if isinstance(value, dict):
-        return {key: _snapshot_arguments(item) for key, item in value.items()}
-    if isinstance(value, list):
-        return [_snapshot_arguments(item) for item in value]
-    if isinstance(value, tuple):
-        return tuple(_snapshot_arguments(item) for item in value)
-    return value
+    """Detached JSON copy. Tuples become lists. Caller containers are not shared.
+
+    Raises ``ArgumentDomainError`` for anything outside the domain. The
+    exception does not chain a value-bearing cause.
+    """
+    try:
+        return _copy_json(value, set(), 0)
+    except ArgumentDomainError:
+        raise
+    except Exception:
+        raise ArgumentDomainError from None
+
+
+def _copy_json(value: Any, stack: set[int], depth: int) -> Any:
+    if depth > _MAX_ARGUMENT_DEPTH:
+        raise ArgumentDomainError
+    if value is None or type(value) is bool or type(value) is str:
+        return value
+    if type(value) is int:
+        return value
+    if type(value) is float:
+        if not math.isfinite(value):
+            raise ArgumentDomainError
+        return value
+    if type(value) is list or type(value) is tuple:
+        ident = id(value)
+        if ident in stack:
+            raise ArgumentDomainError
+        stack.add(ident)
+        try:
+            return [_copy_json(item, stack, depth + 1) for item in value]
+        finally:
+            stack.discard(ident)
+    if type(value) is dict:
+        ident = id(value)
+        if ident in stack:
+            raise ArgumentDomainError
+        stack.add(ident)
+        try:
+            copied: dict[str, Any] = {}
+            for key, item in value.items():
+                if type(key) is not str:
+                    raise ArgumentDomainError
+                copied[key] = _copy_json(item, stack, depth + 1)
+            return copied
+        finally:
+            stack.discard(ident)
+    raise ArgumentDomainError
+
+
+def _digest_json(value: Any) -> str:
+    """SHA-256 of strict JSON. Does not call ``str`` or ``repr`` on values."""
+    try:
+        blob = json.dumps(
+            value,
+            sort_keys=True,
+            ensure_ascii=False,
+            separators=(",", ":"),
+            allow_nan=False,
+        )
+    except (TypeError, ValueError):
+        raise ArgumentDomainError from None
+    return hashlib.sha256(blob.encode("utf-8")).hexdigest()
 
 
 def _freeze_arguments(value: Any) -> Any:
