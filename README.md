@@ -116,6 +116,9 @@ python -m runner.loop --user 123 --message "hello" --assemble-only
 # Complete request with a provider
 python -m runner.loop --user probe --message "status report" --complete --provider openai.default
 
+# Host-required delivery (one JSON object on stdout; needs register_delivery_decision)
+python -m runner.loop --user probe --message "status report" --complete --provider openai.default --delivery-required
+
 # Tick dynamic due reminders (also safe to call in-process from klanker serve)
 python -m runner.schedule tick
 
@@ -126,6 +129,8 @@ python -m runner.loop --user 123 --message "what is this?" --attach ./shot.png -
 ---
 
 ## Approval, skills, schedules, attachments
+
+`--delivery-required` makes the loop the only writer of its stdout: one `agents_harness.delivery.v1` object with `status`, `reply`, `session`, `user_id`, and `alias`. The host registers `register_delivery_decision`. `allow` releases the candidate, `replace` releases the hook's text, and `block` releases an empty reply. An invalid decision or a raised hook is `policy_failure` with an empty reply. With the flag and no hook, the process exits 0 before the provider and does not call it. A hook without the flag buffers the turn, including on a TTY, and writes only approved plaintext. No hook and no flag keeps token streaming, the trailer marker, and `response_flags`. The gate does not redact tool traces.
 
 Mutating `call_job` tools ask first when `AGENTS_APPROVAL_CMD` is set. `{user}` in that command becomes the turn's channel user. `AGENTS_APPROVAL_MODE=ask` gates mutators (the default once a command is set). Creating or listing a schedule does not ask in `ask` mode; removing one does. `strict` gates every tool that is not read-only, including schedule create. `off`, or no command, keeps the old behavior. Exit 0 approves, 1 denies, 2 is timeout/unavailable (denied). A denial tells the model not to retry.
 

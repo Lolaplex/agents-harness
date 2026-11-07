@@ -207,3 +207,20 @@ def final_check_findings(text: str, receipts: list[dict[str, Any]]) -> list[str]
     except Exception as exc:
         return [f"final check failed: {type(exc).__name__}"]
     return _findings(result)
+
+
+def final_check_outcome(
+    text: str, receipts: list[dict[str, Any]]
+) -> tuple[list[str], BaseException | None]:
+    """Run the registered check once.
+
+    A raised check is returned to the caller and is not turned into a finding.
+    The hook signature stays ``hook(text, receipts)``. No hook means no findings.
+    """
+    if _check is None:
+        return [], None
+    try:
+        result = _check(text or "", list(receipts))
+    except Exception as exc:
+        return [], exc
+    return _findings(result), None
