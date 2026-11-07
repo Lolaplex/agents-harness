@@ -89,7 +89,12 @@ def openai_cordis_tools() -> list[dict[str, Any]]:
 
 def _parse_arguments(call: dict[str, Any]) -> dict[str, Any]:
     fn = call.get("function") if isinstance(call.get("function"), dict) else call
-    raw = fn.get("arguments") or "{}"
+    if not isinstance(fn, dict) or "arguments" not in fn or fn.get("arguments") is None:
+        raw: Any = "{}"
+    else:
+        raw = fn.get("arguments")
+        if raw == "":
+            raw = "{}"
     if isinstance(raw, str):
         try:
             args = json.loads(raw) if raw.strip() else {}
@@ -98,6 +103,8 @@ def _parse_arguments(call: dict[str, Any]) -> dict[str, Any]:
     elif isinstance(raw, (dict, list)):
         args = raw
     else:
+        # A set or other non-JSON value must not collapse to {}.
+        _snapshot_arguments(raw)
         args = {}
     return args if isinstance(args, dict) else {"arguments": args}
 
@@ -439,7 +446,16 @@ def run_cordis_tool(
 ) -> CordisOutcome:
     """Execute one Cordis tool. Receipts are derived from this outcome."""
     tool = name.strip().lower()
-    args = _parse_arguments(call)
+    try:
+        args = _parse_arguments(call)
+        _snapshot_arguments(args)
+    except ArgumentDomainError:
+        return _outcome(
+            HarnessError("error: unsupported arguments"),
+            success=False,
+            tool=tool or "call_job",
+            arguments={},
+        )
     if tool == "list_catalog":
         kind = str(args.get("kind") or "").strip().lower()
         rows = list_modules()

@@ -3,10 +3,12 @@
 A host registers one validator for a ``(tool, adapter, schema, version)`` key.
 The call arguments are copied before the tool runs. Only JSON values are
 accepted: null, bool, finite int and float, string, array, and object with
-string keys. Tuples are accepted and stored as arrays. A set, bytearray,
-non-finite number, cycle, non-string key, or other object is rejected before
-the tool runs. The error is ``unsupported arguments`` and does not quote the
-value. After a successful call, the copy is frozen and passed with that
+string keys. Strings and keys must be Unicode scalar values; a surrogate
+code point is rejected and is not rewritten. The canonical JSON digest is
+checked on that copy before the tool runs. Tuples are accepted and stored
+as arrays. A set, bytearray, non-finite number, cycle, non-string key, or
+other object is rejected before the tool runs. The error is
+``unsupported arguments`` and does not quote the value or an encoder error. After a successful call, the copy is frozen and passed with that
 call's raw result. The validator cannot change the stored arguments or their
 digest. Stdout is not scanned. Legacy receipts are a separate path and are
 not upgraded by this one. The public envelope omits arguments and digests.
@@ -328,17 +330,22 @@ def _snapshot_arguments(value: Any) -> Any:
     exception does not chain a value-bearing cause.
     """
     try:
-        return _copy_json(value, set(), 0)
+        copied = _copy_json(value, set(), 0)
+        _digest_json(copied)
     except ArgumentDomainError:
         raise
     except Exception:
         raise ArgumentDomainError from None
+    return copied
 
 
 def _copy_json(value: Any, stack: set[int], depth: int) -> Any:
     if depth > _MAX_ARGUMENT_DEPTH:
         raise ArgumentDomainError
-    if value is None or type(value) is bool or type(value) is str:
+    if value is None or type(value) is bool:
+        return value
+    if type(value) is str:
+        _require_scalar(value)
         return value
     if type(value) is int:
         return value
@@ -365,11 +372,20 @@ def _copy_json(value: Any, stack: set[int], depth: int) -> Any:
             for key, item in value.items():
                 if type(key) is not str:
                     raise ArgumentDomainError
+                _require_scalar(key)
                 copied[key] = _copy_json(item, stack, depth + 1)
             return copied
         finally:
             stack.discard(ident)
     raise ArgumentDomainError
+
+
+def _require_scalar(value: str) -> None:
+    """Reject UTF-16 surrogate code points. The string itself is not rewritten."""
+    for char in value:
+        code = ord(char)
+        if 0xD800 <= code <= 0xDFFF:
+            raise ArgumentDomainError
 
 
 def _digest_json(value: Any) -> str:
@@ -382,9 +398,9 @@ def _digest_json(value: Any) -> str:
             separators=(",", ":"),
             allow_nan=False,
         )
-    except (TypeError, ValueError):
+        return hashlib.sha256(blob.encode("utf-8")).hexdigest()
+    except (TypeError, ValueError, UnicodeEncodeError):
         raise ArgumentDomainError from None
-    return hashlib.sha256(blob.encode("utf-8")).hexdigest()
 
 
 def _freeze_arguments(value: Any) -> Any:

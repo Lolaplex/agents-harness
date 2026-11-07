@@ -596,6 +596,106 @@ class TestAdapterEvidence(unittest.TestCase):
         self.assertNotIn("args_digest", public_envelope(record.invocation_id))
         self.assertNotIn(record.args_digest, shown)
 
+    def test_surrogates_are_rejected_before_the_tool_and_unicode_is_kept(self) -> None:
+        before = len(adapter_evidence._records)
+        samples = ("\ud800", "a\ud800b", "\ud800\udc00", "\udfff")
+        for sample in samples:
+            self._assert_domain_error(
+                lambda value=sample: open_invocation(TOOL, {"fact": value}, "succeeded", None)
+            )
+            self._assert_domain_error(
+                lambda value=sample: open_invocation(TOOL, {value: "k"}, "succeeded", None)
+            )
+            self._assert_domain_error(
+                lambda value=sample: open_invocation(
+                    TOOL, {"nested": {"items": [value]}}, "succeeded", None
+                )
+            )
+        self.assertEqual(len(adapter_evidence._records), before)
+        text = "café 😀 \u0301 ключ \u0000"
+        seen: dict = {}
+
+        def keep(ctx, _raw):
+            seen["fact"] = ctx.arguments["fact"]
+            seen["title"] = ctx.arguments["note"]["title"]
+            seen["item"] = ctx.arguments["items"][0]
+            seen["key"] = ctx.arguments["labels"]["ключ"]
+            return {
+                "operation": "create",
+                "target": "gen_unicode",
+                "persisted_sha256": "ab" * 32,
+                "persisted_bytes": 2,
+            }
+
+        args = {"fact": text, "note": {"title": text}, "items": [text], "labels": {"ключ": text}}
+        self._register(keep)
+        record = open_invocation(TOOL, args, "succeeded", {"ok": True})
+        self.assertEqual(seen["fact"], text)
+        self.assertEqual(seen["title"], text)
+        self.assertEqual(seen["item"], text)
+        self.assertEqual(seen["key"], text)
+        self.assertEqual(record.args_digest, args_digest(args))
+
+        path = self.root / "surrogate.bin"
+
+        def execute(mod, extra_argv=None):
+            path.write_bytes(b"wrote")
+            return {"status": "SUCCESS", "exit_code": 0, "stdout": "", "stderr": ""}
+
+        raw = (
+            '{"name": "%s", "arguments": {"dest": "%s", "fact": "\\ud800"}}'
+            % (TOOL, path.as_posix())
+        )
+        with patch("runner.cordis_tools.find_module", return_value=_module()):
+            with patch("runner.cordis_tools.execute_job", side_effect=execute) as job:
+                outcome = run_cordis_tool(
+                    "call_job", {"function": {"arguments": raw}}
+                )
+        job.assert_not_called()
+        self.assertFalse(path.exists())
+        self.assertEqual(outcome.invocation_id, "")
+        self.assertEqual(outcome.call_outcome, "")
+        self.assertEqual(str(outcome.text), "error: unsupported arguments")
+        self.assertNotIn("ud800", str(outcome.text).lower())
+        self.assertNotIn("unicode", str(outcome.text).lower())
+
+        good = self.root / "cafe.bin"
+        good.write_bytes(_transformed("café"))
+        self._register(_readback)
+        with patch("runner.cordis_tools.find_module", return_value=_module()):
+            with patch(
+                "runner.cordis_tools.execute_job",
+                return_value={"status": "SUCCESS", "exit_code": 0, "stdout": _decoys(), "stderr": ""},
+            ):
+                kept = run_cordis_tool(
+                    "call_job",
+                    {
+                        "function": {
+                            "arguments": json.dumps(
+                                {"name": TOOL, "arguments": {"dest": str(good), "fact": "café"}}
+                            )
+                        }
+                    },
+                )
+        self.assertEqual(kept.call_outcome, "succeeded")
+        self.assertEqual(kept.arguments["fact"], "café")
+        self.assertEqual(get_invocation(kept.invocation_id).evidence.persisted_sha256, hashlib.sha256(_transformed("café")).hexdigest())
+
+    def test_whole_arguments_set_is_not_an_empty_call(self) -> None:
+        for payload in ({"keep"}, set()):
+            with self.subTest(empty=len(payload) == 0):
+                with patch("runner.cordis_tools.find_module", return_value=_module()):
+                    with patch("runner.cordis_tools.execute_job") as execute:
+                        outcome = run_cordis_tool(
+                            "call_job", {"function": {"arguments": payload}}
+                        )
+                execute.assert_not_called()
+                self.assertEqual(outcome.invocation_id, "")
+                self.assertEqual(outcome.call_outcome, "")
+                self.assertFalse(outcome.success)
+                self.assertEqual(str(outcome.text), "error: unsupported arguments")
+                self.assertIsNone(receipt_for(outcome))
+
 
 if __name__ == "__main__":
     unittest.main()
