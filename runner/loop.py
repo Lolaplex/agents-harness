@@ -20,6 +20,7 @@ from typing import Any, Callable
 from .attachments import render_user_content, vision_enabled
 from .cordis_tools import is_cordis_tool, receipt_for, run_cordis_tool
 from .fence import FENCE_SYSTEM_NOTE, HarnessError, HarnessMessage, fence_untrusted, present_tool_result
+from .adapter_evidence import turn_evidence_scope
 from .delivery import bind_delivery
 from .delivery_gate import (
     DeliveryStop,
@@ -28,6 +29,7 @@ from .delivery_gate import (
     end_turn_scope,
     request_turn_cancel,
     resolve_terminal,
+    turn_cancelled,
     write_terminal,
 )
 from .executor import execute_job, list_schedules
@@ -772,14 +774,14 @@ def main(argv: list[str] | None = None) -> int:
         print("Error: --session, --user, or --user-id is required", file=sys.stderr)
         return 1
 
-    from .user_profile import load_user_profile
+    from .user_profile import load_user_profile, turn_timezone
 
     resolved = _resolve_identity(args)
     session = resolved.session.id
     user_text = args.message or ""
     profile = load_user_profile()
     project = (args.project or "").strip()
-    timezone_name = (resolved.user.timezone or profile.get("timezone") or "").strip()
+    timezone_name = turn_timezone(resolved.user, profile)
 
     attachments = [str(item) for item in (args.attach or []) if str(item).strip()]
     provider_manifest = find_provider(args.provider) if args.provider else None
@@ -903,6 +905,8 @@ def main(argv: list[str] | None = None) -> int:
             if prev_int is not None:
                 signal.signal(signal.SIGINT, prev_int)
                 prev_int = None
+    evidence_cm = turn_evidence_scope()
+    evidence_cm.__enter__()
     try:
         try:
             result = _complete_once(provider, req)
@@ -945,6 +949,8 @@ def main(argv: list[str] | None = None) -> int:
                 turn_cache=turn_cache,
                 receipts=turn_receipts,
             )
+            if gated and turn_cancelled():
+                raise DeliveryStop("cancelled") from None
             messages.append(
                 {
                     "role": "assistant",
@@ -1010,6 +1016,8 @@ def main(argv: list[str] | None = None) -> int:
                 }
             )
             messages.extend(tool_msgs)
+            if gated and turn_cancelled():
+                raise DeliveryStop("cancelled") from None
             messages.append(
                 {
                     "role": "user",
@@ -1174,6 +1182,7 @@ def main(argv: list[str] | None = None) -> int:
         if prev_term is not None:
             signal.signal(signal.SIGTERM, prev_term)
         end_turn_scope()
+        evidence_cm.__exit__(None, None, None)
 
 
 if __name__ == "__main__":

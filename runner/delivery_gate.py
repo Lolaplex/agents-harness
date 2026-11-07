@@ -15,7 +15,7 @@ import threading
 from dataclasses import dataclass
 from typing import Any, Callable
 
-from .receipts import final_check_outcome
+from .receipts import final_check_outcome, snapshot_receipts
 
 SCHEMA = "agents_harness.delivery.v1"
 STATUSES = frozenset({"released", "blocked", "policy_failure", "cancelled", "timed_out"})
@@ -136,7 +136,7 @@ def _apply_policy(hook: DeliveryHook | None, text: str, receipts: list[dict[str,
     if hook is None:
         return "policy_failure", ""
     try:
-        decision = hook(text, list(receipts))
+        decision = hook(text, snapshot_receipts(receipts))
     except Exception:
         return "policy_failure", ""
     if turn_cancelled():
@@ -310,18 +310,40 @@ def parse_delivery_envelope(raw: bytes) -> dict[str, str]:
     return values
 
 
-def _write_bytes(data: bytes) -> None:
+TRANSPORT = 3
+
+
+def _write_bytes(data: bytes) -> int:
+    """Hand ``data`` to stdout. This function does not read the cancel flag.
+
+    The caller already decided the body. A cancel that becomes visible on the
+    first line here, or during ``write`` or ``flush``, does not select a
+    different body and does not retract bytes already handed to the stream.
+    A ``write`` or ``flush`` error is a transport failure. It is not rewritten
+    as ``blocked``.
+    """
     global _committed
     if _committed:
-        return
+        return 0
     buf = getattr(sys.stdout, "buffer", None)
-    if buf is not None:
-        buf.write(data)
-        buf.flush()
-    else:
-        sys.stdout.write(data.decode("utf-8"))
-        sys.stdout.flush()
+    try:
+        if buf is not None:
+            buf.write(data)
+        else:
+            sys.stdout.write(data.decode("utf-8"))
+    except Exception:
+        _committed = True
+        return TRANSPORT
+    try:
+        if buf is not None:
+            buf.flush()
+        else:
+            sys.stdout.flush()
+    except Exception:
+        _committed = True
+        return TRANSPORT
     _committed = True
+    return 0
 
 
 def write_terminal(
@@ -336,9 +358,15 @@ def write_terminal(
 ) -> int:
     """Write the terminal bytes once.
 
-    The commit boundary is the stdout write. A cancel observed before that
-    write drops the reply. A later cancel does not write a second body.
-    Oversize required output writes nothing and returns 2.
+    The release commit point is the last ``turn_cancelled()`` read below,
+    before the first stdout write. Cancel at that read selects ``cancelled``
+    and an empty reply, so the candidate is not released. ``_write_bytes``
+    does not read the flag. A cancel after this read, including one made on
+    the first line of the write, does not replace the body and does not
+    retract bytes. A short write or a flush error returns ``TRANSPORT`` (3).
+    That is not a later ``blocked`` envelope. Already finished tool side
+    effects are left as they are. Oversize required output writes nothing
+    and returns 2. There is no atomic pipe or network rollback.
     """
 
     global _committed
@@ -359,10 +387,9 @@ def write_terminal(
             blob = encode_envelope(status, reply, session, user_id, alias)
             if blob is None:
                 return 2
-        try:
-            _write_bytes(blob)
-        except Exception:
-            return 0 if _committed else 2
+        code = _write_bytes(blob)
+        if code == TRANSPORT:
+            return TRANSPORT
         if status != "released":
             print("delivery withheld", file=sys.stderr)
         if status == "released" and reply != "":
@@ -373,10 +400,9 @@ def write_terminal(
         print("delivery withheld", file=sys.stderr)
         return 0
     if status == "released" and reply != "":
-        try:
-            _write_bytes(reply.encode("utf-8"))
-        except Exception:
-            return 0 if _committed else 2
+        code = _write_bytes(reply.encode("utf-8"))
+        if code == TRANSPORT:
+            return TRANSPORT
         record(reply)
         return 0
     _committed = True

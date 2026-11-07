@@ -7,10 +7,16 @@ The harness does not interpret product schemas.
 
 ``register_final_check`` is the only checker. There is no built-in heuristic
 for words like "saved". The hook sees the draft reply and this turn's receipts.
+Its signature stays ``(text, receipts)``. Inside an open turn scope the hook
+may call ``get_current_turn_evidence()`` for that turn's adapter records.
+The harness does not copy those records onto the receipt or the model text.
+Each hook call receives its own deep copy. Nested dicts and lists are not
+the caller's objects. A write does not cross into the other hook or the caller.
 """
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 from typing import Any, Callable
@@ -198,12 +204,25 @@ def _findings(result: Any) -> list[str]:
     return [text] if text else []
 
 
+def snapshot_receipts(receipts: list[dict[str, Any]] | None) -> list[Any]:
+    """Detached deep copy for one hook call.
+
+    The list and every nested dict or list are new objects. A write in the
+    check cannot reach the policy snapshot or the caller, and a write in the
+    policy cannot reach the caller or turn evidence. The next call copies the
+    originals again.
+    """
+    if not receipts:
+        return []
+    return copy.deepcopy(list(receipts))
+
+
 def final_check_findings(text: str, receipts: list[dict[str, Any]]) -> list[str]:
     """Findings from the registered hook. No hook means no findings."""
     if _check is None:
         return []
     try:
-        result = _check(text or "", list(receipts))
+        result = _check(text or "", snapshot_receipts(receipts))
     except Exception as exc:
         return [f"final check failed: {type(exc).__name__}"]
     return _findings(result)
@@ -216,11 +235,12 @@ def final_check_outcome(
 
     A raised check is returned to the caller and is not turned into a finding.
     The hook signature stays ``hook(text, receipts)``. No hook means no findings.
+    The receipts argument is a fresh frozen snapshot, not the caller's list.
     """
     if _check is None:
         return [], None
     try:
-        result = _check(text or "", list(receipts))
+        result = _check(text or "", snapshot_receipts(receipts))
     except Exception as exc:
         return [], exc
     return _findings(result), None

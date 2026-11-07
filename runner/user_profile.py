@@ -42,3 +42,20 @@ def load_user_profile() -> dict[str, str]:
         if m:
             out["timezone"] = m.group(1).strip()
     return out
+
+
+def turn_timezone(user: object, profile: dict[str, str] | None = None) -> str:
+    """Optional IANA zone for the turn clock.
+
+    Identity records do not carry a timezone. A host object may still expose
+    ``timezone``. A missing or blank attribute is empty, not an error. Otherwise
+    the zone is the optional USER.md profile field. The string is returned
+    unchanged so a valid IANA name keeps its own DST rules.
+    """
+    raw = getattr(user, "timezone", None)
+    text = "" if raw is None else str(raw).strip()
+    if text:
+        return text
+    if not profile:
+        return ""
+    return str(profile.get("timezone") or "").strip()

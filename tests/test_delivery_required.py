@@ -677,5 +677,288 @@ class TestDeliveryLoop(unittest.TestCase):
         self.assertNotIn("DRAFT", out)
 
 
+class TestReceiptSnapshot(unittest.TestCase):
+    def test_check_and_policy_cannot_alias_the_caller(self) -> None:
+        from runner.delivery_gate import resolve_terminal
+
+        nested = {"id": "orange", "verified": True, "tags": ["keep"]}
+        caller = [{"tool": "call_job", "receipt": nested}]
+        seen: dict[str, object] = {}
+
+        def check(_text, receipts):
+            self.assertIsNot(receipts[0], caller[0])
+            self.assertIsNot(receipts[0]["receipt"], nested)
+            receipts[0]["receipt"]["id"] = "check-nested"
+            receipts[0]["receipt"]["verified"] = False
+            receipts[0]["receipt"]["tags"].append("check-added")
+            receipts.append({"from_check": "yes"})
+            return None
+
+        def policy(_text, receipts):
+            self.assertIsNot(receipts[0]["receipt"], nested)
+            seen["id"] = receipts[0]["receipt"]["id"]
+            seen["verified"] = receipts[0]["receipt"]["verified"]
+            seen["tags"] = list(receipts[0]["receipt"]["tags"])
+            receipts[0]["receipt"]["verified"] = False
+            receipts[0]["receipt"]["tags"].append("policy-only")
+            receipts.append({"from_policy": "yes"})
+            return DeliveryDecision("block")
+
+        status, reply = resolve_terminal(
+            kind="candidate",
+            candidate="DRAFT",
+            receipts=caller,
+            hook=policy,
+            revise=lambda _text, _findings: "nope",
+        )
+        # check is registered separately
+        from runner.receipts import register_final_check
+
+        register_final_check(check)
+        try:
+            status, reply = resolve_terminal(
+                kind="candidate",
+                candidate="DRAFT",
+                receipts=caller,
+                hook=policy,
+                revise=lambda _text, _findings: (_ for _ in ()).throw(AssertionError("revision")),
+            )
+        finally:
+            from runner.receipts import clear_final_check
+
+            clear_final_check()
+        self.assertEqual(status, "blocked")
+        self.assertEqual(reply, "")
+        self.assertEqual(seen["id"], "orange")
+        self.assertIs(seen["verified"], True)
+        self.assertEqual(seen["tags"], ["keep"])
+        self.assertEqual(nested["id"], "orange")
+        self.assertIs(nested["verified"], True)
+        self.assertEqual(nested["tags"], ["keep"])
+        self.assertEqual(len(caller), 1)
+
+
+class TestReleaseCommit(unittest.TestCase):
+    def tearDown(self) -> None:
+        end_turn_scope()
+
+    def test_cancel_before_the_commit_read_drops_the_reply(self) -> None:
+        begin_turn_scope()
+        request_turn_cancel()
+        out, err = io.StringIO(), io.StringIO()
+        with redirect_stdout(out), redirect_stderr(err):
+            code = write_terminal(
+                required=True,
+                status="released",
+                reply="CANDIDATE_SECRET",
+                session="s",
+                user_id="u",
+                alias="a",
+                record=lambda _text: self.fail("recorded"),
+            )
+        self.assertEqual(code, 0)
+        parsed = parse_delivery_envelope(out.getvalue().encode())
+        self.assertEqual(parsed["status"], "cancelled")
+        self.assertEqual(parsed["reply"], "")
+        self.assertNotIn("CANDIDATE_SECRET", out.getvalue())
+
+    def test_cancel_on_the_first_write_line_keeps_the_decided_body(self) -> None:
+        begin_turn_scope()
+
+        class _Buf:
+            def __init__(self) -> None:
+                self.chunks: list[bytes] = []
+
+            def write(self, data: bytes) -> int:
+                request_turn_cancel()
+                self.chunks.append(bytes(data))
+                return len(data)
+
+            def flush(self) -> None:
+                return None
+
+        class _Out:
+            def __init__(self) -> None:
+                self.buffer = _Buf()
+
+            def write(self, text: str) -> int:
+                return self.buffer.write(text.encode())
+
+            def flush(self) -> None:
+                return None
+
+        out = _Out()
+        with patch("sys.stdout", out):
+            code = write_terminal(
+                required=True,
+                status="released",
+                reply="CANDIDATE_SECRET",
+                session="s",
+                user_id="u",
+                alias="a",
+                record=lambda text: self.assertEqual(text, "CANDIDATE_SECRET"),
+            )
+        self.assertEqual(code, 0)
+        raw = b"".join(out.buffer.chunks)
+        self.assertEqual(raw.count(b"\n"), 1)
+        parsed = parse_delivery_envelope(raw)
+        self.assertEqual(parsed["status"], "released")
+        self.assertEqual(parsed["reply"], "CANDIDATE_SECRET")
+
+    def test_short_write_is_transport_not_a_second_blocked_body(self) -> None:
+        begin_turn_scope()
+
+        class _Buf:
+            def __init__(self) -> None:
+                self.chunks: list[bytes] = []
+
+            def write(self, data: bytes) -> int:
+                self.chunks.append(bytes(data[:4]))
+                raise OSError("short write")
+
+            def flush(self) -> None:
+                raise AssertionError("flush after short write")
+
+        class _Out:
+            def __init__(self) -> None:
+                self.buffer = _Buf()
+
+        from runner.delivery_gate import TRANSPORT
+
+        out = _Out()
+        with patch("sys.stdout", out):
+            code = write_terminal(
+                required=True,
+                status="released",
+                reply="CANDIDATE_SECRET",
+                session="s",
+                user_id="u",
+                alias="a",
+                record=lambda _text: self.fail("recorded"),
+            )
+        self.assertEqual(code, TRANSPORT)
+        raw = b"".join(out.buffer.chunks)
+        self.assertEqual(raw, b'{"al')
+        self.assertNotIn(b"blocked", raw)
+        self.assertEqual(len(out.buffer.chunks), 1)
+
+    def test_flush_error_leaves_the_bytes_and_writes_nothing_else(self) -> None:
+        begin_turn_scope()
+
+        class _Buf:
+            def __init__(self) -> None:
+                self.chunks: list[bytes] = []
+                self.flushes = 0
+
+            def write(self, data: bytes) -> int:
+                self.chunks.append(bytes(data))
+                return len(data)
+
+            def flush(self) -> None:
+                self.flushes += 1
+                raise OSError("flush")
+
+        class _Out:
+            def __init__(self) -> None:
+                self.buffer = _Buf()
+
+        from runner.delivery_gate import TRANSPORT
+
+        out = _Out()
+        with patch("sys.stdout", out):
+            code = write_terminal(
+                required=True,
+                status="released",
+                reply="OK",
+                session="s",
+                user_id="u",
+                alias="a",
+                record=lambda _text: self.fail("recorded"),
+            )
+        self.assertEqual(code, TRANSPORT)
+        self.assertEqual(out.buffer.flushes, 1)
+        parsed = parse_delivery_envelope(b"".join(out.buffer.chunks))
+        self.assertEqual(parsed["status"], "released")
+        self.assertEqual(parsed["reply"], "OK")
+
+
+class TestCancelAfterTool(unittest.TestCase):
+    def setUp(self) -> None:
+        clear_delivery_decision()
+        clear_final_check()
+
+    def tearDown(self) -> None:
+        clear_delivery_decision()
+        clear_final_check()
+        end_turn_scope()
+
+    def test_cancel_after_the_tool_does_not_start_another_provider(self) -> None:
+        calls = {"jobs": 0, "policy": 0}
+
+        def provider(req: CompletionRequest, nth: int) -> CompletionResult:
+            return CompletionResult(
+                text="",
+                tool_calls=[
+                    {
+                        "id": "c1",
+                        "type": "function",
+                        "function": {
+                            "name": "call_job",
+                            "arguments": json.dumps({"name": "mcp.memory.search", "arguments": {}}),
+                        },
+                    }
+                ],
+            )
+
+        def policy(_text, _receipts):
+            calls["policy"] += 1
+            return DeliveryDecision("allow")
+
+        def execute_job(_mod, **_kwargs):
+            calls["jobs"] += 1
+            request_turn_cancel()
+            return {"status": "SUCCESS", "stdout": "FILE\n", "stderr": ""}
+
+        register_delivery_decision(policy)
+        seen: list[CompletionRequest] = []
+
+        class Wrapped:
+            def complete(self, req: CompletionRequest) -> CompletionResult:
+                seen.append(req)
+                return provider(req, len(seen))
+
+        with tempfile.TemporaryDirectory() as tmp:
+            env = dict(os.environ)
+            env.update({"AGENTS_HOME": tmp, "AGENTS_MEMORY_RULES": "0"})
+            env.pop("AGENTS_MODULES_DIR", None)
+            out, err = io.StringIO(), io.StringIO()
+            with patch.dict(os.environ, env, clear=True):
+                with patch("runner.loop.get_provider", return_value=Wrapped()):
+                    with patch("runner.cordis_tools.execute_job", side_effect=execute_job):
+                        with redirect_stdout(out), redirect_stderr(err):
+                            rc = loop_main(
+                                [
+                                    "--channel",
+                                    "local",
+                                    "--user",
+                                    "probe",
+                                    "--new-session",
+                                    "--message",
+                                    "hello",
+                                    "--complete",
+                                    "--provider",
+                                    "fake",
+                                    "--delivery-required",
+                                ]
+                            )
+        self.assertEqual(rc, 0, err.getvalue())
+        self.assertEqual(calls["jobs"], 1)
+        self.assertEqual(len(seen), 1)
+        self.assertEqual(calls["policy"], 0)
+        parsed = parse_delivery_envelope(out.getvalue().encode())
+        self.assertEqual(parsed["status"], "cancelled")
+        self.assertEqual(parsed["reply"], "")
+
+
 if __name__ == "__main__":
     unittest.main()
