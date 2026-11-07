@@ -27,7 +27,7 @@ Optional FastMCP server support:
 pip install "agents-harness[mcp]"
 ```
 
-Optional trace sealing and audit (`--seal`, `mcp.traces.seal`, `mcp.traces.audit`) need agents-traces 0.1.0 or newer:
+Optional trace sealing and audit (`--seal`, `mcp.traces.seal`, `mcp.traces.audit`) need agents-traces 0.1.0 or newer. The published 0.1.1 wheel provides identity, assemble, and audit. Its `UserRecord.timezone` is a blank string when unset; a missing attribute is the same. That wheel has no `agents_traces.content`. `read_content` does not import agents-traces:
 
 ```bash
 pip install "agents-harness[traces]"

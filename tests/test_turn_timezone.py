@@ -1,8 +1,8 @@
-"""Turn clock zone without an identity timezone field.
+"""Turn clock zone from a missing, blank, or explicit identity timezone.
 
 The echo provider below is the local completion stub. It is not a stand-in
-for ``UserRecord.timezone``. These tests import the installed identity record
-and fail if that field is patched back on.
+for ``UserRecord.timezone``. A published identity record may omit the
+attribute or store it as an empty string. Neither is a zone.
 """
 
 from __future__ import annotations
@@ -83,14 +83,24 @@ class TestTurnTimezone(unittest.TestCase):
         blank = SimpleNamespace(timezone="  ")
         self.assertEqual(turn_timezone(blank, {"timezone": "Europe/Berlin"}), "Europe/Berlin")
 
-    @unittest.skipUnless(_TRACES, "agents-traces dev package is not installed")
-    def test_real_user_record_has_no_timezone_field(self) -> None:
+    @unittest.skipUnless(_TRACES, "agents-traces is not installed")
+    def test_installed_user_record_blank_zone_uses_profile_and_explicit_wins(self) -> None:
         from agents_traces.identity import UserRecord
 
-        self.assertNotIn("timezone", UserRecord.__dataclass_fields__)
         person = UserRecord(id="u_real", aliases=["http:qa"])
+        raw = getattr(person, "timezone", None)
+        self.assertFalse(str(raw or "").strip())
         self.assertEqual(turn_timezone(person, {"timezone": "Europe/Berlin"}), "Europe/Berlin")
-        self.assertFalse(hasattr(person, "timezone"))
+        self.assertEqual(turn_timezone(person, {}), "")
+        try:
+            explicit = UserRecord(id="u_real", aliases=["http:qa"], timezone="America/New_York")
+        except TypeError:
+            explicit = None
+        if explicit is not None:
+            self.assertEqual(
+                turn_timezone(explicit, {"timezone": "Europe/Berlin"}),
+                "America/New_York",
+            )
 
     @unittest.skipUnless(_TRACES, "agents-traces dev package is not installed")
     def test_installed_clock_keeps_dst_for_the_passed_iana_name(self) -> None:
