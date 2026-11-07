@@ -17,6 +17,7 @@ import uuid
 from typing import Any, Callable
 
 from .attachments import render_user_content, vision_enabled
+from .adapter_evidence import turn_evidence_scope
 from .cordis_tools import is_cordis_tool, receipt_for, run_cordis_tool
 from .fence import FENCE_SYSTEM_NOTE, HarnessError, HarnessMessage, fence_untrusted, present_tool_result
 from .delivery import bind_delivery
@@ -848,133 +849,91 @@ def main(argv: list[str] | None = None) -> int:
     turn_cache: dict[tuple[str, str], str] = {}
     turn_receipts: list[dict[str, Any]] = []
 
-    for _round in range(max_rounds):
-        if not result.tool_calls:
-            break
-        tool_msgs = _run_tool_calls(
-            result.tool_calls,
-            session=session,
-            default_user=args.user,
-            default_channel=args.channel,
-            default_timezone=timezone_name,
-            on_status=on_status,
-            turn_cache=turn_cache,
-            receipts=turn_receipts,
-        )
-        messages.append(
-            {
-                "role": "assistant",
-                "content": result.text or None,
-                "tool_calls": result.tool_calls,
-            }
-        )
-        messages.extend(tool_msgs)
-        is_last = _round >= max_rounds - 1
-        round_tools = None if is_last else tools
-        if is_last:
+    with turn_evidence_scope():
+        for _round in range(max_rounds):
+            if not result.tool_calls:
+                break
+            tool_msgs = _run_tool_calls(
+                result.tool_calls,
+                session=session,
+                default_user=args.user,
+                default_channel=args.channel,
+                default_timezone=timezone_name,
+                on_status=on_status,
+                turn_cache=turn_cache,
+                receipts=turn_receipts,
+            )
             messages.append(
                 {
-                    "role": "user",
-                    "content": "[System Notice: Tool execution round limit reached. Please synthesize your final response now: summarize what was completed, note any tool issues, and answer the user.]",
+                    "role": "assistant",
+                    "content": result.text or None,
+                    "tool_calls": result.tool_calls,
                 }
             )
-        try:
-            result = _complete_once(
-                provider,
-                CompletionRequest(
-                    messages=messages,
-                    tools=round_tools,
-                    on_status=on_status,
-                    on_delta=on_delta,
-                ),
-            )
-        except Exception as e:
-            err_msg = str(e).strip() or e.__class__.__name__
-            print(f"Turn error: {err_msg}", file=sys.stderr)
-            fallback = last_scratch or f"Turn failed: {err_msg}"
-            emit(fallback)
-            _emit_trailer(
-                emit,
+            messages.extend(tool_msgs)
+            is_last = _round >= max_rounds - 1
+            round_tools = None if is_last else tools
+            if is_last:
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": "[System Notice: Tool execution round limit reached. Please synthesize your final response now: summarize what was completed, note any tool issues, and answer the user.]",
+                    }
+                )
+            try:
+                result = _complete_once(
+                    provider,
+                    CompletionRequest(
+                        messages=messages,
+                        tools=round_tools,
+                        on_status=on_status,
+                        on_delta=on_delta,
+                    ),
+                )
+            except Exception as e:
+                err_msg = str(e).strip() or e.__class__.__name__
+                print(f"Turn error: {err_msg}", file=sys.stderr)
+                fallback = last_scratch or f"Turn failed: {err_msg}"
+                emit(fallback)
+                _emit_trailer(
+                    emit,
+                    session=session,
+                    user_id=resolved.user.id,
+                    alias=resolved.alias,
+                    mode=mode,
+                )
+                return 1
+
+            if (result.text or "").strip():
+                last_scratch = result.text.strip()
+
+        if result.tool_calls and not (result.text or "").strip():
+            tool_msgs = _run_tool_calls(
+                result.tool_calls,
                 session=session,
-                user_id=resolved.user.id,
-                alias=resolved.alias,
-                mode=mode,
+                default_user=args.user,
+                default_channel=args.channel,
+                default_timezone=timezone_name,
+                on_status=on_status,
+                turn_cache=turn_cache,
+                receipts=turn_receipts,
             )
-            return 1
-
-        if (result.text or "").strip():
-            last_scratch = result.text.strip()
-
-    if result.tool_calls and not (result.text or "").strip():
-        tool_msgs = _run_tool_calls(
-            result.tool_calls,
-            session=session,
-            default_user=args.user,
-            default_channel=args.channel,
-            default_timezone=timezone_name,
-            on_status=on_status,
-            turn_cache=turn_cache,
-            receipts=turn_receipts,
-        )
-        messages.append(
-            {
-                "role": "assistant",
-                "content": None,
-                "tool_calls": result.tool_calls,
-            }
-        )
-        messages.extend(tool_msgs)
-        messages.append(
-            {
-                "role": "user",
-                "content": "[System Notice: Provide your final summary to the user now.]",
-            }
-        )
-        try:
-            result = _complete_once(
-                provider,
-                CompletionRequest(
-                    messages=messages,
-                    tools=None,
-                    on_status=on_status,
-                    on_delta=on_delta,
-                ),
+            messages.append(
+                {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": result.tool_calls,
+                }
             )
-        except Exception as e:
-            err_msg = str(e).strip() or e.__class__.__name__
-            print(f"Turn error: {err_msg}", file=sys.stderr)
-            fallback = last_scratch or f"Turn failed: {err_msg}"
-            emit(fallback)
-            _emit_trailer(
-                emit,
-                session=session,
-                user_id=resolved.user.id,
-                alias=resolved.alias,
-                mode=mode,
-            )
-            return 1
-
-        if (result.text or "").strip():
-            last_scratch = result.text.strip()
-
-    final_text = (result.text or "").strip() or last_scratch
-    response_flags: list[str] = []
-    if final_text:
-        findings = final_check_findings(final_text, turn_receipts)
-        if findings:
-            messages.append({"role": "assistant", "content": final_text})
+            messages.extend(tool_msgs)
             messages.append(
                 {
                     "role": "user",
-                    "content": (
-                        "[Harness check] "
-                        + " ".join(findings)
-                        + " Revise the reply. Do not claim a side effect that has no successful receipt in this turn."
-                    ),
+                    "content": "[System Notice: Provide your final summary to the user now.]",
                 }
             )
             try:
-                revised = _complete_once(
+                result = _complete_once(
                     provider,
                     CompletionRequest(
                         messages=messages,
@@ -983,18 +942,61 @@ def main(argv: list[str] | None = None) -> int:
                         on_delta=on_delta,
                     ),
                 )
-            except Exception as exc:
-                err_msg = str(exc).strip() or exc.__class__.__name__
-                print(f"Final check revision failed: {err_msg}", file=sys.stderr)
-                revised = None
-            if revised is not None and (revised.text or "").strip():
-                final_text = revised.text.strip()
-            response_flags = final_check_findings(final_text, turn_receipts)
-            if response_flags:
-                print(
-                    "response flagged: " + "; ".join(response_flags),
-                    file=sys.stderr,
+            except Exception as e:
+                err_msg = str(e).strip() or e.__class__.__name__
+                print(f"Turn error: {err_msg}", file=sys.stderr)
+                fallback = last_scratch or f"Turn failed: {err_msg}"
+                emit(fallback)
+                _emit_trailer(
+                    emit,
+                    session=session,
+                    user_id=resolved.user.id,
+                    alias=resolved.alias,
+                    mode=mode,
                 )
+                return 1
+
+            if (result.text or "").strip():
+                last_scratch = result.text.strip()
+
+        final_text = (result.text or "").strip() or last_scratch
+        response_flags: list[str] = []
+        if final_text:
+            findings = final_check_findings(final_text, turn_receipts)
+            if findings:
+                messages.append({"role": "assistant", "content": final_text})
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": (
+                            "[Harness check] "
+                            + " ".join(findings)
+                            + " Revise the reply. Do not claim a side effect that has no successful receipt in this turn."
+                        ),
+                    }
+                )
+                try:
+                    revised = _complete_once(
+                        provider,
+                        CompletionRequest(
+                            messages=messages,
+                            tools=None,
+                            on_status=on_status,
+                            on_delta=on_delta,
+                        ),
+                    )
+                except Exception as exc:
+                    err_msg = str(exc).strip() or exc.__class__.__name__
+                    print(f"Final check revision failed: {err_msg}", file=sys.stderr)
+                    revised = None
+                if revised is not None and (revised.text or "").strip():
+                    final_text = revised.text.strip()
+                response_flags = final_check_findings(final_text, turn_receipts)
+                if response_flags:
+                    print(
+                        "response flagged: " + "; ".join(response_flags),
+                        file=sys.stderr,
+                    )
     if final_text:
         _record(
             session,

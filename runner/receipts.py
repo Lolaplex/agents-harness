@@ -7,6 +7,9 @@ The harness does not interpret product schemas.
 
 ``register_final_check`` is the only checker. There is no built-in heuristic
 for words like "saved". The hook sees the draft reply and this turn's receipts.
+Its signature stays ``(text, receipts)``. Inside an open turn scope the hook
+may call ``get_current_turn_evidence()`` for that turn's adapter records.
+The harness does not copy those records onto the receipt or the model text.
 """
 
 from __future__ import annotations

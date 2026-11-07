@@ -11,6 +11,13 @@ call's raw result. The validator cannot change the stored arguments or their
 digest. Stdout is not scanned. Legacy receipts are a separate path and are
 not upgraded by this one. The public envelope omits arguments and digests.
 
+``turn_evidence_scope`` collects invocations for one host turn, through
+``final_check``. ``get_current_turn_evidence`` returns that tuple only in the
+context that entered the scope. A copied context, asyncio child task, or
+worker thread does not own it unless it calls ``adopt_turn_evidence``.
+``skill.list``, ``skill.catalog``, and ``skill.load`` do not open an
+invocation and are not turn evidence.
+
 Evidence is what the adapter reports about a succeeded call. It is not a host
 guarantee of the bytes on disk. A timeout can mean the effect already
 happened; this module never reports that the write did not occur.
@@ -18,15 +25,18 @@ happened; this module never reports that the write did not occur.
 
 from __future__ import annotations
 
+import contextvars
+import gc
 import hashlib
 import json
 import math
 import re
 import threading
 import uuid
+from contextlib import contextmanager
 from dataclasses import dataclass
 from types import MappingProxyType
-from typing import Any, Callable
+from typing import Any, Callable, Iterator
 
 _MAX_ARGUMENT_DEPTH = 32
 
@@ -49,6 +59,27 @@ Validator = Callable[["CallContext", Any], Any]
 _lock = threading.Lock()
 _validators: dict[tuple[str, str, str, str], Validator] = {}
 _records: dict[str, "InvocationRecord"] = {}
+
+
+class _TurnLease:
+    """One host turn. Copied contexts do not own it."""
+
+    __slots__ = ("records", "tokens", "closed")
+
+    def __init__(self) -> None:
+        self.records: list[InvocationRecord] = []
+        self.tokens: list[contextvars.Token] = []
+        self.closed = False
+
+
+_turn: contextvars.ContextVar[_TurnLease | None] = contextvars.ContextVar(
+    "agents_harness_turn_evidence",
+    default=None,
+)
+_probe: contextvars.ContextVar[bool] = contextvars.ContextVar(
+    "agents_harness_turn_context_probe",
+    default=False,
+)
 
 
 @dataclass(frozen=True)
@@ -165,9 +196,129 @@ def open_invocation(tool: str, arguments: Any, outcome: str, raw: Any) -> Invoca
         outcome=state,
         evidence=evidence,
     )
+    lease = _owned_lease()
     with _lock:
         _records[invocation_id] = record
+        if lease is not None and not lease.closed:
+            lease.records.append(record)
     return record
+
+
+def get_current_turn_evidence() -> tuple[InvocationRecord, ...]:
+    """Immutable records for the turn this context owns.
+
+    Empty outside ``turn_evidence_scope``, after it closes, and in a copied
+    context, asyncio child task, or worker thread that did not call
+    ``adopt_turn_evidence``. The tuple is a snapshot: it is not the live
+    buffer and it does not include argument values or the validator registry.
+    """
+    lease = _owned_lease()
+    if lease is None:
+        return ()
+    with _lock:
+        if lease.closed:
+            return ()
+        return tuple(lease.records)
+
+
+@contextmanager
+def turn_evidence_scope() -> Iterator[None]:
+    """Host scope from before tools run through ``final_check``.
+
+    Closes on return, exception, and cancellation. A copied context does not
+    become this scope. Workers opt in with ``adopt_turn_evidence``.
+    """
+    lease = _TurnLease()
+    token = _turn.set(lease)
+    with _lock:
+        lease.tokens.append(token)
+    try:
+        yield
+    finally:
+        with _lock:
+            lease.closed = True
+            lease.records.clear()
+            try:
+                lease.tokens.remove(token)
+            except ValueError:
+                pass
+        try:
+            _turn.reset(token)
+        except ValueError:
+            pass
+
+
+@contextmanager
+def adopt_turn_evidence() -> Iterator[None]:
+    """Attach this context to the turn lease already visible here.
+
+    Context copies, child tasks, and other threads can see the lease object
+    and still read and write nothing until they enter this manager. Adopting
+    a missing or closed lease is a no-op.
+    """
+    lease = _turn.get(None)
+    if lease is None or lease.closed:
+        yield
+        return
+    token = _turn.set(lease)
+    with _lock:
+        if lease.closed:
+            token_to_drop = token
+        else:
+            lease.tokens.append(token)
+            token_to_drop = None
+    if token_to_drop is not None:
+        try:
+            _turn.reset(token_to_drop)
+        except ValueError:
+            pass
+        yield
+        return
+    try:
+        yield
+    finally:
+        with _lock:
+            try:
+                lease.tokens.remove(token)
+            except ValueError:
+                pass
+        try:
+            _turn.reset(token)
+        except ValueError:
+            pass
+
+
+def _owned_lease() -> _TurnLease | None:
+    lease = _turn.get(None)
+    if lease is None or lease.closed:
+        return None
+    here = _current_context()
+    if here is None:
+        return None
+    with _lock:
+        tokens = tuple(lease.tokens)
+    for token in tokens:
+        if _token_context(token) is here:
+            return lease
+    return None
+
+
+def _current_context() -> contextvars.Context | None:
+    token = _probe.set(True)
+    try:
+        return _token_context(token)
+    finally:
+        try:
+            _probe.reset(token)
+        except ValueError:
+            pass
+
+
+def _token_context(token: contextvars.Token) -> contextvars.Context | None:
+    for obj in gc.get_referents(token):
+        if isinstance(obj, contextvars.Context):
+            return obj
+    return None
 
 
 def _snapshot_arguments(value: Any) -> Any:
