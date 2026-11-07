@@ -22,7 +22,7 @@
 - Complete via provider: `python -m runner.loop --user fabian --message "hi" --complete --provider openai.default`
 - Tool turn (no LLM): `python -m runner.loop --user probe --message canary --complete --provider scripted.tool --deliver buffered`
 - Live LMS roundtrip: `python -m runner.loop --user probe --message "what is the sandbox canary" --complete --provider lmstudio.local` (host overlay; not in this clone)
-- Delivery: HTTP always streams (hang detection). `--channel telegram` buffers the answer and prints `thinking...` on stderr. `--channel local` on a TTY writes tokens. `--deliver stream|buffered` overrides.
+- Delivery: HTTP always streams (hang detection). `--channel telegram` buffers the answer and prints `thinking...` on stderr. `--channel local` on a TTY writes tokens. `--deliver stream|buffered` overrides. `--delivery-required` is exclusive: stdout is one `agents_harness.delivery.v1` object, and a missing `register_delivery_decision` hook fails closed before the provider. A registered decision without that flag buffers and writes only the approved plaintext. Neither path rewrites tool traces.
 - Call a named module/schedule: `python -m runner.loop --call mcp.traces`
 - Check a job term: `python -m runner.kernel --check runner/terms/skill-then-a2a.json`
 - Reduce a job term: `python -m runner.kernel --reduce runner/terms/skill-then-a2a.json`

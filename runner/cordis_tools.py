@@ -11,6 +11,7 @@ from .fence import HarnessError
 from .executor import execute_job
 from .helpjson import declared_argv, with_discovered_commands
 from .modules import find_module, find_module_for_tool, list_modules, openai_tool_name
+from .adapter_evidence import ArgumentDomainError, _snapshot_arguments, open_invocation
 from .receipts import harness_failure, make_receipt, subprocess_succeeded
 from .redact import redact_tool_output
 from .retrieve import DEFAULT_READ_LIMIT, annotate_clip, read_content, render_read_result
@@ -88,7 +89,12 @@ def openai_cordis_tools() -> list[dict[str, Any]]:
 
 def _parse_arguments(call: dict[str, Any]) -> dict[str, Any]:
     fn = call.get("function") if isinstance(call.get("function"), dict) else call
-    raw = fn.get("arguments") or "{}"
+    if not isinstance(fn, dict) or "arguments" not in fn or fn.get("arguments") is None:
+        raw: Any = "{}"
+    else:
+        raw = fn.get("arguments")
+        if raw == "":
+            raw = "{}"
     if isinstance(raw, str):
         try:
             args = json.loads(raw) if raw.strip() else {}
@@ -97,6 +103,8 @@ def _parse_arguments(call: dict[str, Any]) -> dict[str, Any]:
     elif isinstance(raw, (dict, list)):
         args = raw
     else:
+        # A set or other non-JSON value must not collapse to {}.
+        _snapshot_arguments(raw)
         args = {}
     return args if isinstance(args, dict) else {"arguments": args}
 
@@ -362,6 +370,8 @@ class CordisOutcome:
     mutating: bool
     arguments: Any
     receipt_source: str = ""
+    invocation_id: str = ""
+    call_outcome: str = ""
 
 
 def _outcome(
@@ -372,14 +382,25 @@ def _outcome(
     mutating: bool = False,
     arguments: Any = None,
     receipt_source: str = "",
+    call_outcome: str | None = None,
+    raw: Any = None,
 ) -> CordisOutcome:
+    kept = arguments if arguments is not None else {}
+    invocation_id = ""
+    recorded = ""
+    if call_outcome is not None:
+        record = open_invocation(tool, kept, call_outcome, raw)
+        invocation_id = record.invocation_id
+        recorded = record.outcome
     return CordisOutcome(
         text=text,
         success=success,
         tool=tool,
         mutating=mutating,
-        arguments=arguments if arguments is not None else {},
+        arguments=kept,
         receipt_source=receipt_source if receipt_source else text,
+        invocation_id=invocation_id,
+        call_outcome=recorded,
     )
 
 
@@ -425,7 +446,16 @@ def run_cordis_tool(
 ) -> CordisOutcome:
     """Execute one Cordis tool. Receipts are derived from this outcome."""
     tool = name.strip().lower()
-    args = _parse_arguments(call)
+    try:
+        args = _parse_arguments(call)
+        _snapshot_arguments(args)
+    except ArgumentDomainError:
+        return _outcome(
+            HarnessError("error: unsupported arguments"),
+            success=False,
+            tool=tool or "call_job",
+            arguments={},
+        )
     if tool == "list_catalog":
         kind = str(args.get("kind") or "").strip().lower()
         rows = list_modules()
@@ -490,6 +520,7 @@ def run_cordis_tool(
                 HarnessError(f"refused: unknown module {mod_name}"),
                 success=False,
                 tool=mod_name or "call_job",
+                call_outcome="unknown",
             )
         mod = with_discovered_commands(mod)
         job_args = args.get("arguments")
@@ -503,21 +534,32 @@ def run_cordis_tool(
                 job_args["channel"] = default_channel
             if not job_args.get("timezone") and default_timezone:
                 job_args["timezone"] = default_timezone
-        mutating = call_is_mutator(mod, job_args)
+        tool_name = str(mod.get("name") or mod_name)
+        try:
+            # Detached JSON copy. The tool keeps job_args and cannot change this one.
+            sealed = _snapshot_arguments(job_args)
+        except ArgumentDomainError:
+            return _outcome(
+                HarnessError("error: unsupported arguments"),
+                success=False,
+                tool=tool_name,
+                arguments={},
+            )
+        mutating = call_is_mutator(mod, sealed)
         allowed, denial = gate_module(
             mod,
-            job_args if isinstance(job_args, dict) else {"arguments": job_args},
+            sealed if isinstance(sealed, dict) else {"arguments": sealed},
             session=session,
             user=default_user,
         )
-        tool_name = str(mod.get("name") or mod_name)
         if not allowed:
             return _outcome(
                 HarnessError(redact_tool_output(denial)),
                 success=False,
                 tool=tool_name,
                 mutating=mutating,
-                arguments=job_args,
+                arguments=sealed,
+                call_outcome="denied",
             )
         if tool_name in _SKILL_MODULES:
             loaded = _run_skill(tool_name, job_args)
@@ -558,8 +600,9 @@ def run_cordis_tool(
                     success=False,
                     tool=tool_name,
                     mutating=mutating,
-                    arguments=job_args,
+                    arguments=sealed,
                     receipt_source=message,
+                    call_outcome="failed",
                 )
             failed = isinstance(remote_out, RemoteToolError)
             redacted = redact_tool_output(remote_out or "")
@@ -568,12 +611,16 @@ def run_cordis_tool(
                 success=not failed,
                 tool=tool_name,
                 mutating=mutating,
-                arguments=job_args,
+                arguments=sealed,
                 receipt_source=redacted,
+                call_outcome="failed" if failed else "succeeded",
+                raw=remote_out,
             )
         extra = _arguments_to_argv(mod, job_args)
         rec = execute_job(mod, extra_argv=extra or None)
         ok = subprocess_succeeded(rec)
+        raw_status = str(rec.get("status") or "").strip()
+        status = raw_status.upper()
         if ok:
             shown, source = _job_visible_text(rec, failed=False, session_id=session)
         else:
@@ -581,24 +628,31 @@ def run_cordis_tool(
             if err:
                 shown, source = _job_visible_text(rec, failed=True, session_id=session)
             else:
-                status = str(rec.get("status") or "").strip()
-                if status.upper() == "TIMEOUT":
+                if status == "TIMEOUT":
                     label = "error: timeout"
-                elif not status or status.upper() == "SUCCESS":
+                elif not status or status == "SUCCESS":
                     label = "error: non-zero exit"
-                elif status.lower().startswith("error:"):
-                    label = status
+                elif raw_status.lower().startswith("error:"):
+                    label = raw_status
                 else:
                     label = f"error: {status}"
                 shown = HarnessError(label)
                 source = shown
+        if status == "TIMEOUT":
+            call_outcome = "timed_out"
+        elif ok and not harness_failure(shown):
+            call_outcome = "succeeded"
+        else:
+            call_outcome = "failed"
         return _outcome(
             shown,
             success=ok and not harness_failure(shown),
             tool=tool_name,
             mutating=mutating,
-            arguments=job_args,
+            arguments=sealed,
             receipt_source=source,
+            call_outcome=call_outcome,
+            raw=rec,
         )
     return _outcome(HarnessError(f"unknown cordis tool {name}"), success=False, tool=name)
 

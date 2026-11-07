@@ -12,6 +12,7 @@ import argparse
 import json
 import os
 import re
+import signal
 import sys
 import uuid
 from typing import Any, Callable
@@ -19,7 +20,18 @@ from typing import Any, Callable
 from .attachments import render_user_content, vision_enabled
 from .cordis_tools import is_cordis_tool, receipt_for, run_cordis_tool
 from .fence import FENCE_SYSTEM_NOTE, HarnessError, HarnessMessage, fence_untrusted, present_tool_result
+from .adapter_evidence import turn_evidence_scope
 from .delivery import bind_delivery
+from .delivery_gate import (
+    DeliveryStop,
+    begin_turn_scope,
+    current_delivery_decision,
+    end_turn_scope,
+    request_turn_cancel,
+    resolve_terminal,
+    turn_cancelled,
+    write_terminal,
+)
 from .executor import execute_job, list_schedules
 from .modules import (
     find_module,
@@ -80,6 +92,23 @@ def _record(
 
 
 LOOP_TRAILER_MARKER = "---agents-loop-trailer---"
+
+
+def _print_assemble(session: str, resolved: Any, messages: list[dict[str, Any]]) -> None:
+    print(
+        json.dumps(
+            {
+                "session": session,
+                "user_id": resolved.user.id,
+                "alias": resolved.alias,
+                "start_date": resolved.session.start_date,
+                "messages": messages,
+                "tools": openai_tools(),
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+    )
 
 
 def _emit_trailer(
@@ -651,6 +680,14 @@ def main(argv: list[str] | None = None) -> int:
         default="",
         help="stream (TTY tokens) or buffered (one answer; thinking on stderr). Default from --channel.",
     )
+    parser.add_argument(
+        "--delivery-required",
+        action="store_true",
+        help=(
+            "Stdout is one agents_harness.delivery.v1 object. "
+            "Requires a registered delivery decision; otherwise fail closed before the provider."
+        ),
+    )
     parser.add_argument("--list-modules", action="store_true", help="List MCP/skill/A2A/schedule modules")
     parser.add_argument(
         "--list-tools",
@@ -737,14 +774,14 @@ def main(argv: list[str] | None = None) -> int:
         print("Error: --session, --user, or --user-id is required", file=sys.stderr)
         return 1
 
-    from .user_profile import load_user_profile
+    from .user_profile import load_user_profile, turn_timezone
 
     resolved = _resolve_identity(args)
     session = resolved.session.id
     user_text = args.message or ""
     profile = load_user_profile()
     project = (args.project or "").strip()
-    timezone_name = (resolved.user.timezone or profile.get("timezone") or "").strip()
+    timezone_name = turn_timezone(resolved.user, profile)
 
     attachments = [str(item) for item in (args.attach or []) if str(item).strip()]
     provider_manifest = find_provider(args.provider) if args.provider else None
@@ -780,30 +817,56 @@ def main(argv: list[str] | None = None) -> int:
         attachments=attachments,
         vision=vision,
     )
-    if args.assemble_only or not args.complete:
-        print(
-            json.dumps(
-                {
-                    "session": session,
-                    "user_id": resolved.user.id,
-                    "alias": resolved.alias,
-                    "start_date": resolved.session.start_date,
-                    "messages": messages,
-                    "tools": openai_tools(),
-                },
-                ensure_ascii=False,
-                indent=2,
-            )
-        )
-        if not args.complete:
+    delivery_required = bool(args.delivery_required)
+    if not args.complete:
+        if not delivery_required:
+            _print_assemble(session, resolved, messages)
             return 0
+        begin_turn_scope()
+        try:
+            return write_terminal(
+                required=True,
+                status="policy_failure",
+                reply="",
+                session=session,
+                user_id=resolved.user.id,
+                alias=resolved.alias,
+                record=lambda _text: None,
+            )
+        finally:
+            end_turn_scope()
+    if args.assemble_only and not delivery_required:
+        _print_assemble(session, resolved, messages)
+    if delivery_required and current_delivery_decision() is None:
+        begin_turn_scope()
+        try:
+            return write_terminal(
+                required=True,
+                status="policy_failure",
+                reply="",
+                session=session,
+                user_id=resolved.user.id,
+                alias=resolved.alias,
+                record=lambda _text: None,
+            )
+        finally:
+            end_turn_scope()
 
     if not user_text and not attachments and not args.assemble_only:
         print("Error: --message is required unless --assemble-only with existing history", file=sys.stderr)
         return 1
 
     provider = get_provider(args.provider)
-    mode, on_status, on_delta, emit = bind_delivery(args.channel, override=args.deliver)
+    decision_hook = current_delivery_decision()
+    gated = delivery_required or decision_hook is not None
+    mode, on_status, on_delta, emit = bind_delivery(
+        args.channel,
+        override="buffered" if gated else args.deliver,
+    )
+    if gated:
+        on_delta = None
+    if delivery_required:
+        on_status = None
     if user_text or attachments:
         recorded = user_text
         if attachments:
@@ -827,142 +890,255 @@ def main(argv: list[str] | None = None) -> int:
     )
     max_rounds = max(1, getattr(args, "max_tool_rounds", 12))
     last_scratch = ""
+    begin_turn_scope()
+    prev_int = prev_term = None
+    turn_receipts: list[dict[str, Any]] = []
+
+    def _handle_stop(signum: int, _frame: Any) -> None:
+        request_turn_cancel()
+
+    if gated:
+        try:
+            prev_int = signal.signal(signal.SIGINT, _handle_stop)
+            prev_term = signal.signal(signal.SIGTERM, _handle_stop)
+        except Exception:
+            if prev_int is not None:
+                signal.signal(signal.SIGINT, prev_int)
+                prev_int = None
+    evidence_cm = turn_evidence_scope()
+    evidence_cm.__enter__()
     try:
-        result = _complete_once(provider, req)
-    except Exception as e:
-        err_msg = str(e).strip() or e.__class__.__name__
-        print(f"Turn error: {err_msg}", file=sys.stderr)
-        emit(f"Turn failed: {err_msg}")
+        try:
+            result = _complete_once(provider, req)
+        except DeliveryStop:
+            raise
+        except KeyboardInterrupt:
+            if gated:
+                raise DeliveryStop("cancelled")
+            raise
+        except Exception as e:
+            if gated:
+                raise DeliveryStop("provider") from None
+            err_msg = str(e).strip() or e.__class__.__name__
+            print(f"Turn error: {err_msg}", file=sys.stderr)
+            emit(f"Turn failed: {err_msg}")
+            _emit_trailer(
+                emit,
+                session=session,
+                user_id=resolved.user.id,
+                alias=resolved.alias,
+                mode=mode,
+            )
+            return 1
+
+        if (result.text or "").strip():
+            last_scratch = result.text.strip()
+
+        turn_cache: dict[tuple[str, str], str] = {}
+
+        for _round in range(max_rounds):
+            if not result.tool_calls:
+                break
+            tool_msgs = _run_tool_calls(
+                result.tool_calls,
+                session=session,
+                default_user=args.user,
+                default_channel=args.channel,
+                default_timezone=timezone_name,
+                on_status=on_status,
+                turn_cache=turn_cache,
+                receipts=turn_receipts,
+            )
+            if gated and turn_cancelled():
+                raise DeliveryStop("cancelled") from None
+            messages.append(
+                {
+                    "role": "assistant",
+                    "content": result.text or None,
+                    "tool_calls": result.tool_calls,
+                }
+            )
+            messages.extend(tool_msgs)
+            is_last = _round >= max_rounds - 1
+            round_tools = None if is_last else tools
+            if is_last:
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": "[System Notice: Tool execution round limit reached. Please synthesize your final response now: summarize what was completed, note any tool issues, and answer the user.]",
+                    }
+                )
+            try:
+                result = _complete_once(
+                    provider,
+                    CompletionRequest(
+                        messages=messages,
+                        tools=round_tools,
+                        on_status=on_status,
+                        on_delta=on_delta,
+                    ),
+                )
+            except Exception as e:
+                if gated:
+                    raise DeliveryStop("provider") from None
+                err_msg = str(e).strip() or e.__class__.__name__
+                print(f"Turn error: {err_msg}", file=sys.stderr)
+                fallback = last_scratch or f"Turn failed: {err_msg}"
+                emit(fallback)
+                _emit_trailer(
+                    emit,
+                    session=session,
+                    user_id=resolved.user.id,
+                    alias=resolved.alias,
+                    mode=mode,
+                )
+                return 1
+
+            if (result.text or "").strip():
+                last_scratch = result.text.strip()
+
+        if result.tool_calls and not (result.text or "").strip():
+            tool_msgs = _run_tool_calls(
+                result.tool_calls,
+                session=session,
+                default_user=args.user,
+                default_channel=args.channel,
+                default_timezone=timezone_name,
+                on_status=on_status,
+                turn_cache=turn_cache,
+                receipts=turn_receipts,
+            )
+            messages.append(
+                {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": result.tool_calls,
+                }
+            )
+            messages.extend(tool_msgs)
+            if gated and turn_cancelled():
+                raise DeliveryStop("cancelled") from None
+            messages.append(
+                {
+                    "role": "user",
+                    "content": "[System Notice: Provide your final summary to the user now.]",
+                }
+            )
+            try:
+                result = _complete_once(
+                    provider,
+                    CompletionRequest(
+                        messages=messages,
+                        tools=None,
+                        on_status=on_status,
+                        on_delta=on_delta,
+                    ),
+                )
+            except Exception as e:
+                if gated:
+                    raise DeliveryStop("provider") from None
+                err_msg = str(e).strip() or e.__class__.__name__
+                print(f"Turn error: {err_msg}", file=sys.stderr)
+                fallback = last_scratch or f"Turn failed: {err_msg}"
+                emit(fallback)
+                _emit_trailer(
+                    emit,
+                    session=session,
+                    user_id=resolved.user.id,
+                    alias=resolved.alias,
+                    mode=mode,
+                )
+                return 1
+
+            if (result.text or "").strip():
+                last_scratch = result.text.strip()
+
+        final_text = (result.text or "").strip() or last_scratch
+        if gated:
+            raise DeliveryStop("candidate", final_text)
+        response_flags: list[str] = []
+        if final_text:
+            findings = final_check_findings(final_text, turn_receipts)
+            if findings:
+                messages.append({"role": "assistant", "content": final_text})
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": (
+                            "[Harness check] "
+                            + " ".join(findings)
+                            + " Revise the reply. Do not claim a side effect that has no successful receipt in this turn."
+                        ),
+                    }
+                )
+                try:
+                    revised = _complete_once(
+                        provider,
+                        CompletionRequest(
+                            messages=messages,
+                            tools=None,
+                            on_status=on_status,
+                            on_delta=on_delta,
+                        ),
+                    )
+                except Exception as exc:
+                    err_msg = str(exc).strip() or exc.__class__.__name__
+                    print(f"Final check revision failed: {err_msg}", file=sys.stderr)
+                    revised = None
+                if revised is not None and (revised.text or "").strip():
+                    final_text = revised.text.strip()
+                response_flags = final_check_findings(final_text, turn_receipts)
+                if response_flags:
+                    print(
+                        "response flagged: " + "; ".join(response_flags),
+                        file=sys.stderr,
+                    )
+        if final_text:
+            _record(
+                session,
+                "assistant",
+                final_text,
+                args.channel,
+                args.user,
+                resolved.user.id,
+                project=project,
+            )
+
+        seal_digest, seal_error = "", ""
+        if getattr(args, "seal", False):
+            seal_digest, seal_error = _seal_session(session)
+            if on_status:
+                if seal_digest:
+                    on_status(f"trace sealed ({seal_digest[:16]}...)")
+                else:
+                    on_status(f"trace not sealed: {seal_error}")
+
+        emit(final_text)
         _emit_trailer(
             emit,
             session=session,
             user_id=resolved.user.id,
             alias=resolved.alias,
             mode=mode,
+            seal_digest=seal_digest,
+            seal_error=seal_error,
+            response_flags=response_flags,
         )
-        return 1
-
-    if (result.text or "").strip():
-        last_scratch = result.text.strip()
-
-    turn_cache: dict[tuple[str, str], str] = {}
-    turn_receipts: list[dict[str, Any]] = []
-
-    for _round in range(max_rounds):
-        if not result.tool_calls:
-            break
-        tool_msgs = _run_tool_calls(
-            result.tool_calls,
-            session=session,
-            default_user=args.user,
-            default_channel=args.channel,
-            default_timezone=timezone_name,
-            on_status=on_status,
-            turn_cache=turn_cache,
-            receipts=turn_receipts,
-        )
-        messages.append(
-            {
-                "role": "assistant",
-                "content": result.text or None,
-                "tool_calls": result.tool_calls,
-            }
-        )
-        messages.extend(tool_msgs)
-        is_last = _round >= max_rounds - 1
-        round_tools = None if is_last else tools
-        if is_last:
-            messages.append(
-                {
-                    "role": "user",
-                    "content": "[System Notice: Tool execution round limit reached. Please synthesize your final response now: summarize what was completed, note any tool issues, and answer the user.]",
-                }
+        return 0
+    except DeliveryStop as stop:
+        def _record_reply(text: str) -> None:
+            _record(
+                session,
+                "assistant",
+                text,
+                args.channel,
+                args.user,
+                resolved.user.id,
+                project=project,
             )
-        try:
-            result = _complete_once(
-                provider,
-                CompletionRequest(
-                    messages=messages,
-                    tools=round_tools,
-                    on_status=on_status,
-                    on_delta=on_delta,
-                ),
-            )
-        except Exception as e:
-            err_msg = str(e).strip() or e.__class__.__name__
-            print(f"Turn error: {err_msg}", file=sys.stderr)
-            fallback = last_scratch or f"Turn failed: {err_msg}"
-            emit(fallback)
-            _emit_trailer(
-                emit,
-                session=session,
-                user_id=resolved.user.id,
-                alias=resolved.alias,
-                mode=mode,
-            )
-            return 1
 
-        if (result.text or "").strip():
-            last_scratch = result.text.strip()
-
-    if result.tool_calls and not (result.text or "").strip():
-        tool_msgs = _run_tool_calls(
-            result.tool_calls,
-            session=session,
-            default_user=args.user,
-            default_channel=args.channel,
-            default_timezone=timezone_name,
-            on_status=on_status,
-            turn_cache=turn_cache,
-            receipts=turn_receipts,
-        )
-        messages.append(
-            {
-                "role": "assistant",
-                "content": None,
-                "tool_calls": result.tool_calls,
-            }
-        )
-        messages.extend(tool_msgs)
-        messages.append(
-            {
-                "role": "user",
-                "content": "[System Notice: Provide your final summary to the user now.]",
-            }
-        )
-        try:
-            result = _complete_once(
-                provider,
-                CompletionRequest(
-                    messages=messages,
-                    tools=None,
-                    on_status=on_status,
-                    on_delta=on_delta,
-                ),
-            )
-        except Exception as e:
-            err_msg = str(e).strip() or e.__class__.__name__
-            print(f"Turn error: {err_msg}", file=sys.stderr)
-            fallback = last_scratch or f"Turn failed: {err_msg}"
-            emit(fallback)
-            _emit_trailer(
-                emit,
-                session=session,
-                user_id=resolved.user.id,
-                alias=resolved.alias,
-                mode=mode,
-            )
-            return 1
-
-        if (result.text or "").strip():
-            last_scratch = result.text.strip()
-
-    final_text = (result.text or "").strip() or last_scratch
-    response_flags: list[str] = []
-    if final_text:
-        findings = final_check_findings(final_text, turn_receipts)
-        if findings:
-            messages.append({"role": "assistant", "content": final_text})
+        def _revise(text: str, findings: list[str]) -> str:
+            messages.append({"role": "assistant", "content": text})
             messages.append(
                 {
                     "role": "user",
@@ -973,60 +1149,40 @@ def main(argv: list[str] | None = None) -> int:
                     ),
                 }
             )
-            try:
-                revised = _complete_once(
-                    provider,
-                    CompletionRequest(
-                        messages=messages,
-                        tools=None,
-                        on_status=on_status,
-                        on_delta=on_delta,
-                    ),
-                )
-            except Exception as exc:
-                err_msg = str(exc).strip() or exc.__class__.__name__
-                print(f"Final check revision failed: {err_msg}", file=sys.stderr)
-                revised = None
-            if revised is not None and (revised.text or "").strip():
-                final_text = revised.text.strip()
-            response_flags = final_check_findings(final_text, turn_receipts)
-            if response_flags:
-                print(
-                    "response flagged: " + "; ".join(response_flags),
-                    file=sys.stderr,
-                )
-    if final_text:
-        _record(
-            session,
-            "assistant",
-            final_text,
-            args.channel,
-            args.user,
-            resolved.user.id,
-            project=project,
+            revised = _complete_once(
+                provider,
+                CompletionRequest(
+                    messages=messages,
+                    tools=None,
+                    on_status=on_status,
+                    on_delta=None,
+                ),
+            )
+            return (revised.text or "").strip()
+
+        status, reply = resolve_terminal(
+            kind=stop.kind,
+            candidate=stop.candidate,
+            receipts=turn_receipts,
+            hook=current_delivery_decision(),
+            revise=_revise,
         )
-
-    seal_digest, seal_error = "", ""
-    if getattr(args, "seal", False):
-        seal_digest, seal_error = _seal_session(session)
-        if on_status:
-            if seal_digest:
-                on_status(f"trace sealed ({seal_digest[:16]}...)")
-            else:
-                on_status(f"trace not sealed: {seal_error}")
-
-    emit(final_text)
-    _emit_trailer(
-        emit,
-        session=session,
-        user_id=resolved.user.id,
-        alias=resolved.alias,
-        mode=mode,
-        seal_digest=seal_digest,
-        seal_error=seal_error,
-        response_flags=response_flags,
-    )
-    return 0
+        return write_terminal(
+            required=delivery_required,
+            status=status,
+            reply=reply,
+            session=session,
+            user_id=resolved.user.id,
+            alias=resolved.alias,
+            record=_record_reply,
+        )
+    finally:
+        if prev_int is not None:
+            signal.signal(signal.SIGINT, prev_int)
+        if prev_term is not None:
+            signal.signal(signal.SIGTERM, prev_term)
+        end_turn_scope()
+        evidence_cm.__exit__(None, None, None)
 
 
 if __name__ == "__main__":

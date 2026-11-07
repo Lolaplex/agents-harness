@@ -212,9 +212,23 @@ class TestRetrieve(unittest.TestCase):
         self.assertTrue(page["truncated"])
 
 
-@unittest.skipUnless(importlib.util.find_spec("agents_traces"), "agents-traces not installed")
+def _traces_content_installed() -> bool:
+    if importlib.util.find_spec("agents_traces") is None:
+        return False
+    return importlib.util.find_spec("agents_traces.content") is not None
+
+
+@unittest.skipUnless(
+    _traces_content_installed(),
+    "this agents-traces install has no agents_traces.content; harness read_content does not import traces",
+)
 class TestTracesReadContentShape(unittest.TestCase):
-    """Optional. The harness backend is a lambda; production code does not import traces."""
+    """Optional traces content API. The published 0.1.1 wheel does not ship it.
+
+    The harness read path is a host backend or ``AGENTS_CONTENT_READ_CMD``.
+    A wheel without ``agents_traces.content`` is not a harness failure.
+    An install that does ship the module still runs this round trip.
+    """
 
     def setUp(self) -> None:
         reset_content_state()
