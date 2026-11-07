@@ -737,14 +737,14 @@ def main(argv: list[str] | None = None) -> int:
         print("Error: --session, --user, or --user-id is required", file=sys.stderr)
         return 1
 
-    from .user_profile import load_user_profile
+    from .user_profile import load_user_profile, turn_timezone
 
     resolved = _resolve_identity(args)
     session = resolved.session.id
     user_text = args.message or ""
     profile = load_user_profile()
     project = (args.project or "").strip()
-    timezone_name = (resolved.user.timezone or profile.get("timezone") or "").strip()
+    timezone_name = turn_timezone(resolved.user, profile)
 
     attachments = [str(item) for item in (args.attach or []) if str(item).strip()]
     provider_manifest = find_provider(args.provider) if args.provider else None
