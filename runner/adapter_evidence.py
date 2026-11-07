@@ -1,10 +1,12 @@
 """Optional per-call adapter evidence.
 
 A host registers one validator for a ``(tool, adapter, schema, version)`` key.
-After that tool actually runs, the harness builds an immutable call context and
-passes that call's raw result through unchanged. The validator may return
-typed evidence or nothing. Stdout is not scanned. Legacy receipts are a
-separate path and are not upgraded by this one.
+The call arguments are snapshotted before the tool runs. After the tool
+returns, that snapshot is frozen and passed with that call's raw result.
+The validator may return typed evidence or nothing. It does not change the
+stored arguments or their digest. Stdout is not scanned. Legacy receipts are
+a separate path and are not upgraded by this one. The public envelope omits
+arguments and digests.
 
 Evidence is what the adapter reports about a succeeded call. It is not a host
 guarantee of the bytes on disk. A timeout can mean the effect already
@@ -17,6 +19,7 @@ import re
 import threading
 import uuid
 from dataclasses import dataclass
+from types import MappingProxyType
 from typing import Any, Callable
 
 from .receipts import args_digest
@@ -33,7 +36,11 @@ _records: dict[str, "InvocationRecord"] = {}
 
 @dataclass(frozen=True)
 class CallContext:
-    """Host view of one attempt. Arguments stay on this object for the validator."""
+    """Host view of one attempt.
+
+    ``arguments`` is a recursive read-only snapshot of the call, not the
+    caller's object. Mappings do not accept writes. Sequences are tuples.
+    """
 
     invocation_id: str
     tool: str
@@ -98,7 +105,11 @@ def get_invocation(invocation_id: str) -> InvocationRecord | None:
 
 
 def public_envelope(invocation_id: str) -> dict[str, Any] | None:
-    """Model- and client-safe view. No arguments, targets, digests, or errors."""
+    """Client-safe view.
+
+    Omits arguments, fact text, targets, digests, and errors. ``args_digest``
+    stays on the internal record for correlation and is not copied here.
+    """
     record = get_invocation(invocation_id)
     if record is None:
         return None
@@ -113,28 +124,52 @@ def public_envelope(invocation_id: str) -> dict[str, Any] | None:
     return {
         "invocation_id": record.invocation_id,
         "tool": record.tool,
-        "args_digest": record.args_digest,
         "outcome": record.outcome,
         "evidence": evidence,
     }
 
 
 def open_invocation(tool: str, arguments: Any, outcome: str, raw: Any) -> InvocationRecord:
-    """Record one attempt and, only when it succeeded, ask the single registered validator."""
+    """Record one attempt and, only when it succeeded, ask the single registered validator.
+
+    The digest is the snapshot taken on entry, before the validator runs.
+    """
     name = str(tool or "")
     state = outcome if outcome in OUTCOMES else "unknown"
     invocation_id = "inv_" + uuid.uuid4().hex
-    evidence = _evidence_for(name, arguments, state, raw, invocation_id)
+    captured = _snapshot_arguments(arguments)
+    digest = args_digest(captured)
+    evidence = _evidence_for(name, _freeze_arguments(captured), state, raw, invocation_id)
     record = InvocationRecord(
         invocation_id=invocation_id,
         tool=name,
-        args_digest=args_digest(arguments),
+        args_digest=digest,
         outcome=state,
         evidence=evidence,
     )
     with _lock:
         _records[invocation_id] = record
     return record
+
+
+def _snapshot_arguments(value: Any) -> Any:
+    """Plain recursive copy of dicts, lists, and tuples. The input is not shared."""
+    if isinstance(value, dict):
+        return {key: _snapshot_arguments(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_snapshot_arguments(item) for item in value]
+    if isinstance(value, tuple):
+        return tuple(_snapshot_arguments(item) for item in value)
+    return value
+
+
+def _freeze_arguments(value: Any) -> Any:
+    """Read-only view. Does not alias the containers of ``value``."""
+    if isinstance(value, dict):
+        return MappingProxyType({key: _freeze_arguments(item) for key, item in value.items()})
+    if isinstance(value, (list, tuple)):
+        return tuple(_freeze_arguments(item) for item in value)
+    return value
 
 
 def _evidence_for(tool: str, arguments: Any, outcome: str, raw: Any, invocation_id: str) -> AdapterEvidence | None:

@@ -16,12 +16,13 @@ from unittest.mock import patch
 from runner.adapter_evidence import (
     clear_result_validators,
     get_invocation,
+    open_invocation,
     public_envelope,
     register_result_validator,
 )
 from runner.cordis_tools import receipt_for, run_cordis_tool
 from runner.mcp_client import RemoteToolError
-from runner.receipts import format_receipt_context
+from runner.receipts import args_digest, format_receipt_context
 
 TOOL = "example.write"
 ADAPTER = "synthetic"
@@ -83,6 +84,46 @@ def _job(path: Path, fact: str, *, status: str = "SUCCESS", exit_code: int = 0, 
         "stdout": _decoys(),
         "stderr": "",
     }
+
+
+def _assign(obj, key, value) -> None:
+    obj[key] = value
+
+
+def _mutation_report(ctx) -> dict:
+    nested = ctx.arguments["nested"]
+    items = nested["items"]
+    report = {
+        "fact": ctx.arguments["fact"],
+        "flag": nested["flag"],
+        "items": list(items),
+        "inner": items[1]["b"],
+        "arg_type": type(ctx.arguments).__name__,
+        "list_type": type(items).__name__,
+        "errors": [],
+    }
+    probes = (
+        ("fact", lambda: _assign(ctx.arguments, "fact", "MUTATED")),
+        ("flag", lambda: _assign(nested, "flag", True)),
+        ("item", lambda: _assign(items, 0, "z")),
+        ("inner", lambda: _assign(items[1], "b", 9)),
+    )
+    for label, fn in probes:
+        try:
+            fn()
+        except TypeError:
+            report["errors"].append(label)
+        else:
+            report["errors"].append(label + ":wrote")
+    try:
+        items.append("extra")
+    except AttributeError:
+        report["errors"].append("append")
+    else:
+        report["errors"].append("append:wrote")
+    report["fact_after"] = ctx.arguments["fact"]
+    report["items_after"] = list(ctx.arguments["nested"]["items"])
+    return report
 
 
 def _readback(ctx, _result) -> dict:
@@ -148,10 +189,13 @@ class TestAdapterEvidence(unittest.TestCase):
         assert legacy is not None
         self.assertEqual(legacy["receipt"]["id"], "notes/orange")
         self.assertNotIn("evidence", legacy)
-        shown = json.dumps(public_envelope(outcome.invocation_id))
+        envelope = public_envelope(outcome.invocation_id)
+        self.assertNotIn("args_digest", envelope)
+        shown = json.dumps(envelope)
         self.assertNotIn(SECRET, shown)
         self.assertNotIn(evidence.target, shown)
         self.assertNotIn(evidence.persisted_sha256, shown)
+        self.assertNotIn(record.args_digest, shown)
         self.assertNotIn(str(path), shown)
         self.assertNotIn(SECRET, format_receipt_context([legacy]))
 
@@ -167,32 +211,43 @@ class TestAdapterEvidence(unittest.TestCase):
     def test_parallel_same_args_are_distinct_attempts(self) -> None:
         self._register()
         path = self.root / "parallel"
-        body = _transformed(SECRET)
-        gate = threading.Lock()
+        path.write_bytes(_transformed(SECRET))
 
         def execute(mod, extra_argv=None):
-            with gate:
-                path.write_bytes(body)
             return _job(path, SECRET, write=False)
 
-        outcomes = []
+        outcomes: list = []
 
         def once() -> None:
+            outcomes.append(run_cordis_tool("call_job", _call(str(path))))
+
+        import runner.cordis_tools as cordis_tools
+        from runner.executor import execute_job as real_execute_job
+        from runner.modules import find_module as real_find_module
+
+        # One patch on this thread. Patching inside the workers races and can
+        # leave the stub installed for later tests.
+        for _ in range(20):
+            outcomes.clear()
             with patch("runner.cordis_tools.find_module", return_value=_module()):
                 with patch("runner.cordis_tools.execute_job", side_effect=execute):
-                    outcomes.append(run_cordis_tool("call_job", _call(str(path))))
-
-        threads = [threading.Thread(target=once) for _ in range(2)]
-        for thread in threads:
-            thread.start()
-        for thread in threads:
-            thread.join()
-        ids = [item.invocation_id for item in outcomes]
-        self.assertEqual(len(set(ids)), 2)
-        records = [get_invocation(item) for item in ids]
-        self.assertEqual(records[0].args_digest, records[1].args_digest)
-        self.assertIsNot(records[0], records[1])
-        self.assertEqual(records[0].evidence.persisted_sha256, records[1].evidence.persisted_sha256)
+                    threads = [threading.Thread(target=once) for _ in range(2)]
+                    for thread in threads:
+                        thread.start()
+                    for thread in threads:
+                        thread.join()
+            self.assertIs(cordis_tools.execute_job, real_execute_job)
+            self.assertIs(cordis_tools.find_module, real_find_module)
+            ids = [item.invocation_id for item in outcomes]
+            self.assertEqual(len(set(ids)), 2)
+            records = [get_invocation(item) for item in ids]
+            self.assertEqual(records[0].args_digest, records[1].args_digest)
+            self.assertIsNot(records[0], records[1])
+            self.assertEqual(records[0].evidence.persisted_sha256, records[1].evidence.persisted_sha256)
+            for record in records:
+                shown = json.dumps(public_envelope(record.invocation_id))
+                self.assertNotIn("args_digest", public_envelope(record.invocation_id))
+                self.assertNotIn(record.args_digest, shown)
 
     def test_retry_and_replay_do_not_reuse_invocation_or_old_digest(self) -> None:
         self._register()
@@ -297,6 +352,116 @@ class TestAdapterEvidence(unittest.TestCase):
         self.assertNotEqual(evidence.target, OTHER)
         self.assertNotIn("cleared", public_envelope(outcome.invocation_id))
         self.assertNotIn("claim", public_envelope(outcome.invocation_id)["evidence"])
+
+    def test_nested_snapshot_ignores_validator_mutation(self) -> None:
+        args = {"fact": SECRET, "nested": {"flag": False, "items": ["a", {"b": 1}]}}
+        digest_before = args_digest(args)
+        seen: dict = {}
+
+        def evil(ctx, _raw):
+            seen["report"] = _mutation_report(ctx)
+            seen["same"] = ctx.arguments is args
+            seen["same_items"] = ctx.arguments["nested"]["items"] is args["nested"]["items"]
+            return {
+                "operation": "create",
+                "target": "gen_nested",
+                "persisted_sha256": "ab" * 32,
+                "persisted_bytes": 4,
+            }
+
+        self._register(evil)
+        record = open_invocation(TOOL, args, "succeeded", {"ok": True})
+        args["fact"] = "MUTATED"
+        args["nested"]["flag"] = True
+        args["nested"]["items"].append("later")
+        report = seen["report"]
+        self.assertEqual(report["errors"], ["fact", "flag", "item", "inner", "append"])
+        self.assertEqual(report["fact"], SECRET)
+        self.assertEqual(report["fact_after"], SECRET)
+        self.assertEqual(report["flag"], False)
+        self.assertEqual(report["items"], ["a", {"b": 1}])
+        self.assertEqual(report["items_after"], ["a", {"b": 1}])
+        self.assertEqual(report["inner"], 1)
+        self.assertEqual(report["arg_type"], "mappingproxy")
+        self.assertEqual(report["list_type"], "tuple")
+        self.assertFalse(seen["same"])
+        self.assertFalse(seen["same_items"])
+        self.assertEqual(args["fact"], "MUTATED")
+        self.assertEqual(record.args_digest, digest_before)
+        self.assertNotEqual(record.args_digest, args_digest(args))
+        self.assertIsNotNone(record.evidence)
+        envelope = public_envelope(record.invocation_id)
+        self.assertNotIn("args_digest", envelope)
+        shown = json.dumps(envelope)
+        self.assertNotIn(digest_before, shown)
+        self.assertNotIn(SECRET, shown)
+        self.assertNotIn("ab" * 32, shown)
+        self.assertNotIn("gen_nested", shown)
+
+    def test_tool_nested_mutation_does_not_enter_the_digest(self) -> None:
+        path = self.root / "sealed"
+        path.write_bytes(_transformed(SECRET))
+        payload = {
+            "dest": str(path),
+            "fact": SECRET,
+            "nested": {"flag": False, "items": ["a", {"b": 1}]},
+        }
+        digest_before = args_digest(payload)
+        seen: dict = {}
+
+        def evil(ctx, raw):
+            seen["report"] = _mutation_report(ctx)
+            return _readback(ctx, raw)
+
+        self._register(evil)
+
+        def remote(_server, _tool, arguments):
+            arguments["fact"] = "MUTATED"
+            arguments["nested"]["flag"] = True
+            arguments["nested"]["items"][1]["b"] = 9
+            arguments["nested"]["items"].append("from-tool")
+            return "ok"
+
+        remote_mod = _module()
+        remote_mod["kind"] = "mcp_remote"
+        remote_mod["mcp_server"] = "demo"
+        remote_mod["mcp_tool"] = "write"
+        call = {"function": {"arguments": json.dumps({"name": TOOL, "arguments": payload})}}
+        with patch("runner.cordis_tools.find_module", return_value=remote_mod):
+            with patch("runner.mcp_client.call_remote", side_effect=remote):
+                outcome = run_cordis_tool("call_job", call)
+        self.assertEqual(outcome.call_outcome, "succeeded")
+        self.assertTrue(outcome.success)
+        self.assertEqual(outcome.arguments["fact"], SECRET)
+        self.assertFalse(outcome.arguments["nested"]["flag"])
+        self.assertEqual(outcome.arguments["nested"]["items"], ["a", {"b": 1}])
+        self.assertEqual(outcome.arguments["nested"]["items"][1]["b"], 1)
+        report = seen["report"]
+        self.assertEqual(report["errors"], ["fact", "flag", "item", "inner", "append"])
+        self.assertEqual(report["fact"], SECRET)
+        self.assertEqual(report["items_after"], ["a", {"b": 1}])
+        self.assertFalse(report["flag"])
+        record = get_invocation(outcome.invocation_id)
+        assert record is not None and record.evidence is not None
+        self.assertEqual(record.args_digest, digest_before)
+        mutated = {
+            "dest": str(path),
+            "fact": "MUTATED",
+            "nested": {"flag": True, "items": ["a", {"b": 9}, "from-tool"]},
+        }
+        self.assertNotEqual(record.args_digest, args_digest(mutated))
+        legacy = receipt_for(outcome)
+        assert legacy is not None
+        self.assertEqual(legacy["args_digest"], digest_before)
+        self.assertNotIn("evidence", legacy)
+        envelope = public_envelope(outcome.invocation_id)
+        self.assertNotIn("args_digest", envelope)
+        shown = json.dumps(envelope)
+        self.assertNotIn(digest_before, shown)
+        self.assertNotIn(record.evidence.persisted_sha256, shown)
+        self.assertNotIn(record.evidence.target, shown)
+        self.assertNotIn(SECRET, shown)
+        self.assertNotIn(str(path), shown)
 
 
 if __name__ == "__main__":

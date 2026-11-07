@@ -11,7 +11,7 @@ from .fence import HarnessError
 from .executor import execute_job
 from .helpjson import declared_argv, with_discovered_commands
 from .modules import find_module, find_module_for_tool, list_modules, openai_tool_name
-from .adapter_evidence import open_invocation
+from .adapter_evidence import _snapshot_arguments, open_invocation
 from .receipts import harness_failure, make_receipt, subprocess_succeeded
 from .redact import redact_tool_output
 from .retrieve import DEFAULT_READ_LIMIT, annotate_clip, read_content, render_read_result
@@ -526,13 +526,15 @@ def run_cordis_tool(
             user=default_user,
         )
         tool_name = str(mod.get("name") or mod_name)
+        # Before the tool runs. The callee may mutate job_args; the record keeps this copy.
+        sealed = _snapshot_arguments(job_args)
         if not allowed:
             return _outcome(
                 HarnessError(redact_tool_output(denial)),
                 success=False,
                 tool=tool_name,
                 mutating=mutating,
-                arguments=job_args,
+                arguments=sealed,
                 call_outcome="denied",
             )
         if tool_name in _SKILL_MODULES:
@@ -574,7 +576,7 @@ def run_cordis_tool(
                     success=False,
                     tool=tool_name,
                     mutating=mutating,
-                    arguments=job_args,
+                    arguments=sealed,
                     receipt_source=message,
                     call_outcome="failed",
                 )
@@ -585,7 +587,7 @@ def run_cordis_tool(
                 success=not failed,
                 tool=tool_name,
                 mutating=mutating,
-                arguments=job_args,
+                arguments=sealed,
                 receipt_source=redacted,
                 call_outcome="failed" if failed else "succeeded",
                 raw=remote_out,
@@ -623,7 +625,7 @@ def run_cordis_tool(
             success=ok and not harness_failure(shown),
             tool=tool_name,
             mutating=mutating,
-            arguments=job_args,
+            arguments=sealed,
             receipt_source=source,
             call_outcome=call_outcome,
             raw=rec,
