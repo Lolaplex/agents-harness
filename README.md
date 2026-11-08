@@ -129,9 +129,39 @@ python -m runner.loop --user 123 --message "what is this?" --attach ./shot.png -
 
 Mutating `call_job` tools ask first when `AGENTS_APPROVAL_CMD` is set. `{user}` in that command becomes the turn's channel user. `AGENTS_APPROVAL_MODE=ask` gates mutators (the default once a command is set). Creating or listing a schedule does not ask in `ask` mode; removing one does. `strict` gates every tool that is not read-only, including schedule create. `off`, or no command, keeps the old behavior. Exit 0 approves, 1 denies, 2 is timeout/unavailable (denied). A denial tells the model not to retry.
 
+Side effects on a help-json command, or on any manifest that carries the same fields, use `side_effects` (`read-only` or `mutating`), then `mutates`, then `annotations.readOnlyHint`. The command name is not a signal, and neither is the text of the arguments. A command or a module with none of those fields is mutating. `AGENTS_APPROVAL_MODE` still defaults to `off` when no approval command is set, so those tools run without a prompt until someone opts into `ask` or `strict`. In `ask` and `strict`, a module that used to look read-only only because its name ended in `search` or `list` is now asked, unless the manifest sets one of those fields. Bundled manifests set `mutates`. Creating or listing a schedule still does not ask in `ask` mode. `commands_from: "help-json"` runs that module's verb with `--help-json` and caches it. `mcp.terminal` sets this. A declared command is passed through and gated from its own metadata. Other terminal argv still goes to `run --` and stays mutating when help-json is missing.
+
+`mcp.terminal` sets `"pin": true`. The system prompt then lists its hot commands with a ready `call_job` example, so a model does not need `load_schema` for every file operation. The block is capped at 2500 characters and clipped with `[pinned block clipped]`. `AGENTS_PINNED_VERBS=0` disables it. `call_job` does not pass stdin, so the `edit` example uses `--old/--new` and `write` uses `--content`.
+
 Every tool result the model sees is wrapped in `<untrusted_data source="...">...</untrusted_data>` after redaction. Only messages the harness builds itself (approval denials, loop notices) stay outside that fence; tool text that merely starts with `Denied:` is still fenced.
 
-Tool stdout and stderr shown to the model are capped at `AGENTS_TOOL_OUTPUT_MAX` characters (default 32768). Shorter output is unchanged. Longer output keeps the head and the tail and marks the gap as `[... N chars omitted ...]`. The same cap applies to schedule tick results and to `call_job` on the harness MCP server. Trace records (`logs/runner.jsonl` and `~/.agents/traces/runner.jsonl`) still store only a 1000-character tail. The full strings are on the in-process `execute_job` result (`stdout`, `stderr`).
+Tool stdout and stderr shown to the model use `AGENTS_TOOL_OUTPUT_MAX` characters (default 32768) for the clipped body. Shorter output is unchanged. Longer output keeps the head and the tail and marks the gap as `[... N chars omitted ...]`. That clipped body fits the cap. One `<ref digest="..." sha256="..." chars="..." truncated="1"/>` line is then appended, so the shown string can be longer than the cap by that single line. The same shape applies to schedule tick results and to `call_job` on the harness MCP server. Trace records (`logs/runner.jsonl` and `~/.agents/traces/runner.jsonl`) still store only a 1000-character tail. The full strings are on the in-process `execute_job` result (`stdout`, `stderr`).
+
+`call_job` name `read_content` pages that ref, or any `<ref digest="..."/>` already in the prompt. Arguments are `digest` (12 to 64 hex), `offset` (default 0), `limit` (default 8000; negative reads through the end), and optional `session_id`. The result is `text`, `digest` (SHA-256 of the full body), `total_chars`, and `truncated`. Register a backend in-process or point `AGENTS_CONTENT_READ_CMD` at a program that reads a JSON object on stdin and writes one on stdout:
+
+```python
+from runner import register_content_backend, register_final_check
+
+def read_content(session_id, digest, offset=0, limit=8000):
+    # Return text, digest (full sha256), total_chars, truncated.
+    # Traces `read_content` matches this when called with those keywords.
+    ...
+
+register_content_backend(read_content)
+
+def check(text, receipts):
+    # Return a string to flag the draft, or None to accept it.
+    # receipts are agents_harness.tool_receipt.v1 objects for this turn.
+    return None
+
+register_final_check(check)
+```
+
+No backend and no stored body: the tool says the content is unavailable and the model is told not to invent it. The harness does not import agents-traces or agents-memory to do this. Bytes the harness clipped are stored under `AGENTS_CONTENT_DIR` (default `~/.agents/harness-content`) and are readable without a host backend.
+
+Recent tool context includes up to `AGENTS_HISTORY_TOOL_EVENTS` calls (default 12). Each preview is at most `AGENTS_HISTORY_TOOL_PREVIEW` characters (default 400) plus a ref when the body is longer.
+
+A successful mutating call appends `agents_harness.tool_receipt.v1` (`tool`, `args_digest`, `success`, and the tool's own receipt object when the output contains JSON with a `schema`). For a CLI job, success is a zero exit code. `FAILED`, `TIMEOUT`, `ERROR`, and a non-zero `exit_code` are not success, even when stdout contains a receipt object or the text `error:`. The harness does not decide success by scanning tool output. Text the harness itself writes as a failure (`Denied:`, `error: timeout`, `error: non-zero exit`, `refused:`) is also not a receipt. The system prompt says to claim a side effect only when such a receipt exists. `register_final_check` may flag a draft; the loop asks for one revision and puts any remaining findings in the buffered trailer as `response_flags`. Nothing in the harness treats the word "saved" as special.
 
 Skills live in `~/.agents/skills/<name>/SKILL.md` (`AGENTS_SKILLS_DIR`, plus `AGENTS_SKILLS_EXTRA`). The system prompt lists name and description. `skill.load` returns the file. `skill.catalog` is a compatibility alias of `skill.list`.
 
@@ -141,7 +171,12 @@ Cron uses the job's `timezone` (else `AGENTS_TIMEZONE`, `TZ`, or `timezone` in `
 
 | Variable | Default | Effect |
 | --- | --- | --- |
-| `AGENTS_TOOL_OUTPUT_MAX` | 32768 | Max characters of a tool result shown to the model or a schedule caller. Over the cap, the middle is omitted and marked |
+| `AGENTS_TOOL_OUTPUT_MAX` | 32768 | Max characters of the clipped tool body shown to the model or a schedule caller. Over the cap, the middle is omitted and marked. One trailing `<ref>` line is extra and can make the shown string longer than this cap |
+| `AGENTS_CONTENT_DIR` | `~/.agents/harness-content` | Where clipped tool bodies are stored for `read_content` |
+| `AGENTS_CONTENT_READ_CMD` | unset | Optional host program for digests this process did not store. JSON on stdin, JSON page on stdout |
+| `AGENTS_HISTORY_TOOL_EVENTS` | 12 | How many recent tool results are copied into the next turn |
+| `AGENTS_HISTORY_TOOL_PREVIEW` | 400 | Preview length for each of those results before a ref |
+| `AGENTS_PINNED_VERBS` | 1 | `0`/`false`/`no`/`off` hides the pinned-verb block from the system prompt |
 | `AGENTS_APPROVAL_TIMEOUT` | `--timeout` in the command + 15 s, else 330 s | Seconds to wait for the approval command before denying |
 | `AGENTS_SCHEDULE_GRACE_MIN` | 5 | Minutes a missed cron slot still runs once (a job's `grace_min` wins) |
 | `AGENTS_SCHEDULES_DIR` | `~/.agents/schedules` | Dynamic reminder manifests; also an overlay for `runner.executor` schedules |
@@ -151,7 +186,7 @@ Cron uses the job's `timezone` (else `AGENTS_TIMEZONE`, `TZ`, or `timezone` in `
 
 `~/.agents/mcp.json` (override `AGENTS_MCP_CONFIG`) uses the Claude/Cursor `mcpServers` shape, plus optional `allow` / `deny` globs. `${ENV_VAR}` expands in commands, args, env, urls, and headers. See `mcp.client.json.example`.
 
-Each server tool is a catalog module `mcp.<server>.<tool>` (`kind: mcp_remote`) with the server's `inputSchema`. `readOnlyHint: true` is non-mutating; anything else is a mutator for the approval gate. Hand-written modules of the same name win.
+Each server tool is a catalog module `mcp.<server>.<tool>` (`kind: mcp_remote`) with the server's `inputSchema`. Side effects follow `side_effects`, then `mutates`, then `readOnlyHint`. Anything without those fields is a mutator for the approval gate. Hand-written modules of the same name win.
 
 The loop process is new every turn. Schemas are cached for `AGENTS_MCP_CACHE_SEC` (default 60) in `AGENTS_MCP_CACHE` (default `~/.agents/mcp-tools-cache.json`). `AGENTS_MCP_CONNECT_TIMEOUT` (default 10 s) bounds each listing or call session, connect included. Each call connects, initializes, calls one tool, and disconnects (stdio, streamable HTTP, or SSE). Install the SDK with `pip install "agents-harness[mcp]"`. OAuth is out of scope.
 

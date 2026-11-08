@@ -7,7 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-11-08
+
+### Security
+- A set workspace refuses tool paths and working directories outside that root. Skills, modules, memory, traces, schedules, and the agent home stay reachable. An unset or blank workspace leaves commands unchanged.
+
+### Added
+- Optional content retrieval. Hosts register `register_content_backend(fn)` or set `AGENTS_CONTENT_READ_CMD`. The model calls `read_content` (`call_job`) with `digest`, `offset`, and `limit` (default 8000). A page reports `text`, `digest` (SHA-256 of the full body), `total_chars`, and `truncated`. With no backend and no stored body the tool says the content is unavailable. The harness does not import agents-traces or agents-memory for this.
+- Tool text the harness clips (head, `[... N chars omitted ...]`, tail) keeps a `<ref digest="..." sha256="..." chars="..." truncated="1"/>` for the full redacted body, readable through the same `read_content` path.
+- Successful mutating tool calls add an `agents_harness.tool_receipt.v1` receipt to the rest of the turn: tool name, arguments digest, `success`, and any JSON object with a `schema` that the tool returned.
+- `register_final_check(hook)` inspects the draft reply and this turn's receipts. There is no built-in product heuristic. Remaining findings are `response_flags` on the loop trailer after one revision turn.
+- Help-json side effects. A command is classified from `side_effects`, then `mutates`, then `annotations.readOnlyHint`. Missing command metadata is mutating. The command name is not evidence. `commands_from: "help-json"` loads that verb's `--help-json` when the module does not already embed `commands`.
+- Pinned verbs. A module manifest with `"pin": true` (bundled `mcp.terminal`) adds a compact `call_job` example block to the system prompt: command name, `side_effects`, and a ready call. The block is capped at 2500 characters, clipped with `[pinned block clipped]`, and reports `pinned: <module> unavailable (<reason>)` when help-json discovery fails. `AGENTS_PINNED_VERBS=0` disables it. The three Cordis tools are unchanged.
+
 ### Changed
+- Recent tool context keeps up to 12 tool results (`AGENTS_HISTORY_TOOL_EVENTS`, default 12), each with at most 400 characters of preview (`AGENTS_HISTORY_TOOL_PREVIEW`). Longer bodies keep a retrievable ref instead of dropping every result except the last three.
+- The system prompt tells the model to fetch a ref or omission before summarizing it, and to claim a side effect only when this turn has a successful receipt.
+- `mcp.terminal` sets `commands_from` to `help-json`. A declared command is invoked as itself and approved from that command's metadata. Undeclared argv still uses `run --`. If help-json cannot be loaded, the module stays mutating.
+- Shown tool text and schedule `stdout_tail` may exceed `AGENTS_TOOL_OUTPUT_MAX` by one trailing `<ref .../>` line. The clipped body before that line still fits the cap. Callers that required the whole string to stay inside the cap, or to end on the original tail, should strip a trailing ref.
+- Ask and strict approval no longer classifies a tool from its name or from words in the arguments. A module with no `side_effects`, `mutates`, or `readOnlyHint` is mutating, so a host manifest that used to skip the prompt only because it was named `search` or `list` is now asked. Bundled manifests set `mutates`, and the default mode is still `off` (no command, no prompt). `ask` still does not prompt for schedule create or list. `strict` still does.
+
+### Fixed
+- `--deliver stream` writes the same loop trailer as buffered delivery (`session`, `user_id`, `alias`), so a relay SSE stream can keep the thread.
+- A mutating CLI call no longer gets a success receipt when the process exits non-zero or the job status is `FAILED`, `TIMEOUT`, or `ERROR`, even if stdout contains a receipt object or a plain `error:` line. Tool output is not scanned for those words. A receipt is also withheld for harness failures (`HarnessError`: approval `Denied:`, `error: timeout`, `error: non-zero exit`, `refused:`). Exit code 0 is still success when the tool itself prints the word `error`.
+
+- The turn clock reads `timezone` from the user profile only. `agents-traces` 0.1.2 dropped `UserRecord.timezone`; `getattr` keeps an older install working.
+- `AGENTS_CONTENT_READ_CMD` splits with the platform's quoting rules, so a Windows path keeps its backslashes instead of being eaten by a posix split.
+
 - Calendar tools no longer require a UTC offset on `dtstart`, `dtend`, or list bounds. Prefer local wall time plus an optional IANA `timezone` (explicit argument, else `CALDAV_TIMEZONE` or `timezone` in the credentials file, else the calendar's CalDAV calendar-timezone, else the host zone, else UTC). `Z` and numeric offsets stay absolute instants. All-day events are `YYYY-MM-DD` or `all_day=true` on add; returned all-day fields are dates and `dtend` is exclusive. Timed `dtstart` stays the UTC instant; show `dtstart_local`, `timezone`, and `all_day`. A daylight-saving gap or ambiguous naive time is an error; retry that instant with an explicit offset.
 
 ## [0.1.1] - 2026-10-21
@@ -81,7 +107,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Agent runtime engine and scheduled task runner (`python -m runner.loop`, Cordis job kernel, MCP tool round).
 
-[Unreleased]: https://github.com/Lolaplex/agents-harness/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/Lolaplex/agents-harness/compare/v0.1.2...HEAD
+[0.1.2]: https://github.com/Lolaplex/agents-harness/compare/v0.1.1...v0.1.2
+[0.1.1]: https://github.com/Lolaplex/agents-harness/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/Lolaplex/agents-harness/compare/v0.0.2...v0.1.0
 [0.0.2]: https://github.com/Lolaplex/agents-harness/compare/v0.0.1...v0.0.2
 [0.0.1]: https://github.com/Lolaplex/agents-harness/releases/tag/v0.0.1

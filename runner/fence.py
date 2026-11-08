@@ -27,6 +27,16 @@ class HarnessMessage(str):
     __slots__ = ()
 
 
+class HarnessError(HarnessMessage):
+    """Failure text the harness wrote (denial, timeout, refused, ``error:``).
+
+    A tool's own stdout is never this type, even when it starts with ``error:``
+    or ``Denied:``. Receipts treat this type as not successful.
+    """
+
+    __slots__ = ()
+
+
 def fence_untrusted(source: str, content: str) -> str:
     body = "" if content is None else str(content)
     body = _CLOSE.sub("</untrusted_data escaped>", body)

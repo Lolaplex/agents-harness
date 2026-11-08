@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import tempfile
 import unittest
 from pathlib import Path
@@ -131,11 +132,35 @@ class TestCordisTools(unittest.TestCase):
         with patch.dict(os.environ, {"AGENTS_TOOL_OUTPUT_MAX": "180"}, clear=False):
             with patch("runner.cordis_tools.execute_job", return_value=rec):
                 out = handle_cordis_tool("call_job", call)
-        self.assertLessEqual(len(out), 180)
         self.assertTrue(out.startswith("START"), out)
-        self.assertTrue(out.endswith("END"), out)
+        self.assertIn("END", out)
         self.assertIn("chars omitted", out)
+        self.assertIn("<ref ", out)
+        self.assertIn('truncated="1"', out)
+        body, ref = out.split("\n<ref ", 1)
+        ref_line = "<ref " + ref
+        self.assertNotIn("\n", ref_line)
+        self.assertLessEqual(len(body), 180)
+        self.assertLessEqual(len(out), 180 + 1 + len(ref_line))
+        self.assertEqual(len(out), len(body) + 1 + len(ref_line))
         self.assertNotEqual(out, full[-1000:])
+        digest = re.search(r'digest="([0-9a-f]+)"', out)
+        self.assertIsNotNone(digest)
+        assert digest is not None
+        fetched = handle_cordis_tool(
+            "call_job",
+            {
+                "function": {
+                    "arguments": json.dumps(
+                        {"name": "read_content", "arguments": {"digest": digest.group(1), "offset": 0, "limit": -1}}
+                    )
+                }
+            },
+        )
+        page = json.loads(fetched)
+        self.assertEqual(page["text"], full)
+        self.assertFalse(page["truncated"])
+        self.assertEqual(page["total_chars"], len(full))
 
     def test_call_job_failure_clips_stderr(self):
         err = "ERRHEAD" + ("e" * 2000) + "ERRTAIL"
@@ -155,9 +180,16 @@ class TestCordisTools(unittest.TestCase):
             with patch("runner.cordis_tools.execute_job", return_value=rec):
                 out = handle_cordis_tool("call_job", call)
         self.assertTrue(out.startswith("ERRHEAD"), out)
-        self.assertTrue(out.endswith("ERRTAIL"), out)
+        self.assertIn("ERRTAIL", out)
         self.assertIn("chars omitted", out)
+        self.assertIn("<ref ", out)
         self.assertNotIn("ignored-stdout", out)
+        body, ref = out.split("\n<ref ", 1)
+        ref_line = "<ref " + ref
+        self.assertNotIn("\n", ref_line)
+        self.assertLessEqual(len(body), 160)
+        self.assertLessEqual(len(out), 160 + 1 + len(ref_line))
+        self.assertEqual(len(out), len(body) + 1 + len(ref_line))
 
     def test_enabled_json_can_disable_tools(self):
         with tempfile.TemporaryDirectory() as tmp:

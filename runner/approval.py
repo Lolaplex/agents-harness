@@ -25,33 +25,7 @@ import subprocess
 import uuid
 from typing import Any
 
-_READ_TAILS = {
-    "search",
-    "list",
-    "read",
-    "show",
-    "stats",
-    "related",
-    "projects",
-    "catalog",
-    "load",
-    "check",
-    "audit",
-}
-_MUTATE_TAILS = {
-    "write",
-    "add",
-    "remove",
-    "delete",
-    "terminal",
-    "seal",
-    "ingest",
-    "update",
-    "create",
-    "set",
-    "put",
-    "patch",
-}
+from .helpjson import READ_ONLY, call_effects, classify_spec
 
 
 def approval_command() -> str:
@@ -68,49 +42,53 @@ def approval_mode() -> str:
     return "off"
 
 
-def _tail(name: str) -> str:
-    return str(name or "").strip().lower().rsplit(".", 1)[-1]
-
-
-def _read_only_hint(mod: dict[str, Any]) -> bool:
-    if mod.get("read_only") is True or mod.get("readOnlyHint") is True:
-        return True
-    ann = mod.get("annotations")
-    return isinstance(ann, dict) and ann.get("readOnlyHint") is True
-
-
 def module_is_read_only(mod: dict[str, Any]) -> bool:
-    """Explicit ``mutates: false`` and readOnlyHint win. Remote tools are not read-only otherwise."""
-    if "mutates" in mod:
-        return not bool(mod.get("mutates"))
-    if _read_only_hint(mod):
-        return True
-    if str(mod.get("kind") or "") == "mcp_remote":
-        return False
-    return _tail(str(mod.get("name") or "")) in _READ_TAILS
+    """True only when metadata says read-only. Missing metadata is mutating."""
+    return classify_spec(mod, default=None) == READ_ONLY
 
 
 def module_is_mutator(mod: dict[str, Any]) -> bool:
-    """Manifest ``mutates`` wins. Remote MCP tools mutate unless readOnlyHint is true."""
-    if "mutates" in mod:
-        return bool(mod.get("mutates"))
-    if str(mod.get("kind") or "") == "mcp_remote":
-        return not _read_only_hint(mod)
-    if _read_only_hint(mod):
-        return False
-    tail = _tail(str(mod.get("name") or ""))
-    if tail in _READ_TAILS:
-        return False
-    if tail in _MUTATE_TAILS:
-        return True
-    blob = str(mod.get("name") or "").lower().replace(".", "_")
-    return any(tok in blob.split("_") for tok in _MUTATE_TAILS)
+    """Metadata wins. No ``side_effects``, ``mutates``, or read-only hint means mutating.
+
+    The tool name is not evidence. ``AGENTS_APPROVAL_MODE=off`` (the default
+    when no approval command is set) still runs the tool without asking.
+    """
+    return classify_spec(mod) != READ_ONLY
 
 
-def needs_approval(mod: dict[str, Any]) -> bool:
+def call_is_read_only(mod: dict[str, Any], args: Any = None) -> bool:
+    """Per-command class when arguments name one. Otherwise the module class."""
+    if args is not None:
+        effects = call_effects(mod, args)
+        if effects is not None:
+            return effects == READ_ONLY
+    return module_is_read_only(mod)
+
+
+def call_is_mutator(mod: dict[str, Any], args: Any = None) -> bool:
+    """Per-command class when arguments name one. Otherwise the module class.
+
+    A declared command with no side-effect metadata is mutating. The command
+    name is not consulted. Modules that do not declare commands keep
+    ``module_is_mutator``.
+    """
+    if args is not None:
+        effects = call_effects(mod, args)
+        if effects is not None:
+            return effects != READ_ONLY
+    return module_is_mutator(mod)
+
+
+def needs_approval(mod: dict[str, Any], args: Any = None) -> bool:
     mode = approval_mode()
     if mode == "off" or not approval_command():
         return False
+    if args is not None:
+        effects = call_effects(mod, args)
+        if effects == READ_ONLY:
+            return False
+        if effects is not None:
+            return True
     if mode == "strict":
         return not module_is_read_only(mod)
     if mod.get("approval_ask") is False:
@@ -235,7 +213,7 @@ def gate_module(
     user: str = "",
 ) -> tuple[bool, str]:
     """Return ``(allowed, denial_message)``. Skipped gates are allowed."""
-    if not needs_approval(mod):
+    if not needs_approval(mod, args):
         return True, ""
     tool = str(mod.get("name") or "")
     payload = args if isinstance(args, dict) else {"arguments": args}

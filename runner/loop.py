@@ -17,8 +17,8 @@ import uuid
 from typing import Any, Callable
 
 from .attachments import render_user_content, vision_enabled
-from .cordis_tools import handle_cordis_tool, is_cordis_tool
-from .fence import FENCE_SYSTEM_NOTE, HarnessMessage, fence_untrusted, present_tool_result
+from .cordis_tools import is_cordis_tool, receipt_for, run_cordis_tool
+from .fence import FENCE_SYSTEM_NOTE, HarnessError, HarnessMessage, fence_untrusted, present_tool_result
 from .delivery import bind_delivery
 from .executor import execute_job, list_schedules
 from .modules import (
@@ -28,8 +28,11 @@ from .modules import (
     openai_tools,
 )
 from .providers import CompletionRequest, CompletionResult, find_provider, get_provider, list_providers
+from .receipts import GROUNDING_NOTE, final_check_findings, format_receipt_context
+from .retrieve import RETRIEVAL_NOTE, iter_refs, tool_history_block
 from .skills import skills_prompt_block
 from .memory_rules import memory_rules_prompt_block
+from .pinned import pinned_verbs_prompt_block
 
 
 def _assemble(session: str, limit: int) -> list[dict[str, Any]]:
@@ -44,18 +47,10 @@ def _assemble(session: str, limit: int) -> list[dict[str, Any]]:
             tool_evts = [
                 e for e in TraceStore().get_events_for_session(session)
                 if e.type == "tool_call" and e.result
-            ][-3:]
-            if tool_evts:
-                snippets = []
-                for te in tool_evts:
-                    arg_name = te.args.get("name") if isinstance(te.args, dict) else ""
-                    label = f"{te.tool}({arg_name})" if arg_name else (te.tool or "tool")
-                    res = str(te.result).strip()[:400]
-                    snippets.append(f"- {label}: {res}")
-                msgs.append({
-                    "role": "system",
-                    "content": "<recent_tool_context>\n" + "\n".join(snippets) + "\n</recent_tool_context>",
-                })
+            ]
+            block = tool_history_block(tool_evts, session_id=session)
+            if block:
+                msgs.append({"role": "system", "content": block})
         except Exception:
             pass
     return msgs
@@ -97,14 +92,17 @@ def _emit_trailer(
     mode: str,
     seal_digest: str = "",
     seal_error: str = "",
+    response_flags: list[str] | None = None,
 ) -> None:
-    if mode != "buffered":
-        return
+    # Stream delivery used to return here, so /v1/stream never received session.
+    _ = mode
     data = {"session": session, "user_id": user_id, "alias": alias}
     if seal_digest:
         data["seal"] = seal_digest
     elif seal_error:
         data["seal_error"] = seal_error
+    if response_flags:
+        data["response_flags"] = list(response_flags)
     trailer = json.dumps(data, ensure_ascii=False)
     print(f"{LOOP_TRAILER_MARKER}\n{trailer}", file=sys.stdout, flush=True)
 
@@ -169,12 +167,17 @@ def _record_tool(
 def _augment_system(system: str, project: str = "") -> str:
     chunks = [system.strip()] if system and system.strip() else []
     chunks.append(FENCE_SYSTEM_NOTE)
+    chunks.append(RETRIEVAL_NOTE)
+    chunks.append(GROUNDING_NOTE)
     rules = memory_rules_prompt_block(project)
     if rules:
         chunks.append(rules)
     block = skills_prompt_block()
     if block:
         chunks.append(block)
+    pinned = pinned_verbs_prompt_block()
+    if pinned:
+        chunks.append(pinned)
     return "\n\n".join(chunks)
 
 
@@ -195,7 +198,11 @@ def _tool_source(name: str, raw_args: Any) -> str:
 
 
 def _tool_call_mutates(name: str, args_str: str) -> bool:
-    """Mutator check for in-turn loop protection. Catalog flag wins when the module resolves."""
+    """Mutator check for in-turn loop protection.
+
+    A resolved module uses its metadata. An unresolved ``call_job`` is mutating.
+    Argument text is not scanned for words like ``write`` or ``delete``.
+    """
     if name != "call_job":
         return False
     mod_name = ""
@@ -208,10 +215,26 @@ def _tool_call_mutates(name: str, args_str: str) -> bool:
     if mod_name:
         mod = find_module(mod_name)
         if mod is not None:
-            from .approval import module_is_mutator
+            from .approval import call_is_mutator
+            from .helpjson import with_discovered_commands
 
-            return module_is_mutator(mod)
-    return any(tok in args_str for tok in ("write", "add", "remove", "terminal", "delete"))
+            inner = parsed.get("arguments") if isinstance(parsed, dict) else {}
+            return call_is_mutator(with_discovered_commands(mod), inner)
+    return True
+
+
+def _replay_snippet(text: str, limit: int = 500) -> str:
+    """Keep a trailing ref visible when a repeated read is shortened."""
+    if len(text) <= limit:
+        return text
+    refs = iter_refs(text)
+    if not refs:
+        return text[:limit]
+    ref = refs[-1]
+    if len(ref) >= limit:
+        return ref[:limit]
+    head = text[: max(0, limit - len(ref) - 1)]
+    return head + "\n" + ref
 
 
 def _run_tool_calls(
@@ -223,9 +246,11 @@ def _run_tool_calls(
     default_timezone: str = "",
     on_status: Callable[[str], None] | None = None,
     turn_cache: dict[tuple[str, str], str] | None = None,
+    receipts: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
     """Route tool_calls through the three Cordis tools (closed carrier) with loop protection and trace recording."""
     messages: list[dict[str, Any]] = []
+    batch: list[dict[str, Any]] = []
     for i, call in enumerate(calls):
         if not isinstance(call, dict):
             continue
@@ -265,10 +290,10 @@ def _run_tool_calls(
                 content = HarnessMessage(
                     f"[Notice: '{name}' was already called with identical arguments earlier in this turn. "
                     "State has not changed. Previous output:] "
-                    + fence_untrusted(source, prev_out[:500])
+                    + fence_untrusted(source, _replay_snippet(prev_out))
                 )
             else:
-                content = handle_cordis_tool(
+                outcome = run_cordis_tool(
                     name,
                     call,
                     default_user=default_user,
@@ -276,13 +301,19 @@ def _run_tool_calls(
                     default_timezone=default_timezone,
                     session=session,
                 )
+                content = outcome.text
+                receipt = receipt_for(outcome)
+                if receipt is not None:
+                    batch.append(receipt)
+                    if receipts is not None:
+                        receipts.append(receipt)
                 if turn_cache is not None:
                     if is_mutator:
                         turn_cache.clear()
                     else:
                         turn_cache[call_key] = content
         else:
-            content = f"refused: unknown tool {name} (use call_job with a catalog name)"
+            content = HarnessError(f"refused: unknown tool {name} (use call_job with a catalog name)")
 
         _record_tool(
             session=session,
@@ -298,6 +329,8 @@ def _run_tool_calls(
                 "content": present_tool_result(source if is_cordis_tool(name) else name, content),
             }
         )
+    if batch:
+        messages.append({"role": "user", "content": format_receipt_context(batch)})
     return messages
 
 
@@ -715,7 +748,10 @@ def main(argv: list[str] | None = None) -> int:
     user_text = args.message or ""
     profile = load_user_profile()
     project = (args.project or "").strip()
-    timezone_name = (resolved.user.timezone or profile.get("timezone") or "").strip()
+    # agents-traces 0.1.2 dropped ``UserRecord.timezone``; the profile is the
+    # remaining source. ``getattr`` keeps older agents-traces installs working.
+    identity_tz = getattr(resolved.user, "timezone", "") or ""
+    timezone_name = (identity_tz or profile.get("timezone") or "").strip()
 
     attachments = [str(item) for item in (args.attach or []) if str(item).strip()]
     provider_manifest = find_provider(args.provider) if args.provider else None
@@ -817,6 +853,7 @@ def main(argv: list[str] | None = None) -> int:
         last_scratch = result.text.strip()
 
     turn_cache: dict[tuple[str, str], str] = {}
+    turn_receipts: list[dict[str, Any]] = []
 
     for _round in range(max_rounds):
         if not result.tool_calls:
@@ -829,6 +866,7 @@ def main(argv: list[str] | None = None) -> int:
             default_timezone=timezone_name,
             on_status=on_status,
             turn_cache=turn_cache,
+            receipts=turn_receipts,
         )
         messages.append(
             {
@@ -883,6 +921,7 @@ def main(argv: list[str] | None = None) -> int:
             default_timezone=timezone_name,
             on_status=on_status,
             turn_cache=turn_cache,
+            receipts=turn_receipts,
         )
         messages.append(
             {
@@ -926,6 +965,43 @@ def main(argv: list[str] | None = None) -> int:
             last_scratch = result.text.strip()
 
     final_text = (result.text or "").strip() or last_scratch
+    response_flags: list[str] = []
+    if final_text:
+        findings = final_check_findings(final_text, turn_receipts)
+        if findings:
+            messages.append({"role": "assistant", "content": final_text})
+            messages.append(
+                {
+                    "role": "user",
+                    "content": (
+                        "[Harness check] "
+                        + " ".join(findings)
+                        + " Revise the reply. Do not claim a side effect that has no successful receipt in this turn."
+                    ),
+                }
+            )
+            try:
+                revised = _complete_once(
+                    provider,
+                    CompletionRequest(
+                        messages=messages,
+                        tools=None,
+                        on_status=on_status,
+                        on_delta=on_delta,
+                    ),
+                )
+            except Exception as exc:
+                err_msg = str(exc).strip() or exc.__class__.__name__
+                print(f"Final check revision failed: {err_msg}", file=sys.stderr)
+                revised = None
+            if revised is not None and (revised.text or "").strip():
+                final_text = revised.text.strip()
+            response_flags = final_check_findings(final_text, turn_receipts)
+            if response_flags:
+                print(
+                    "response flagged: " + "; ".join(response_flags),
+                    file=sys.stderr,
+                )
     if final_text:
         _record(
             session,
@@ -955,6 +1031,7 @@ def main(argv: list[str] | None = None) -> int:
         mode=mode,
         seal_digest=seal_digest,
         seal_error=seal_error,
+        response_flags=response_flags,
     )
     return 0
 

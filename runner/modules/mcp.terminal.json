@@ -4,8 +4,10 @@
   "when": "on_request",
   "cadence": "on_request",
   "verb": "python -m agents_terminal",
-  "rests_on": "agents-terminal jailed CLI; extra argv is run -- <command>; exit 0 = present",
+  "rests_on": "agents-terminal jailed CLI. commands_from help-json publishes each command's side_effects. A declared command is invoked as itself. Other argv is run -- <command>. exit 0 = present",
   "expected_exit": 0,
+  "commands_from": "help-json",
+  "pin": true,
   "mutates": true,
   "timeout_sec": 60,
   "as_tool": true,
@@ -15,11 +17,15 @@
       "argv": {
         "type": "array",
         "items": {"type": "string"},
-        "description": "Command argv to run under terminal policy (e.g. [\"echo\", \"hi\"])"
+        "description": "Argv. When argv[0] is a command declared by this tool's help-json, that command's side_effects, mutates, or annotations.readOnlyHint decide the approval class and the argv is passed through. Otherwise the argv runs under the mutating run command (e.g. [\"echo\", \"hi\"])."
       },
       "command": {
         "type": "string",
-        "description": "Shell command line string to run (e.g. 'git status')"
+        "description": "Either the exact name of a declared help-json command, or a shell command line to run (e.g. 'git status'). A shell line is mutating."
+      },
+      "command_name": {
+        "type": "string",
+        "description": "Declared help-json command name. Side effects come from that command's metadata, not from the name."
       }
     }
   }
