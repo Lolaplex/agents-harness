@@ -93,8 +93,8 @@ def _emit_trailer(
     seal_error: str = "",
     response_flags: list[str] | None = None,
 ) -> None:
-    if mode != "buffered":
-        return
+    # Stream delivery used to return here, so /v1/stream never received session.
+    _ = mode
     data = {"session": session, "user_id": user_id, "alias": alias}
     if seal_digest:
         data["seal"] = seal_digest

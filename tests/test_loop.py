@@ -157,6 +157,11 @@ class TestModulesAndLoop(unittest.TestCase):
         rc, out, _err = self._echo_complete("stream", channel="telegram")
         self.assertEqual(rc, 0)
         self.assertIn("ping", out)
+        self.assertIn(LOOP_TRAILER_MARKER, out)
+        meta = json.loads(out.split(LOOP_TRAILER_MARKER, 1)[1].strip().splitlines()[-1])
+        self.assertTrue(meta.get("session", "").startswith("ses_"))
+        self.assertTrue(meta.get("user_id"))
+        self.assertEqual(meta.get("alias"), "telegram:looptest")
 
 
     @unittest.skipUnless(importlib.util.find_spec("agents_memory"), "agents-memory not installed")
