@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-11-08
+
 ### Security
 - A set workspace refuses tool paths and working directories outside that root. Skills, modules, memory, traces, schedules, and the agent home stay reachable. An unset or blank workspace leaves commands unchanged.
 
@@ -28,6 +30,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - `--deliver stream` writes the same loop trailer as buffered delivery (`session`, `user_id`, `alias`), so a relay SSE stream can keep the thread.
 - A mutating CLI call no longer gets a success receipt when the process exits non-zero or the job status is `FAILED`, `TIMEOUT`, or `ERROR`, even if stdout contains a receipt object or a plain `error:` line. Tool output is not scanned for those words. A receipt is also withheld for harness failures (`HarnessError`: approval `Denied:`, `error: timeout`, `error: non-zero exit`, `refused:`). Exit code 0 is still success when the tool itself prints the word `error`.
+
+- The turn clock reads `timezone` from the user profile only. `agents-traces` 0.1.2 dropped `UserRecord.timezone`; `getattr` keeps an older install working.
+- `AGENTS_CONTENT_READ_CMD` splits with the platform's quoting rules, so a Windows path keeps its backslashes instead of being eaten by a posix split.
 
 - Calendar tools no longer require a UTC offset on `dtstart`, `dtend`, or list bounds. Prefer local wall time plus an optional IANA `timezone` (explicit argument, else `CALDAV_TIMEZONE` or `timezone` in the credentials file, else the calendar's CalDAV calendar-timezone, else the host zone, else UTC). `Z` and numeric offsets stay absolute instants. All-day events are `YYYY-MM-DD` or `all_day=true` on add; returned all-day fields are dates and `dtend` is exclusive. Timed `dtstart` stays the UTC instant; show `dtstart_local`, `timezone`, and `all_day`. A daylight-saving gap or ambiguous naive time is an error; retry that instant with an explicit offset.
 
@@ -102,7 +107,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Agent runtime engine and scheduled task runner (`python -m runner.loop`, Cordis job kernel, MCP tool round).
 
-[Unreleased]: https://github.com/Lolaplex/agents-harness/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/Lolaplex/agents-harness/compare/v0.1.2...HEAD
+[0.1.2]: https://github.com/Lolaplex/agents-harness/compare/v0.1.1...v0.1.2
+[0.1.1]: https://github.com/Lolaplex/agents-harness/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/Lolaplex/agents-harness/compare/v0.0.2...v0.1.0
 [0.0.2]: https://github.com/Lolaplex/agents-harness/compare/v0.0.1...v0.0.2
 [0.0.1]: https://github.com/Lolaplex/agents-harness/releases/tag/v0.0.1
