@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+- A set workspace refuses tool paths and working directories outside that root. Skills, modules, memory, traces, schedules, and the agent home stay reachable. An unset or blank workspace leaves commands unchanged.
+
 ### Added
 - Optional content retrieval. Hosts register `register_content_backend(fn)` or set `AGENTS_CONTENT_READ_CMD`. The model calls `read_content` (`call_job`) with `digest`, `offset`, and `limit` (default 8000). A page reports `text`, `digest` (SHA-256 of the full body), `total_chars`, and `truncated`. With no backend and no stored body the tool says the content is unavailable. The harness does not import agents-traces or agents-memory for this.
 - Tool text the harness clips (head, `[... N chars omitted ...]`, tail) keeps a `<ref digest="..." sha256="..." chars="..." truncated="1"/>` for the full redacted body, readable through the same `read_content` path.
