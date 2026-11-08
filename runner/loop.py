@@ -32,6 +32,7 @@ from .receipts import GROUNDING_NOTE, final_check_findings, format_receipt_conte
 from .retrieve import RETRIEVAL_NOTE, iter_refs, tool_history_block
 from .skills import skills_prompt_block
 from .memory_rules import memory_rules_prompt_block
+from .pinned import pinned_verbs_prompt_block
 
 
 def _assemble(session: str, limit: int) -> list[dict[str, Any]]:
@@ -174,6 +175,9 @@ def _augment_system(system: str, project: str = "") -> str:
     block = skills_prompt_block()
     if block:
         chunks.append(block)
+    pinned = pinned_verbs_prompt_block()
+    if pinned:
+        chunks.append(pinned)
     return "\n\n".join(chunks)
 
 
@@ -744,7 +748,10 @@ def main(argv: list[str] | None = None) -> int:
     user_text = args.message or ""
     profile = load_user_profile()
     project = (args.project or "").strip()
-    timezone_name = (resolved.user.timezone or profile.get("timezone") or "").strip()
+    # agents-traces 0.1.2 dropped ``UserRecord.timezone``; the profile is the
+    # remaining source. ``getattr`` keeps older agents-traces installs working.
+    identity_tz = getattr(resolved.user, "timezone", "") or ""
+    timezone_name = (identity_tz or profile.get("timezone") or "").strip()
 
     attachments = [str(item) for item in (args.attach or []) if str(item).strip()]
     provider_manifest = find_provider(args.provider) if args.provider else None

@@ -7,6 +7,7 @@
   "rests_on": "agents-terminal jailed CLI. commands_from help-json publishes each command's side_effects. A declared command is invoked as itself. Other argv is run -- <command>. exit 0 = present",
   "expected_exit": 0,
   "commands_from": "help-json",
+  "pin": true,
   "mutates": true,
   "timeout_sec": 60,
   "as_tool": true,

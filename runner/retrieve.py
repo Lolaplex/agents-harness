@@ -317,10 +317,17 @@ def _command_backend(session_id: str, digest: str, offset: int, limit: int | Non
         return None
     import shlex
 
+    # ``posix=True`` eats the backslashes in a Windows path. Split the way the
+    # platform quotes, then drop the quotes ``posix=False`` keeps.
     try:
-        argv = shlex.split(cmd, posix=True)
+        argv = shlex.split(cmd, posix=(os.name != "nt"))
     except ValueError:
         return _unavailable(digest, "content_unavailable")
+    if os.name == "nt":
+        argv = [
+            item[1:-1] if len(item) >= 2 and item[0] == item[-1] and item[0] in "\"'" else item
+            for item in argv
+        ]
     if not argv:
         return None
     payload = {

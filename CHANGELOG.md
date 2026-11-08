@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Successful mutating tool calls add an `agents_harness.tool_receipt.v1` receipt to the rest of the turn: tool name, arguments digest, `success`, and any JSON object with a `schema` that the tool returned.
 - `register_final_check(hook)` inspects the draft reply and this turn's receipts. There is no built-in product heuristic. Remaining findings are `response_flags` on the loop trailer after one revision turn.
 - Help-json side effects. A command is classified from `side_effects`, then `mutates`, then `annotations.readOnlyHint`. Missing command metadata is mutating. The command name is not evidence. `commands_from: "help-json"` loads that verb's `--help-json` when the module does not already embed `commands`.
+- Pinned verbs. A module manifest with `"pin": true` (bundled `mcp.terminal`) adds a compact `call_job` example block to the system prompt: command name, `side_effects`, and a ready call. The block is capped at 2500 characters, clipped with `[pinned block clipped]`, and reports `pinned: <module> unavailable (<reason>)` when help-json discovery fails. `AGENTS_PINNED_VERBS=0` disables it. The three Cordis tools are unchanged.
 
 ### Changed
 - Recent tool context keeps up to 12 tool results (`AGENTS_HISTORY_TOOL_EVENTS`, default 12), each with at most 400 characters of preview (`AGENTS_HISTORY_TOOL_PREVIEW`). Longer bodies keep a retrievable ref instead of dropping every result except the last three.
