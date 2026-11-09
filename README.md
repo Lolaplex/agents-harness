@@ -181,6 +181,11 @@ Cron uses the job's `timezone` (else `AGENTS_TIMEZONE`, `TZ`, or `timezone` in `
 | `AGENTS_SCHEDULE_GRACE_MIN` | 5 | Minutes a missed cron slot still runs once (a job's `grace_min` wins) |
 | `AGENTS_SCHEDULES_DIR` | `~/.agents/schedules` | Dynamic reminder manifests; also an overlay for `runner.executor` schedules |
 | `AGENTS_BUNDLED_SCHEDULES` | `1` | `0`/`false`/`no`/`off` hides the bundled `runner/schedules/` from `runner.executor` |
+| `AGENTS_WORKSPACE_DIR` | unset | Working directory a verb may use. Does not confine anything |
+| `AGENTS_WORKSPACE_LOCK` | off | `1`/`true`/`yes`/`on` refuses a verb working directory outside the workspace root |
+| `AGENTS_WORKSPACE_ALLOW` | unset | Extra allowed roots, separated by the OS path separator |
+
+Configuration rule: one variable carries one decision. A value never implies enforcement; enforcement has its own switch, and restrictive switches default to off. Booleans accept `1`/`true`/`yes`/`on`; lists use the OS path separator.
 
 ## External MCP client
 

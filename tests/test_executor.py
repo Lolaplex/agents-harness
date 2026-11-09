@@ -197,6 +197,8 @@ class TestWorkspaceLock(unittest.TestCase):
         env = os.environ.copy()
         for key in (
             "AGENTS_WORKSPACE_DIR",
+            "AGENTS_WORKSPACE_LOCK",
+            "AGENTS_WORKSPACE_ALLOW",
             "AGENTS_HOME",
             "AGENTS_SKILLS_DIR",
             "AGENTS_SKILLS_EXTRA",
@@ -209,6 +211,7 @@ class TestWorkspaceLock(unittest.TestCase):
             env.pop(key, None)
         if locked:
             env["AGENTS_WORKSPACE_DIR"] = str(self.root)
+            env["AGENTS_WORKSPACE_LOCK"] = "1"
         env.update(extra)
         return patch.dict(os.environ, env, clear=True)
 
@@ -223,47 +226,29 @@ class TestWorkspaceLock(unittest.TestCase):
             "cwd": cwd,
         }
 
-    def _read(self, path: str):
-        verb = "python -c \"import pathlib,sys; print(pathlib.Path(sys.argv[1]).read_text(encoding='utf-8'), end='')\""
-        with self._env(True):
-            return execute_job(self._job(verb, str(self.root)), extra_argv=[path], log_path=self.log)
+    def _write(self, name: str, cwd: Path):
+        verb = f"python -c \"open('{name}','w',encoding='utf-8').write('x')\""
+        return execute_job(self._job(verb, str(cwd)), log_path=self.log)
 
     def test_inside_allowed(self) -> None:
-        direct = self._read(str(self.inside))
-        via_link = self._read("indir/ok.txt")
-        dotted = self._read("sub/../ok.txt")
+        verb = "python -c \"print('ok')\""
+        with self._env(True):
+            direct = execute_job(self._job(verb, str(self.root)), log_path=self.log)
+            nested = execute_job(self._job(verb, str(self.root / "sub")), log_path=self.log)
         self.assertEqual(direct["status"], "SUCCESS", direct["stderr"])
-        self.assertEqual(direct["stdout"], "inside")
-        self.assertEqual(via_link["status"], "SUCCESS", via_link["stderr"])
-        self.assertEqual(via_link["stdout"], "inside")
-        self.assertEqual(dotted["status"], "SUCCESS", dotted["stderr"])
-        self.assertEqual(dotted["stdout"], "inside")
-
-    def test_outside_path_refused(self) -> None:
-        absolute = self._read(str(self.secret))
-        parent = self._read("../out/secret.txt")
-        for result in (absolute, parent):
-            self.assertEqual(result["status"], "ERROR")
-            self.assertEqual(result["stderr"], "path escapes workspace root")
-            self.assertNotIn("TOPSECRET", result["stdout"])
-
-    def test_symlink_outside_refused(self) -> None:
-        result = self._read("leakdir/secret.txt")
-        self.assertEqual(result["status"], "ERROR")
-        self.assertEqual(result["stderr"], "path escapes workspace root")
-        self.assertNotIn("TOPSECRET", result["stdout"])
-        self.assertEqual(self.secret.read_text(encoding="utf-8"), "TOPSECRET")
+        self.assertEqual(nested["status"], "SUCCESS", nested["stderr"])
 
     def test_outside_cwd_refused(self) -> None:
         missing = self.tmp / "missing-cwd"
-        canary = self.outside / "canary.txt"
-        verb = "python -c \"open('canary.txt','w',encoding='utf-8').write('x')\""
+        canary = self.outside / "cwd-canary.txt"
         with self._env(True):
-            missing_result = execute_job(self._job(verb, str(missing)), log_path=self.log)
-            link_result = execute_job(self._job(verb, str(self.cwd_link)), log_path=self.log)
-        self.assertEqual(missing_result["status"], "ERROR")
+            missing_result = self._write("cwd-canary.txt", missing)
+            outside_result = self._write("cwd-canary.txt", self.outside)
+            link_result = self._write("cwd-canary.txt", self.cwd_link)
+        for result in (missing_result, outside_result, link_result):
+            self.assertEqual(result["status"], "ERROR")
+            self.assertEqual(result["stderr"], "path escapes workspace root")
         self.assertFalse(missing.exists())
-        self.assertEqual(link_result["stderr"], "path escapes workspace root")
         self.assertFalse(canary.exists())
 
     def test_internal_dirs_stay_open(self) -> None:
@@ -276,66 +261,50 @@ class TestWorkspaceLock(unittest.TestCase):
             "AGENTS_SCHEDULES_DIR": self.tmp / "schedules",
         }
         home.mkdir()
-        (home / "note.txt").write_text("home", encoding="utf-8")
         for folder in named.values():
             folder.mkdir()
-            (folder / "note.txt").write_text("keep", encoding="utf-8")
-        dot_skill = Path.home() / ".agents" / "skills" / "note.md"
-        dot_key = Path.home() / ".agents" / "keys" / "secret.ed25519"
-        verb = "python -c \"import pathlib,sys; print(pathlib.Path(sys.argv[1]).read_text(encoding='utf-8'), end='')\""
+        verb = "python -c \"print('ok')\""
         with self._env(True, AGENTS_HOME=str(home), **{key: str(path) for key, path in named.items()}):
-            def read(path: Path):
-                return execute_job(self._job(verb, str(self.root)), extra_argv=[str(path)], log_path=self.log)
-
-            home_file = read(home / "note.txt")
-            self.assertEqual(home_file["status"], "SUCCESS", home_file["stderr"])
-            self.assertEqual(home_file["stdout"], "home")
+            home_cwd = execute_job(self._job(verb, str(home)), log_path=self.log)
+            self.assertEqual(home_cwd["status"], "SUCCESS", home_cwd["stderr"])
             for folder in named.values():
-                result = read(folder / "note.txt")
+                result = execute_job(self._job(verb, str(folder)), log_path=self.log)
                 self.assertEqual(result["status"], "SUCCESS", result["stderr"])
-                self.assertEqual(result["stdout"], "keep")
-            cwd_result = execute_job(
-                self._job("python -c \"print('ok')\"", str(home)),
-                log_path=self.log,
-            )
-            self.assertEqual(cwd_result["status"], "SUCCESS", cwd_result["stderr"])
-            from runner.executor import refuse_workspace
 
-            self.assertIsNone(refuse_workspace(str(self.root), ["python", str(dot_skill)]))
-            self.assertEqual(
-                refuse_workspace(str(self.root), ["python", str(dot_key)]),
-                "path escapes workspace root",
-            )
-            leaked = read(self.secret)
-            self.assertEqual(leaked["status"], "ERROR")
-            self.assertEqual(leaked["stderr"], "path escapes workspace root")
-
-    def test_blank_unlocked(self) -> None:
-        read_verb = "python -c \"import pathlib,sys; print(pathlib.Path(sys.argv[1]).read_text(encoding='utf-8'), end='')\""
-        with self._env(False, AGENTS_WORKSPACE_DIR="   "):
-            result = execute_job(
-                self._job(read_verb, str(self.root)),
-                extra_argv=[str(self.secret)],
-                log_path=self.log,
-            )
+    def test_allow_list_opens_extra_root(self) -> None:
+        verb = "python -c \"print('ok')\""
+        with self._env(True, AGENTS_WORKSPACE_ALLOW=str(self.outside)):
+            result = execute_job(self._job(verb, str(self.outside)), log_path=self.log)
         self.assertEqual(result["status"], "SUCCESS", result["stderr"])
-        self.assertEqual(result["stdout"], "TOPSECRET")
+
+    def test_arguments_are_not_interpreted(self) -> None:
+        verb = "python -c \"import sys; print(sys.argv[1])\""
+        text = "PR nach dev, branch feat/x, 09/11/2026"
+        with self._env(True):
+            result = execute_job(self._job(verb, str(self.root)), extra_argv=[text], log_path=self.log)
+        self.assertEqual(result["status"], "SUCCESS", result["stderr"])
+        self.assertEqual(result["stdout"], text)
+
+    def test_dir_alone_does_not_lock(self) -> None:
+        canary = self.outside / "dir-canary.txt"
+        with self._env(False, AGENTS_WORKSPACE_DIR=str(self.root)):
+            result = self._write("dir-canary.txt", self.outside)
+        self.assertEqual(result["status"], "SUCCESS", result["stderr"])
+        self.assertEqual(canary.read_text(encoding="utf-8"), "x")
+
+    def test_blank_lock_is_off(self) -> None:
+        canary = self.outside / "blank-canary.txt"
+        with self._env(False, AGENTS_WORKSPACE_DIR=str(self.root), AGENTS_WORKSPACE_LOCK="   "):
+            result = self._write("blank-canary.txt", self.outside)
+        self.assertEqual(result["status"], "SUCCESS", result["stderr"])
+        self.assertEqual(canary.read_text(encoding="utf-8"), "x")
 
     def test_unset_unchanged(self) -> None:
-        canary = self.outside / "canary.txt"
-        verb = "python -c \"open('canary.txt','w',encoding='utf-8').write('x')\""
-        read_verb = "python -c \"import pathlib,sys; print(pathlib.Path(sys.argv[1]).read_text(encoding='utf-8'), end='')\""
+        canary = self.outside / "unset-canary.txt"
         with self._env(False):
-            cwd_result = execute_job(self._job(verb, str(self.outside)), log_path=self.log)
-            path_result = execute_job(
-                self._job(read_verb, str(self.root)),
-                extra_argv=[str(self.secret)],
-                log_path=self.log,
-            )
-        self.assertEqual(cwd_result["status"], "SUCCESS", cwd_result["stderr"])
+            result = self._write("unset-canary.txt", self.outside)
+        self.assertEqual(result["status"], "SUCCESS", result["stderr"])
         self.assertEqual(canary.read_text(encoding="utf-8"), "x")
-        self.assertEqual(path_result["status"], "SUCCESS", path_result["stderr"])
-        self.assertEqual(path_result["stdout"], "TOPSECRET")
 
 
 if __name__ == "__main__":

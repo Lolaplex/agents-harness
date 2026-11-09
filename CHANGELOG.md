@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- The workspace boundary is its own switch (`AGENTS_WORKSPACE_LOCK`). `AGENTS_WORKSPACE_DIR` only names the working directory. `AGENTS_WORKSPACE_ALLOW` adds allowed roots.
+- The executor checks only the working directory it hands to a verb. It no longer guesses which argument is a path, so ordinary text with a slash (a branch name, a date) is not refused. Path confinement stays in the terminal, which owns file access.
+
 ## [0.1.2] - 2026-11-08
 
 ### Security

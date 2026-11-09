@@ -10,14 +10,13 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import re
 import shlex
 import subprocess
 import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Optional
 
 from .redact import redact_tool_output
 
@@ -226,18 +225,34 @@ def load_manifest(path: Path) -> Dict[str, Any]:
 
 
 _ESCAPE = "path escapes workspace root"
-_WIN_ABS = re.compile(r"[A-Za-z]:[\\/][^\"'\s),;]+")
-_UNC = re.compile(r"\\\\[^\"'\s),;]+")
-_EMBED_REL = re.compile(r"(?:^|[\s\"'=])(\.\.[\\/][^\"'\s),;]*)")
-_POSIX_ABS = re.compile(r"(?:^|[\s\"'=])(/[^\"'\s),;]+)")
+
+
+def _flag(name: str) -> bool:
+    """Boolean config: ``1``, ``true``, ``yes``, or ``on``. Anything else is off."""
+    return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _paths(name: str) -> list[Path]:
+    """Path-list config: entries separated by ``os.pathsep``."""
+    raw = os.environ.get(name, "")
+    return [Path(part.strip()).expanduser() for part in raw.split(os.pathsep) if part.strip()]
 
 
 def workspace_root() -> Path | None:
-    """Resolved ``AGENTS_WORKSPACE_DIR``, or None when the lock is off."""
-    raw = os.environ.get("AGENTS_WORKSPACE_DIR", "").strip()
-    if not raw:
+    """Resolved workspace root when the lock is on, else None.
+
+    ``AGENTS_WORKSPACE_DIR`` only says where work happens. The boundary is
+    enforced only when ``AGENTS_WORKSPACE_LOCK`` is truthy, so a host that
+    sets a working directory is never confined by accident.
+    """
+    if not _flag("AGENTS_WORKSPACE_LOCK"):
         return None
-    path = Path(raw).expanduser()
+    raw = os.environ.get("AGENTS_WORKSPACE_DIR", "").strip()
+    if raw:
+        path = Path(raw).expanduser()
+    else:
+        home = os.environ.get("AGENTS_HOME", "").strip()
+        path = (Path(home).expanduser() / "workspace") if home else (Path.home() / ".agents" / "workspace")
     try:
         return path.resolve(strict=False)
     except (OSError, RuntimeError):
@@ -308,11 +323,8 @@ def _internal_roots() -> list[Path]:
         raw = os.environ.get(key, "").strip()
         if raw:
             roots.append(Path(raw).expanduser())
-    extra = os.environ.get("AGENTS_SKILLS_EXTRA", "")
-    for part in extra.split(os.pathsep):
-        part = part.strip()
-        if part:
-            roots.append(Path(part).expanduser())
+    roots.extend(_paths("AGENTS_SKILLS_EXTRA"))
+    roots.extend(_paths("AGENTS_WORKSPACE_ALLOW"))
     return roots
 
 
@@ -325,105 +337,21 @@ def _permitted(path: Path, root: Path) -> bool:
     return False
 
 
-def _pieces(text: str) -> list[str]:
-    if text.startswith("-"):
-        eq = text.find("=")
-        return [] if eq < 0 else _pieces(text[eq + 1 :])
-    raw = Path(text).expanduser()
-    if raw.is_absolute() or ".." in raw.parts:
-        return [text]
-    if not any(ch.isspace() for ch in text):
-        return [text]
-    if (
-        _WIN_ABS.search(text)
-        or _UNC.search(text)
-        or _EMBED_REL.search(text)
-        or (os.name != "nt" and _POSIX_ABS.search(text))
-    ):
-        try:
-            return [part for part in shlex.split(text, posix=(os.name != "nt")) if part]
-        except ValueError:
-            return text.split()
-    return [text]
+def refuse_workspace(cwd: str | Path | None) -> str | None:
+    """Refuse a working directory that resolves outside the locked workspace.
 
-
-def _is_symlink(path: Path) -> bool:
-    try:
-        return path.is_symlink()
-    except OSError:
-        return True
-
-
-def _piece_paths(piece: str, base: Path) -> list[Path]:
-    if not piece or piece == "." or "://" in piece:
-        return []
-    if os.name == "nt" and re.fullmatch(r"/[A-Za-z?][\w.-]*", piece):
-        return []
-    raw = Path(piece).expanduser()
-    if raw.is_absolute() or ".." in raw.parts:
-        return [raw if raw.is_absolute() else base / raw]
-    if "/" in piece or "\\" in piece:
-        return [base / raw]
-    candidate = base / raw
-    try:
-        linked = candidate.is_symlink()
-        exists = candidate.exists()
-    except OSError:
-        return [candidate]
-    if linked or exists:
-        return [candidate]
-    return []
-
-
-def _argv_paths(argv: Sequence[str], base: Path) -> list[Path]:
-    found: list[Path] = []
-    for index, arg in enumerate(argv):
-        text = str(arg).strip()
-        if not text:
-            continue
-        if index == 0:
-            raw = Path(text).expanduser()
-            if not raw.is_absolute() and (
-                ".." in raw.parts or "/" in text or "\\" in text or _is_symlink(base / raw)
-            ):
-                found.append(base / raw)
-            continue
-        for piece in _pieces(text):
-            found.extend(_piece_paths(piece, base))
-        for match in _WIN_ABS.findall(text):
-            found.append(Path(match))
-        for match in _UNC.findall(text):
-            found.append(Path(match))
-        for match in _EMBED_REL.findall(text):
-            found.append(base / match)
-        if os.name != "nt":
-            for match in _POSIX_ABS.findall(text):
-                found.append(Path(match))
-    return found
-
-
-def refuse_workspace(cwd: str | Path | None, argv: Sequence[str] = ()) -> str | None:
-    """Refuse a user cwd or tool path that resolves outside ``AGENTS_WORKSPACE_DIR``.
-
-    Unset or blank env keeps the current behavior. Skills, modules, memory,
-    traces, schedules, and ``AGENTS_HOME`` stay reachable. Symlink targets count.
+    Only the directory the engine hands to a verb is checked. A verb's own
+    arguments are the verb's business: the terminal already confines every
+    path it resolves, and guessing which argument is a path refused ordinary
+    text such as a branch name or a date.
     """
     root = workspace_root()
     if root is None:
         return None
-    explicit: Path | None = None
-    if cwd is not None and str(cwd).strip():
-        explicit = Path(str(cwd)).expanduser()
-        if not _permitted(explicit, root):
-            return _ESCAPE
-    base = explicit if explicit is not None else Path.cwd()
-    try:
-        base = base.resolve(strict=False)
-    except (OSError, RuntimeError):
+    if cwd is None or not str(cwd).strip():
+        return None
+    if not _permitted(Path(str(cwd)).expanduser(), root):
         return _ESCAPE
-    for path in _argv_paths(argv, base):
-        if not _permitted(path, root):
-            return _ESCAPE
     return None
 
 
@@ -452,7 +380,7 @@ def execute_job(
 
     try:
         cmd = verb_to_argv(verb, extra_argv)
-        refusal = refuse_workspace(cwd, cmd)
+        refusal = refuse_workspace(cwd)
         if refusal:
             status = "ERROR"
             exit_code = 1
