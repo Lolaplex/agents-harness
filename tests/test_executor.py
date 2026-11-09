@@ -9,7 +9,57 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from agents_workspace import Workspace
+
 from runner.executor import execute_job, list_schedules, load_manifest, traces_dir
+
+
+class TestWorkspaceJob(unittest.TestCase):
+    def test_execute_job_uses_workspace_env(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            script = Path(tmp) / "print_env.py"
+            script.write_text(
+                "import os;print(os.environ.get('AGENTS_MEMORY_PATH',''))",
+                encoding="utf-8",
+            )
+            with patch.dict(
+                os.environ,
+                {"AGENTS_WORKSPACES_DIR": tmp, "AGENTS_TRACES_DIR": str(Path(tmp) / "traces")},
+                clear=False,
+            ):
+                ws = Workspace.create("demo")
+                manifest = {
+                    "name": "envcheck",
+                    "verb": f'python "{script}"',
+                    "rests_on": "test",
+                    "cadence": "one_shot",
+                    "expected_exit": 0,
+                    "timeout_sec": 20,
+                    "workspace": "demo",
+                }
+                result = execute_job(manifest, log_path=None)
+            self.assertEqual(result["status"], "SUCCESS")
+            self.assertEqual(result["stdout"].strip(), str(ws.memory))
+
+    def test_execute_job_rejects_unknown_workspace(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.dict(
+                os.environ,
+                {"AGENTS_WORKSPACES_DIR": tmp, "AGENTS_TRACES_DIR": str(Path(tmp) / "traces")},
+                clear=False,
+            ):
+                manifest = {
+                    "name": "badws",
+                    "verb": "python -c \"print('x')\"",
+                    "rests_on": "test",
+                    "cadence": "one_shot",
+                    "expected_exit": 0,
+                    "timeout_sec": 20,
+                    "workspace": "nope",
+                }
+                result = execute_job(manifest, log_path=None)
+            self.assertEqual(result["status"], "ERROR")
+            self.assertIn("unknown workspace", result["stderr"])
 
 
 class TestHarnessExecutor(unittest.TestCase):

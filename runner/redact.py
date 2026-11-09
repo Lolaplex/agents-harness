@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-import os
 import re
 from pathlib import Path
+
+from agents_workspace import Workspace
 
 _PATTERNS: list[re.Pattern[str]] = [
     re.compile(r"sk-[A-Za-z0-9_-]{8,}", re.IGNORECASE),
@@ -22,11 +23,17 @@ _REDACTED = "[redacted]"
 
 def _agents_home_paths() -> list[str]:
     """Path prefixes to scrub from tool output (longest first)."""
+    ws = Workspace.from_env()
     candidates: list[str] = []
-    home = os.environ.get("AGENTS_HOME", "").strip()
-    if home:
-        candidates.append(home)
-    candidates.append(str(Path.home() / ".agents"))
+    raw = str(
+        ws.source_env.get("AGENTS_WORKSPACE_ROOT") or ws.source_env.get("AGENTS_HOME") or ""
+    ).strip()
+    if raw:
+        candidates.append(raw)
+    candidates.append(str(ws.root))
+    legacy = str(Path.home() / ".agents")
+    if legacy not in candidates:
+        candidates.append(legacy)
     prefixes: list[str] = []
     seen: set[str] = set()
     for raw in candidates:

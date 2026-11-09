@@ -18,6 +18,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from agents_workspace import Workspace
+
 from .redact import redact_tool_output
 
 if hasattr(sys.stdout, "reconfigure"):
@@ -153,11 +155,9 @@ def _schedule_dirs() -> list[Path]:
     bundled = os.environ.get("AGENTS_BUNDLED_SCHEDULES", "1").strip().lower()
     if bundled not in ("0", "false", "no", "off"):
         dirs.append(SCHEDULES_DIR)
-    extra = os.environ.get("AGENTS_SCHEDULES_DIR", "").strip()
-    if extra:
-        overlay = Path(extra)
-        if overlay.resolve() not in {d.resolve() for d in dirs}:
-            dirs.append(overlay)
+    overlay = Workspace.from_env().schedules
+    if overlay.resolve() not in {d.resolve() for d in dirs}:
+        dirs.append(overlay)
     return dirs
 
 
@@ -182,16 +182,8 @@ def list_schedules(schedules_dir: Path | None = None) -> List[Dict[str, Any]]:
 
 
 def traces_dir() -> Path:
-    """Cordis job-log directory. Same override as agents-traces.
-
-    AGENTS_TRACES_DIR wins. Otherwise ~/.agents/traces. Read at call time so
-    a sandbox env cannot leak into a module-level Path.home() capture.
-    agents-traces does not map AGENTS_HOME onto traces, so neither do we.
-    """
-    env_dir = os.environ.get("AGENTS_TRACES_DIR", "").strip()
-    if env_dir:
-        return Path(env_dir).expanduser().resolve()
-    return Path.home() / ".agents" / "traces"
+    """Cordis job-log directory. Same resolution as agents-traces."""
+    return Workspace.from_env().traces
 
 
 def traces_logging_enabled() -> bool:
@@ -247,12 +239,7 @@ def workspace_root() -> Path | None:
     """
     if not _flag("AGENTS_WORKSPACE_LOCK"):
         return None
-    raw = os.environ.get("AGENTS_WORKSPACE_DIR", "").strip()
-    if raw:
-        path = Path(raw).expanduser()
-    else:
-        home = os.environ.get("AGENTS_HOME", "").strip()
-        path = (Path(home).expanduser() / "workspace") if home else (Path.home() / ".agents" / "workspace")
+    path = Workspace.from_env().workdir
     try:
         return path.resolve(strict=False)
     except (OSError, RuntimeError):
@@ -283,10 +270,7 @@ def _under(root: Path, path: Path) -> bool:
 
 
 def _agents_home() -> Path:
-    raw = os.environ.get("AGENTS_HOME", "").strip()
-    if raw:
-        return Path(raw).expanduser()
-    return Path.home() / ".agents"
+    return Workspace.from_env().root
 
 
 def _internal_roots() -> list[Path]:
@@ -337,7 +321,7 @@ def _permitted(path: Path, root: Path) -> bool:
     return False
 
 
-def refuse_workspace(cwd: str | Path | None) -> str | None:
+def refuse_workspace(cwd: str | Path | None, root: Path | None = None) -> str | None:
     """Refuse a working directory that resolves outside the locked workspace.
 
     Only the directory the engine hands to a verb is checked. A verb's own
@@ -345,7 +329,8 @@ def refuse_workspace(cwd: str | Path | None) -> str | None:
     path it resolves, and guessing which argument is a path refused ordinary
     text such as a branch name or a date.
     """
-    root = workspace_root()
+    if root is None:
+        root = workspace_root()
     if root is None:
         return None
     if cwd is None or not str(cwd).strip():
@@ -370,6 +355,21 @@ def execute_job(
     start_time = time.time()
     iso_timestamp = datetime.now(timezone.utc).isoformat()
 
+    workspace_ref = str(manifest.get("workspace") or "").strip()
+    job_env = None
+    job_root = None
+    workspace_error = ""
+    if workspace_ref:
+        from agents_workspace import Workspace
+
+        ws = Workspace.resolve(workspace_ref)
+        if ws is None:
+            workspace_error = f"unknown workspace: {workspace_ref}"
+        else:
+            job_env = ws.env()
+            if _flag("AGENTS_WORKSPACE_LOCK"):
+                job_root = ws.workdir.resolve(strict=False)
+
     print(f"[*] Running '{name}' (rests on: {manifest['rests_on']})...", file=sys.stderr)
     print(f"    CMD: {verb}" + (f" {extra_argv}" if extra_argv else ""), file=sys.stderr)
 
@@ -380,7 +380,7 @@ def execute_job(
 
     try:
         cmd = verb_to_argv(verb, extra_argv)
-        refusal = refuse_workspace(cwd)
+        refusal = workspace_error or refuse_workspace(cwd, job_root)
         if refusal:
             status = "ERROR"
             exit_code = 1
@@ -394,6 +394,7 @@ def execute_job(
                 text=True,
                 timeout=timeout_sec,
                 cwd=cwd,
+                env=job_env,
             )
             exit_code = proc.returncode
             stdout_text = redact_tool_output(proc.stdout.strip())

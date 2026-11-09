@@ -28,6 +28,8 @@ import uuid
 from typing import Any, Callable, Dict, List, Optional
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+from agents_workspace import Workspace
+
 from .executor import clip_tool_output, execute_job, present_job_result
 
 DEFAULT_GRACE_MIN = 5
@@ -40,11 +42,7 @@ _routine_handler: Optional[Callable[[Dict[str, Any]], Any]] = None
 
 def dynamic_schedules_dir() -> Path:
     """Directory holding dynamic schedule manifests."""
-    env_dir = os.environ.get("AGENTS_SCHEDULES_DIR", "").strip()
-    if env_dir:
-        p = Path(env_dir).expanduser().resolve()
-    else:
-        p = Path.home() / ".agents" / "schedules"
+    p = Workspace.from_env().schedules
     p.mkdir(parents=True, exist_ok=True)
     return p
 
@@ -57,11 +55,11 @@ def configured_timezone() -> str:
     tz = os.environ.get("TZ", "").strip()
     if tz:
         return tz
-    candidates: list[Path] = []
-    home = os.environ.get("AGENTS_HOME", "").strip()
-    if home:
-        candidates.append(Path(home).expanduser() / "config.json")
-    candidates.append(Path.home() / ".agents" / "config.json")
+    ws = Workspace.from_env()
+    candidates: list[Path] = [ws.config]
+    legacy = Path.home() / ".agents" / "config.json"
+    if legacy != ws.config:
+        candidates.append(legacy)
     for path in candidates:
         if not path.is_file():
             continue

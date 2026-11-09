@@ -2,18 +2,14 @@
 
 from __future__ import annotations
 
-import os
 import re
 from pathlib import Path
 
+from agents_workspace import Workspace
+
 
 def _agents_memory_dir() -> Path:
-    raw = os.environ.get("AGENTS_HOME", "").strip()
-    base = Path(raw) if raw else Path.home() / ".agents"
-    override = os.environ.get("AGENTS_MEMORY_PATH", "").strip()
-    if override:
-        return Path(override)
-    return base / "memory"
+    return Workspace.from_env().memory
 
 
 def load_user_profile() -> dict[str, str]:
