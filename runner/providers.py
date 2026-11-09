@@ -188,6 +188,8 @@ def _accumulate_tool_calls(tools: dict[int, dict[str, Any]], calls: Any) -> None
         )
         if tc.get("id"):
             slot["id"] = tc["id"]
+        if tc.get("type"):
+            slot["type"] = tc["type"]
         fn = tc.get("function") or {}
         if fn.get("name"):
             slot["function"]["name"] = fn["name"]
@@ -196,6 +198,15 @@ def _accumulate_tool_calls(tools: dict[int, dict[str, Any]], calls: Any) -> None
             slot["function"]["arguments"] += (
                 args if isinstance(args, str) else json.dumps(args, ensure_ascii=False)
             )
+        # Vendor extras must round-trip verbatim: Gemini attaches
+        # extra_content.google.thought_signature to functionCall parts and
+        # 400s on the next request if it is missing.
+        for key, value in tc.items():
+            if key not in ("index", "id", "type", "function") and value is not None:
+                slot[key] = value
+        for key, value in fn.items():
+            if key not in ("name", "arguments") and value is not None:
+                slot["function"][key] = value
 
 
 def consume_sse(

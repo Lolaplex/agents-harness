@@ -36,6 +36,18 @@ class TestConsumeSse(unittest.TestCase):
         self.assertEqual(tools[0]["function"]["name"], "mcp_memory_search")
         self.assertIn("canary", tools[0]["function"]["arguments"])
 
+    def test_preserves_thought_signature_extras(self):
+        # Gemini attaches extra_content.google.thought_signature to streamed
+        # functionCall parts; dropping it makes the follow-up request 400.
+        lines = [
+            'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"c1","function":{"name":"list_catalog","arguments":"{}"},"extra_content":{"google":{"thought_signature":"sig-abc"}}}]}}]}',
+            "data: [DONE]",
+        ]
+        text, tools, _ = consume_sse(lines)
+        self.assertEqual(
+            tools[0]["extra_content"]["google"]["thought_signature"], "sig-abc"
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
