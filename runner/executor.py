@@ -270,7 +270,7 @@ def _under(root: Path, path: Path) -> bool:
 
 
 def _agents_home() -> Path:
-    return Workspace.from_env().root
+    return Workspace.from_env().dir
 
 
 def _internal_roots() -> list[Path]:
@@ -344,6 +344,7 @@ def execute_job(
     manifest: Dict[str, Any],
     log_path: Optional[Path] = DEFAULT_LOG_FILE,
     extra_argv: Optional[List[str]] = None,
+    workspace: "Workspace | None" = None,
 ) -> Dict[str, Any]:
     name = manifest["name"]
     verb = manifest["verb"]
@@ -359,7 +360,12 @@ def execute_job(
     job_env = None
     job_root = None
     workspace_error = ""
-    if workspace_ref:
+    if workspace is not None:
+        # Explicit object: child env comes straight from it, no re-resolve.
+        job_env = workspace.env()
+        if _flag("AGENTS_WORKSPACE_LOCK"):
+            job_root = workspace.workdir.resolve(strict=False)
+    elif workspace_ref:
         from agents_workspace import Workspace
 
         ws = Workspace.resolve(workspace_ref)

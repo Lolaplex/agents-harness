@@ -43,10 +43,15 @@ def _via_import(project: str) -> str | None:
         return ""
 
 
-def _via_cli(project: str) -> str:
+def _via_cli(project: str, workspace=None) -> str:
     cmd = [sys.executable, "-m", "agents_memory", "context"]
     if project:
         cmd.extend(["--project", project])
+    if workspace is not None:
+        env = workspace.env()
+        env["AGENTS_NO_UPDATE_CHECK"] = "1"
+    else:
+        env = {**os.environ, "AGENTS_NO_UPDATE_CHECK": "1"}
     try:
         proc = subprocess.run(
             cmd,
@@ -54,7 +59,7 @@ def _via_cli(project: str) -> str:
             text=True,
             timeout=2.0,
             check=False,
-            env={**os.environ, "AGENTS_NO_UPDATE_CHECK": "1"},
+            env=env,
         )
     except Exception:
         return ""
@@ -63,24 +68,32 @@ def _via_cli(project: str) -> str:
     return (proc.stdout or "").strip()
 
 
-def render_memory_rules(project: str = "", *, refresh: bool = False) -> str:
+def render_memory_rules(
+    project: str = "", *, refresh: bool = False, workspace=None
+) -> str:
     """Return the ``<memory_rules>`` block, or "" when unavailable."""
     if disabled():
         return ""
     key = (project or "").strip()
+    if workspace is not None:
+        key = f"{getattr(workspace, 'dir', '')}:{key}"
     if not refresh and key in _cache:
         return _cache[key]
-    block = _via_import(key)
-    if block is None:
-        block = _via_cli(key)
+    if workspace is not None:
+        # Explicit workspace: the import path would resolve the process env.
+        block = _via_cli(project or "", workspace)
+    else:
+        block = _via_import(key)
+        if block is None:
+            block = _via_cli(key)
     block = (block or "").strip()
     _cache[key] = block
     return block
 
 
-def memory_rules_prompt_block(project: str = "") -> str:
+def memory_rules_prompt_block(project: str = "", workspace=None) -> str:
     """System-prefix fragment; empty when there is nothing to inject."""
-    block = render_memory_rules(project)
+    block = render_memory_rules(project, workspace=workspace)
     if not block:
         return ""
     return (

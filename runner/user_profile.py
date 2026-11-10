@@ -8,13 +8,13 @@ from pathlib import Path
 from agents_workspace import Workspace
 
 
-def _agents_memory_dir() -> Path:
-    return Workspace.from_env().memory
+def _agents_memory_dir(workspace: "Workspace | None" = None) -> Path:
+    return (workspace or Workspace.from_env()).memory
 
 
-def load_user_profile() -> dict[str, str]:
+def load_user_profile(workspace: "Workspace | None" = None) -> dict[str, str]:
     """Parse ## Who from USER.md. Empty strings when missing."""
-    path = _agents_memory_dir() / "USER.md"
+    path = _agents_memory_dir(workspace) / "USER.md"
     out = {"display": "", "work": "", "timezone": ""}
     if not path.is_file():
         return out
