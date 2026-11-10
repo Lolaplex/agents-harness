@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `runner.loop --workspace <id>` selects the data workspace explicitly (validated against the Host; default `AGENTS_WORKSPACE`). The resolved `Workspace` object is threaded into modules, skills, schedules, memory rules and the user profile.
+- `runner.schedule.tick()`, `add_schedule`, `list_dynamic_schedules`, `remove_schedule`, `dynamic_schedules_dir` and `configured_timezone` accept `workspace=...` so a host process can tick several workspaces in one process without mutating `os.environ`. Claimed jobs run with `ws.env()` via `execute_job(workspace=...)`.
+- `runner.modules.list_modules`/`find_module`/`find_module_for_tool`/`enabled_tool_names`, `runner.skills` dir/list/load/prompt-block helpers, `runner.user_profile.load_user_profile` and `runner.memory_rules` helpers accept `workspace=...` (default: env-selected workspace).
+
 ### Changed
 - The workspace boundary is its own switch (`AGENTS_WORKSPACE_LOCK`). `AGENTS_WORKSPACE_DIR` only names the working directory. `AGENTS_WORKSPACE_ALLOW` adds allowed roots.
 - The executor checks only the working directory it hands to a verb. It no longer guesses which argument is a path, so ordinary text with a slash (a branch name, a date) is not refused. Path confinement stays in the terminal, which owns file access.

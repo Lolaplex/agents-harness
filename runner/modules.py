@@ -14,9 +14,12 @@ import json
 import os
 import re
 from pathlib import Path
-from typing import Any, Dict, List, Set
+from typing import TYPE_CHECKING, Any, Dict, List, Set
 
 from .executor import load_manifest
+
+if TYPE_CHECKING:
+    from agents_workspace import Workspace
 
 MODULES_DIR = Path(__file__).parent / "modules"
 KINDS = ("mcp", "skill", "a2a", "schedule", "mcp_remote")
@@ -25,11 +28,20 @@ ENABLED_FILE = "enabled.json"
 _OPENAI_TOOL_NAME = re.compile(r"^[a-zA-Z0-9_-]+$")
 
 
-def _module_dirs(primary: Path | None = None) -> list[Path]:
-    dirs = [primary or MODULES_DIR]
+def _overlay_dir(workspace: "Workspace | None" = None) -> Path | None:
+    if workspace is not None:
+        return workspace.modules
     extra = os.environ.get("AGENTS_MODULES_DIR", "").strip()
-    if extra:
-        overlay = Path(extra)
+    return Path(extra) if extra else None
+
+
+def _module_dirs(
+    primary: Path | None = None,
+    workspace: "Workspace | None" = None,
+) -> list[Path]:
+    dirs = [primary or MODULES_DIR]
+    overlay = _overlay_dir(workspace)
+    if overlay is not None:
         if overlay.resolve() not in {d.resolve() for d in dirs}:
             dirs.append(overlay)
     return dirs
@@ -47,9 +59,16 @@ def load_module(path: Path) -> Dict[str, Any]:
     return data
 
 
-def list_modules(modules_dir: Path | None = None) -> List[Dict[str, Any]]:
+def list_modules(
+    modules_dir: Path | None = None,
+    workspace: "Workspace | None" = None,
+) -> List[Dict[str, Any]]:
     seen: dict[str, Dict[str, Any]] = {}
-    dirs = [modules_dir] if modules_dir is not None else _module_dirs()
+    dirs = (
+        [modules_dir]
+        if modules_dir is not None
+        else _module_dirs(workspace=workspace)
+    )
     for folder in dirs:
         if folder is None or not folder.exists():
             continue
@@ -76,9 +95,13 @@ def _merge_remote_modules(seen: dict[str, Dict[str, Any]]) -> None:
         return
 
 
-def find_module(name: str, modules_dir: Path | None = None) -> Dict[str, Any] | None:
+def find_module(
+    name: str,
+    modules_dir: Path | None = None,
+    workspace: "Workspace | None" = None,
+) -> Dict[str, Any] | None:
     needle = name.strip().lower()
-    for m in list_modules(modules_dir):
+    for m in list_modules(modules_dir, workspace=workspace):
         if m["name"].lower() == needle:
             return m
     return None
@@ -96,11 +119,15 @@ def openai_tool_name(module: Dict[str, Any] | str) -> str:
     return name.replace(".", "_")
 
 
-def find_module_for_tool(name: str, modules_dir: Path | None = None) -> Dict[str, Any] | None:
+def find_module_for_tool(
+    name: str,
+    modules_dir: Path | None = None,
+    workspace: "Workspace | None" = None,
+) -> Dict[str, Any] | None:
     needle = name.strip().lower()
     if not needle:
         return None
-    rows = list_modules(modules_dir)
+    rows = list_modules(modules_dir, workspace=workspace)
     for m in rows:
         if m["name"].lower() == needle:
             return m
@@ -109,12 +136,14 @@ def find_module_for_tool(name: str, modules_dir: Path | None = None) -> Dict[str
     return None
 
 
-def enabled_tool_names() -> Set[str] | None:
+def enabled_tool_names(
+    workspace: "Workspace | None" = None,
+) -> Set[str] | None:
     """None = every as_tool module. A set (even empty) is the overlay pick list."""
-    extra = os.environ.get("AGENTS_MODULES_DIR", "").strip()
-    if not extra:
+    overlay = _overlay_dir(workspace)
+    if overlay is None:
         return None
-    path = Path(extra) / ENABLED_FILE
+    path = overlay / ENABLED_FILE
     if not path.is_file():
         return None
     data = json.loads(path.read_text(encoding="utf-8"))
@@ -125,12 +154,15 @@ def enabled_tool_names() -> Set[str] | None:
     return {str(x).strip() for x in data if str(x).strip()}
 
 
-def openai_tools(modules: List[Dict[str, Any]] | None = None) -> list[dict[str, Any]]:
+def openai_tools(
+    modules: List[Dict[str, Any]] | None = None,
+    workspace: "Workspace | None" = None,
+) -> list[dict[str, Any]]:
     """Three always-on Cordis tools. Host verbs are call_job-only (closed carrier)."""
     from .cordis_tools import openai_cordis_tools
 
     _ = modules  # catalog is resolved inside call_job at execution time
-    allow = enabled_tool_names()
+    allow = enabled_tool_names(workspace)
     tools = openai_cordis_tools()
     if allow is None:
         return tools

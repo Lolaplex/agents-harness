@@ -164,15 +164,15 @@ def _record_tool(
         pass
 
 
-def _augment_system(system: str, project: str = "") -> str:
+def _augment_system(system: str, project: str = "", workspace=None) -> str:
     chunks = [system.strip()] if system and system.strip() else []
     chunks.append(FENCE_SYSTEM_NOTE)
     chunks.append(RETRIEVAL_NOTE)
     chunks.append(GROUNDING_NOTE)
-    rules = memory_rules_prompt_block(project)
+    rules = memory_rules_prompt_block(project, workspace=workspace)
     if rules:
         chunks.append(rules)
-    block = skills_prompt_block()
+    block = skills_prompt_block(workspace)
     if block:
         chunks.append(block)
     pinned = pinned_verbs_prompt_block()
@@ -388,9 +388,9 @@ def _coerce_tool_calls(result: CompletionResult) -> CompletionResult:
     return result
 
 
-def _skills_for_prompt() -> list[tuple[str, str]]:
+def _skills_for_prompt(workspace=None) -> list[tuple[str, str]]:
     rows = []
-    for m in list_modules():
+    for m in list_modules(workspace=workspace):
         summary = str(m.get("rests_on") or m.get("verb") or "")
         rows.append((str(m["name"]), summary))
     return rows
@@ -413,12 +413,13 @@ def build_payload(
     include_clock: bool = True,
     attachments: list[str] | None = None,
     vision: bool = False,
+    workspace=None,
 ) -> list[dict[str, Any]]:
     """system (cached) → history → clock → new user turn.
 
     Clock is last-before-user so it cannot invalidate the system prefix.
     """
-    system = _augment_system(system, project=project)
+    system = _augment_system(system, project=project, workspace=workspace)
     user_content = render_user_content(user_message, attachments, vision=vision)
     try:
         from agents_traces.prompt import PromptParts, clock_message, system_messages
@@ -460,7 +461,7 @@ def build_payload(
 
     parts = PromptParts(
         instructions=system,
-        skills=_skills_for_prompt() if include_modules else [],
+        skills=_skills_for_prompt(workspace) if include_modules else [],
         user_id=user_id,
         user_display=user_display,
         work=work,
@@ -636,6 +637,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--user-id", default="", dest="user_id", help="Canonical person id (binds this alias)")
     parser.add_argument("--new-session", action="store_true", help="Start a new thread for this user")
     parser.add_argument("--project", default="", help="Current project for runtime_context")
+    parser.add_argument(
+        "--workspace",
+        default="",
+        help="Data workspace id (default: AGENTS_WORKSPACE). Modules, skills, "
+        "schedules, memory rules and traces resolve inside this workspace.",
+    )
     parser.add_argument("--message", default="", help="New user turn")
     parser.add_argument(
         "--attach",
@@ -677,6 +684,20 @@ def main(argv: list[str] | None = None) -> int:
         help="Cryptographically seal session tool calls and emit seal digest in trailer",
     )
     args = parser.parse_args(argv)
+
+    ws = None
+    if args.workspace:
+        # CLI entry selection: validate the id, then pin the process env so
+        # every downstream resolver call sees the same workspace.
+        from agents_workspace import Host
+
+        host = Host.from_env()
+        if not host.workspace_exists(args.workspace):
+            print(f"Error: unknown workspace: {args.workspace}", file=sys.stderr)
+            return 2
+        ws = host.workspace(args.workspace)
+        os.environ["AGENTS_WORKSPACE"] = ws.id
+
     try:
         from . import __version__
         from .updates import check_for_updates
@@ -695,14 +716,14 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.list_tools:
         print("tools:")
-        for t in openai_tools():
+        for t in openai_tools(workspace=ws):
             fn = t["function"]
             print(f"  {fn['name']:<24} {fn.get('description', '')}")
         return 0
 
     if args.list_modules:
         print("modules:")
-        for m in list_modules():
+        for m in list_modules(workspace=ws):
             tool = openai_tool_name(m) if m.get("as_tool") else ""
             extra = f" tool={tool}" if tool else ""
             print(
@@ -715,7 +736,7 @@ def main(argv: list[str] | None = None) -> int:
         for p in list_providers():
             print(f"  {p['name']:<20} kind={p['kind']:<14} {p['verb']}")
         print("tools:")
-        for t in openai_tools():
+        for t in openai_tools(workspace=ws):
             print(f"  {t['function']['name']}")
         return 0
 
@@ -726,7 +747,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.call:
-        mod = find_module(args.call)
+        mod = find_module(args.call, workspace=ws)
         if mod is None:
             match = [s for s in list_schedules() if s["name"].lower() == args.call.lower()]
             if not match:
@@ -746,7 +767,7 @@ def main(argv: list[str] | None = None) -> int:
     resolved = _resolve_identity(args)
     session = resolved.session.id
     user_text = args.message or ""
-    profile = load_user_profile()
+    profile = load_user_profile(ws)
     project = (args.project or "").strip()
     # agents-traces 0.1.2 dropped ``UserRecord.timezone``; the profile is the
     # remaining source. ``getattr`` keeps older agents-traces installs working.
@@ -786,6 +807,7 @@ def main(argv: list[str] | None = None) -> int:
         start_date=resolved.session.start_date,
         attachments=attachments,
         vision=vision,
+        workspace=ws,
     )
     if args.assemble_only or not args.complete:
         print(
@@ -796,7 +818,7 @@ def main(argv: list[str] | None = None) -> int:
                     "alias": resolved.alias,
                     "start_date": resolved.session.start_date,
                     "messages": messages,
-                    "tools": openai_tools(),
+                    "tools": openai_tools(workspace=ws),
                 },
                 ensure_ascii=False,
                 indent=2,
@@ -825,7 +847,7 @@ def main(argv: list[str] | None = None) -> int:
             resolved.user.id,
             project=project,
         )
-    tools = openai_tools()
+    tools = openai_tools(workspace=ws)
     req = CompletionRequest(
         messages=messages,
         tools=tools or None,

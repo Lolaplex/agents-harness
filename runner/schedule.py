@@ -40,22 +40,23 @@ _PROCESS_LOCK = threading.Lock()
 _routine_handler: Optional[Callable[[Dict[str, Any]], Any]] = None
 
 
-def dynamic_schedules_dir() -> Path:
+def dynamic_schedules_dir(workspace: "Workspace | None" = None) -> Path:
     """Directory holding dynamic schedule manifests."""
-    p = Workspace.from_env().schedules
+    ws = workspace or Workspace.from_env()
+    p = ws.schedules
     p.mkdir(parents=True, exist_ok=True)
     return p
 
 
-def configured_timezone() -> str:
-    """Job default zone: AGENTS_TIMEZONE, then TZ, then ~/.agents/config.json, else UTC."""
+def configured_timezone(workspace: "Workspace | None" = None) -> str:
+    """Job default zone: AGENTS_TIMEZONE, then TZ, then the workspace config, else UTC."""
     named = os.environ.get("AGENTS_TIMEZONE", "").strip()
     if named:
         return named
     tz = os.environ.get("TZ", "").strip()
     if tz:
         return tz
-    ws = Workspace.from_env()
+    ws = workspace or Workspace.from_env()
     candidates: list[Path] = [ws.config]
     legacy = Path.home() / ".agents" / "config.json"
     if legacy != ws.config:
@@ -114,12 +115,12 @@ def _job_grace(manifest: Dict[str, Any]) -> int:
     return DEFAULT_GRACE_MIN
 
 
-def _state_path() -> Path:
-    return dynamic_schedules_dir() / _STATE_NAME
+def _state_path(ws: "Workspace") -> Path:
+    return dynamic_schedules_dir(ws) / _STATE_NAME
 
 
-def _load_state() -> Dict[str, Any]:
-    path = _state_path()
+def _load_state(ws: "Workspace") -> Dict[str, Any]:
+    path = _state_path(ws)
     if not path.is_file():
         return {"jobs": {}}
     try:
@@ -134,8 +135,8 @@ def _load_state() -> Dict[str, Any]:
     return data
 
 
-def _save_state(state: Dict[str, Any]) -> None:
-    path = _state_path()
+def _save_state(state: Dict[str, Any], ws: "Workspace") -> None:
+    path = _state_path(ws)
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(".json.tmp")
     tmp.write_text(json.dumps(state, indent=2, ensure_ascii=False), encoding="utf-8")
@@ -194,7 +195,7 @@ def _normalize_handler_result(job: Dict[str, Any], value: Any) -> Dict[str, Any]
     }
 
 
-def run_routine(job: Dict[str, Any]) -> Dict[str, Any]:
+def run_routine(job: Dict[str, Any], ws: "Workspace | None" = None) -> Dict[str, Any]:
     """Hand a routine job to the registered handler.
 
     No handler and a verb: run the verb (previous executor behavior).
@@ -205,7 +206,7 @@ def run_routine(job: Dict[str, Any]) -> Dict[str, Any]:
     prepared["timeout_sec"] = _job_timeout(prepared)
     if handler is None:
         if prepared.get("verb"):
-            return execute_job(prepared)
+            return execute_job(prepared, workspace=ws)
         return {
             "status": "SKIPPED",
             "job": prepared.get("name"),
@@ -385,9 +386,11 @@ def add_schedule(
     timeout_sec: Optional[int] = None,
     grace_min: Optional[int] = None,
     kind: Optional[str] = None,
+    workspace: "Workspace | None" = None,
 ) -> Dict[str, Any]:
     """Add a dynamic schedule, reminder, or routine manifest."""
-    target_dir = dynamic_schedules_dir()
+    ws = workspace or Workspace.from_env()
+    target_dir = dynamic_schedules_dir(ws)
     slug = (name or "").strip()
     if not slug:
         slug = f"rem_{int(datetime.now(timezone.utc).timestamp())}_{uuid.uuid4().hex[:6]}"
@@ -414,7 +417,7 @@ def add_schedule(
         parts.extend(["--message", f'"{clean_text}"', "--complete"])
         verb = " ".join(parts)
 
-    stored_tz = timezone_name or configured_timezone()
+    stored_tz = timezone_name or configured_timezone(ws)
     draft: Dict[str, Any] = {"kind": "routine" if is_routine else "", "verb": verb or "", "prompt": prompt}
     if timeout_sec not in (None, ""):
         timeout_val = max(1, int(timeout_sec))
@@ -471,9 +474,11 @@ def add_schedule(
     return manifest
 
 
-def list_dynamic_schedules() -> List[Dict[str, Any]]:
+def list_dynamic_schedules(
+    workspace: "Workspace | None" = None,
+) -> List[Dict[str, Any]]:
     """List all manifests in dynamic schedules dir."""
-    target_dir = dynamic_schedules_dir()
+    target_dir = dynamic_schedules_dir(workspace)
     results: List[Dict[str, Any]] = []
     if not target_dir.exists():
         return results
@@ -490,9 +495,9 @@ def list_dynamic_schedules() -> List[Dict[str, Any]]:
     return results
 
 
-def remove_schedule(name: str) -> bool:
+def remove_schedule(name: str, workspace: "Workspace | None" = None) -> bool:
     """Remove a dynamic schedule by name."""
-    target_dir = dynamic_schedules_dir()
+    target_dir = dynamic_schedules_dir(workspace)
     slug = name.strip()
     if slug.endswith(".json"):
         slug = slug[:-5]
@@ -554,18 +559,18 @@ def _will_skip(schedule: Dict[str, Any]) -> bool:
     return not schedule.get("verb")
 
 
-def _run_due(schedule: Dict[str, Any]) -> Dict[str, Any]:
+def _run_due(schedule: Dict[str, Any], ws: "Workspace") -> Dict[str, Any]:
     prepared = dict(schedule)
     prepared["timeout_sec"] = _job_timeout(prepared)
     if str(prepared.get("kind") or "") == "routine":
-        return run_routine(prepared)
-    return execute_job(prepared)
+        return run_routine(prepared, ws)
+    return execute_job(prepared, workspace=ws)
 
 
-def _collect_due(now: datetime) -> tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+def _collect_due(now: datetime, ws: "Workspace") -> tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
     """Claim due work. Caller holds the tick locks. Returns (claimed, skipped)."""
-    schedules = list_dynamic_schedules()
-    state = _load_state()
+    schedules = list_dynamic_schedules(ws)
+    state = _load_state(ws)
     claimed: List[Dict[str, Any]] = []
     skipped: List[Dict[str, Any]] = []
     dirty = False
@@ -607,7 +612,7 @@ def _collect_due(now: datetime) -> tuple[List[Dict[str, Any]], List[Dict[str, An
             claimed.append({"schedule": s, "one_shot": bool(s.get("one_shot", False))})
 
     if dirty:
-        _save_state(state)
+        _save_state(state, ws)
     return claimed, skipped
 
 
@@ -647,10 +652,10 @@ def _log_schedule_failure(name: str, result: Dict[str, Any]) -> None:
     print(f"[-] schedule '{name}' {status} (exit {code}){detail}", file=sys.stderr)
 
 
-def _finalize(claimed: List[Dict[str, Any]], results: List[Dict[str, Any]]) -> None:
+def _finalize(claimed: List[Dict[str, Any]], results: List[Dict[str, Any]], ws: "Workspace") -> None:
     """Drop claims for SKIPPED jobs. Remove finished one-shots. Keep failed results."""
     by_name = {str(row["schedule"]): row["result"] for row in results}
-    state = _load_state()
+    state = _load_state(ws)
     dirty = False
     for item in claimed:
         schedule = item["schedule"]
@@ -675,18 +680,18 @@ def _finalize(claimed: List[Dict[str, Any]], results: List[Dict[str, Any]]) -> N
                 dirty = True
             continue
         if item.get("one_shot"):
-            remove_schedule(name)
+            remove_schedule(name, ws)
             if not failed:
                 state.get("jobs", {}).pop(name, None)
             dirty = True
     if dirty:
-        _save_state(state)
+        _save_state(state, ws)
 
 
-def _job_outcome(schedule: Dict[str, Any]) -> Dict[str, Any]:
+def _job_outcome(schedule: Dict[str, Any], ws: "Workspace") -> Dict[str, Any]:
     name = str(schedule.get("name") or "")
     try:
-        result = _run_due(schedule)
+        result = _run_due(schedule, ws)
     except Exception as exc:
         result = {
             "status": "ERROR",
@@ -698,12 +703,12 @@ def _job_outcome(schedule: Dict[str, Any]) -> Dict[str, Any]:
     return {"schedule": name, "result": present_job_result(result)}
 
 
-def _start_workers(claimed: List[Dict[str, Any]]) -> tuple[List[Optional[Dict[str, Any]]], List[threading.Thread]]:
+def _start_workers(claimed: List[Dict[str, Any]], ws: "Workspace") -> tuple[List[Optional[Dict[str, Any]]], List[threading.Thread]]:
     """Start claimed jobs. Parallel so one slow job does not stall the rest."""
     results: List[Optional[Dict[str, Any]]] = [None] * len(claimed)
 
     def _one(index: int, item: Dict[str, Any]) -> None:
-        results[index] = _job_outcome(item["schedule"])
+        results[index] = _job_outcome(item["schedule"], ws)
 
     threads = [
         threading.Thread(target=_one, args=(i, item), name=f"tick-{item['schedule'].get('name')}")
@@ -718,13 +723,14 @@ def _join_and_finalize(
     claimed: List[Dict[str, Any]],
     results: List[Optional[Dict[str, Any]]],
     threads: List[threading.Thread],
+    ws: "Workspace",
 ) -> List[Dict[str, Any]]:
     for thread in threads:
         thread.join()
     ran = [row for row in results if row is not None]
     with _PROCESS_LOCK:
-        with _file_lock(dynamic_schedules_dir()):
-            _finalize(claimed, ran)
+        with _file_lock(dynamic_schedules_dir(ws)):
+            _finalize(claimed, ran, ws)
     return ran
 
 
@@ -761,27 +767,32 @@ def _claimed_pending(claimed: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return rows
 
 
-def _tick_body(now: datetime, *, wait: bool = True) -> List[Dict[str, Any]]:
+def _tick_body(now: datetime, ws: "Workspace", *, wait: bool = True) -> List[Dict[str, Any]]:
     with _PROCESS_LOCK:
-        with _file_lock(dynamic_schedules_dir()):
-            claimed, skipped = _collect_due(now)
+        with _file_lock(dynamic_schedules_dir(ws)):
+            claimed, skipped = _collect_due(now, ws)
     if not claimed:
         return skipped
-    results, threads = _start_workers(claimed)
+    results, threads = _start_workers(claimed, ws)
     if not wait:
         def _finish() -> None:
-            _join_and_finalize(claimed, results, threads)
+            _join_and_finalize(claimed, results, threads, ws)
 
         finisher = threading.Thread(target=_finish, name="tick-finalize")
         finisher.start()
         with _background_guard:
             _background_ticks.append(finisher)
         return skipped + _claimed_pending(claimed)
-    ran = _join_and_finalize(claimed, results, threads)
+    ran = _join_and_finalize(claimed, results, threads, ws)
     return skipped + ran
 
 
-def tick(base_time: Optional[datetime] = None, *, wait: bool = True) -> List[Dict[str, Any]]:
+def tick(
+    base_time: Optional[datetime] = None,
+    *,
+    wait: bool = True,
+    workspace: "Workspace | None" = None,
+) -> List[Dict[str, Any]]:
     """Run due jobs. Safe to call in-process and from overlapping processes.
 
     The file lock is held only while claiming or finalizing, not while a job
@@ -790,11 +801,14 @@ def tick(base_time: Optional[datetime] = None, *, wait: bool = True) -> List[Dic
     before the job starts so a second tick does not double-fire. SKIPPED
     routines release that claim and keep one-shots. A failed one-shot is
     removed and not retried; its last result stays in tick-state.json.
+    ``workspace`` selects the data workspace explicitly (per-call); the
+    process env is never consulted beyond the CLI-selected workspace.
     """
+    ws = workspace or Workspace.from_env()
     now = base_time or datetime.now(timezone.utc)
     if now.tzinfo is None:
         now = now.replace(tzinfo=timezone.utc)
-    return _tick_body(now, wait=wait)
+    return _tick_body(now, ws, wait=wait)
 
 
 def main(argv: Optional[List[str]] = None) -> int:
