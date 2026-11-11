@@ -654,6 +654,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--limit", type=int, default=24, help="History turns to rebuild")
     parser.add_argument("--system", default="", help="Optional instructions blob (stable prefix)")
     parser.add_argument("--provider", default="", help="Provider name (openai.default, echo, …)")
+    parser.add_argument("--model", default="", help="Model id override (default: LLM_MODEL env or provider manifest model)")
     parser.add_argument("--persona", default="", help="Persona id (<ws>/personas/<id> first, package fallback; default: AGENTS_PERSONA or the workspace default)")
     parser.add_argument("--assemble-only", action="store_true", help="Print reconstructed payload, no HTTP")
     parser.add_argument("--complete", action="store_true", help="Complete via the selected provider and record")
@@ -852,6 +853,7 @@ def main(argv: list[str] | None = None) -> int:
         )
     tools = openai_tools(workspace=ws)
     req = CompletionRequest(
+        model=args.model,
         messages=messages,
         tools=tools or None,
         on_status=on_status,
