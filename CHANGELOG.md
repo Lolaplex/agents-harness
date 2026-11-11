@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- README env table names `AGENTS_WORKDIR`/`AGENTS_WORKDIR_LOCK`/`AGENTS_WORKDIR_ALLOW` and `<ws>/schedules`; old names only as deprecated-alias notes.
+
 ### Added
 - `workdir_root()` replaces `workspace_root()` (name said workspace, meant workdir). `AGENTS_WORKDIR_LOCK` (alias `AGENTS_WORKSPACE_LOCK`) and `AGENTS_WORKDIR_ALLOW` (alias `AGENTS_WORKSPACE_ALLOW`), each a deprecated one-release alias that warns.
 - `runner.loop --workspace <id>` selects the data workspace explicitly (validated against the Host; default `AGENTS_WORKSPACE`). The resolved `Workspace` object is threaded into modules, skills, schedules, memory rules and the user profile.
