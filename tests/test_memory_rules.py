@@ -57,9 +57,9 @@ def test_augment_system_includes_rules(monkeypatch):
     from runner.fence import FENCE_SYSTEM_NOTE
 
     block = "<memory_rules>\n- Be brief\n</memory_rules>"
-    monkeypatch.setattr(mr, "render_memory_rules", lambda project="", refresh=False: block)
+    monkeypatch.setattr(mr, "render_memory_rules", lambda project="", refresh=False, workspace=None: block)
     # Also silence skills
-    monkeypatch.setattr("runner.loop.skills_prompt_block", lambda: "")
+    monkeypatch.setattr("runner.loop.skills_prompt_block", lambda workspace=None: "")
     out = _augment_system("You are test.", project="")
     assert "You are test." in out
     assert FENCE_SYSTEM_NOTE in out

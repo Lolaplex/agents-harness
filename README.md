@@ -179,11 +179,11 @@ Cron uses the job's `timezone` (else `AGENTS_TIMEZONE`, `TZ`, or `timezone` in `
 | `AGENTS_PINNED_VERBS` | 1 | `0`/`false`/`no`/`off` hides the pinned-verb block from the system prompt |
 | `AGENTS_APPROVAL_TIMEOUT` | `--timeout` in the command + 15 s, else 330 s | Seconds to wait for the approval command before denying |
 | `AGENTS_SCHEDULE_GRACE_MIN` | 5 | Minutes a missed cron slot still runs once (a job's `grace_min` wins) |
-| `AGENTS_SCHEDULES_DIR` | `~/.agents/schedules` | Dynamic reminder manifests; also an overlay for `runner.executor` schedules |
+| `AGENTS_SCHEDULES_DIR` | `<ws>/schedules` | Dynamic reminder manifests; also an overlay for `runner.executor` schedules |
 | `AGENTS_BUNDLED_SCHEDULES` | `1` | `0`/`false`/`no`/`off` hides the bundled `runner/schedules/` from `runner.executor` |
-| `AGENTS_WORKSPACE_DIR` | unset | Working directory a verb may use. Does not confine anything |
-| `AGENTS_WORKSPACE_LOCK` | off | `1`/`true`/`yes`/`on` refuses a verb working directory outside the workspace root |
-| `AGENTS_WORKSPACE_ALLOW` | unset | Extra allowed roots, separated by the OS path separator |
+| `AGENTS_WORKDIR` | unset | Working directory a verb may use (`AGENTS_WORKSPACE_DIR` deprecated alias). Does not confine anything |
+| `AGENTS_WORKDIR_LOCK` | off | `1`/`true`/`yes`/`on` refuses a verb working directory outside the workspace root |
+| `AGENTS_WORKDIR_ALLOW` | unset | Extra allowed roots, separated by the OS path separator |
 
 Configuration rule: one variable carries one decision. A value never implies enforcement; enforcement has its own switch, and restrictive switches default to off. Booleans accept `1`/`true`/`yes`/`on`; lists use the OS path separator.
 
