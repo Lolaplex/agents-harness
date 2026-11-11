@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Personas load from `<ws>/personas/<id>/persona.json` first, package `runner/personas/*.json` as fallback; `--persona <id>` / `AGENTS_PERSONA` select the persona (default: workspace `default_persona`). Personas are equal - a role is description text, not hierarchy. Optional private notes live under `<ws>/personas/<id>/notes.md`.
+
 ### Changed
 - README env table names `AGENTS_WORKDIR`/`AGENTS_WORKDIR_LOCK`/`AGENTS_WORKDIR_ALLOW` and `<ws>/schedules`; old names only as deprecated-alias notes.
 
