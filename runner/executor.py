@@ -230,14 +230,32 @@ def _paths(name: str) -> list[Path]:
     return [Path(part.strip()).expanduser() for part in raw.split(os.pathsep) if part.strip()]
 
 
-def workspace_root() -> Path | None:
-    """Resolved workspace root when the lock is on, else None.
+def _flag_alias(new: str, old: str) -> bool:
+    if _flag(new):
+        return True
+    if os.environ.get(old, "").strip():
+        import warnings
+        warnings.warn(
+            f"{old} is deprecated; use {new} (alias removed after one release)",
+            DeprecationWarning,
+            stacklevel=3,
+        )
+        return _flag(old)
+    return False
 
-    ``AGENTS_WORKSPACE_DIR`` only says where work happens. The boundary is
-    enforced only when ``AGENTS_WORKSPACE_LOCK`` is truthy, so a host that
+
+def _lock_on() -> bool:
+    return _flag_alias("AGENTS_WORKDIR_LOCK", "AGENTS_WORKSPACE_LOCK")
+
+
+def workdir_root() -> Path | None:
+    """Resolved workdir root when the lock is on, else None.
+
+    ``AGENTS_WORKDIR`` only says where work happens. The boundary is
+    enforced only when ``AGENTS_WORKDIR_LOCK`` is truthy, so a host that
     sets a working directory is never confined by accident.
     """
-    if not _flag("AGENTS_WORKSPACE_LOCK"):
+    if not _lock_on():
         return None
     path = Workspace.from_env().workdir
     try:
@@ -302,7 +320,23 @@ def _internal_roots() -> list[Path]:
         if raw:
             roots.append(Path(raw).expanduser())
     roots.extend(_paths("AGENTS_SKILLS_EXTRA"))
-    roots.extend(_paths("AGENTS_WORKSPACE_ALLOW"))
+    allow = os.environ.get("AGENTS_WORKDIR_ALLOW", "").strip()
+    if not allow:
+        legacy = os.environ.get("AGENTS_WORKSPACE_ALLOW", "")
+        if legacy.strip():
+            import warnings
+            warnings.warn(
+                "AGENTS_WORKSPACE_ALLOW is deprecated; use AGENTS_WORKDIR_ALLOW "
+                "(alias removed after one release)",
+                DeprecationWarning,
+                stacklevel=3,
+            )
+            allow = legacy
+    roots.extend(
+        Path(part.strip()).expanduser()
+        for part in allow.split(os.pathsep)
+        if part.strip()
+    )
     return roots
 
 
@@ -324,7 +358,7 @@ def refuse_workspace(cwd: str | Path | None, root: Path | None = None) -> str | 
     text such as a branch name or a date.
     """
     if root is None:
-        root = workspace_root()
+        root = workdir_root()
     if root is None:
         return None
     if cwd is None or not str(cwd).strip():
@@ -357,7 +391,7 @@ def execute_job(
     if workspace is not None:
         # Explicit object: child env comes straight from it, no re-resolve.
         job_env = workspace.env()
-        if _flag("AGENTS_WORKSPACE_LOCK"):
+        if _lock_on():
             job_root = workspace.workdir.resolve(strict=False)
     elif workspace_ref:
         from agents_workspace import Workspace
@@ -367,7 +401,7 @@ def execute_job(
             workspace_error = f"unknown workspace: {workspace_ref}"
         else:
             job_env = ws.env()
-            if _flag("AGENTS_WORKSPACE_LOCK"):
+            if _lock_on():
                 job_root = ws.workdir.resolve(strict=False)
 
     print(f"[*] Running '{name}' (rests on: {manifest['rests_on']})...", file=sys.stderr)
