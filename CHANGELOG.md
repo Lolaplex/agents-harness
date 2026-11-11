@@ -13,6 +13,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `runner.modules.list_modules`/`find_module`/`find_module_for_tool`/`enabled_tool_names`, `runner.skills` dir/list/load/prompt-block helpers, `runner.user_profile.load_user_profile` and `runner.memory_rules` helpers accept `workspace=...` (default: env-selected workspace).
 
 ### Changed
+- All remaining paths resolve through `agents_workspace`: `mcp_config_path()` returns `<host>/mcp.json` (`AGENTS_MCP_CONFIG_FILE`, alias `AGENTS_MCP_CONFIG` one release) and `load_mcp_config` merges an optional `<ws>/mcp.json` overlay; `mcp_cache_path()` returns `<host>/cache/mcp-tools-cache.json` (`AGENTS_MCP_CACHE_FILE`, alias `AGENTS_MCP_CACHE`); `content_dir()` returns `<ws>/content`; `configured_timezone` reads `<host>/agents.json` before `<ws>/config.json`; the workspace lock's internal roots are the active workspace plus listed host infra parts (keys, secrets, run, cache, logs, clients, agents.json, mcp.json, users.json) — no `~/.agents` domains.
+- Update-check cache lives at `<host>/cache/updates/updates-<pkg>.json`.
+
+### Removed
+- Archived agents-docs wiring: `runner/modules/mcp.docs*.json` and `runner/schedules/docs_catalog.json`.
 - The workspace boundary is its own switch (`AGENTS_WORKSPACE_LOCK`). `AGENTS_WORKSPACE_DIR` only names the working directory. `AGENTS_WORKSPACE_ALLOW` adds allowed roots.
 - The executor checks only the working directory it hands to a verb. It no longer guesses which argument is a path, so ordinary text with a slash (a branch name, a date) is not refused. Path confinement stays in the terminal, which owns file access.
 

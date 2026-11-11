@@ -269,32 +269,26 @@ def _under(root: Path, path: Path) -> bool:
     return child_s.startswith(prefix)
 
 
-def _agents_home() -> Path:
-    return Workspace.from_env().dir
-
-
 def _internal_roots() -> list[Path]:
     """Dirs the workspace lock must not treat as escapes.
 
-    ``AGENTS_HOME`` is the instance root when a host sets it, otherwise
-    ``~/.agents``. Skills, modules, memory, traces, and schedules stay
-    reachable even when that home is a narrower instance directory.
+    The active workspace's own tree plus explicitly listed host infra parts
+    (keys, secrets, run, cache, logs, clients, agents.json, host mcp.json).
+    Host memory/skills do not exist — they are never allowed (D-host-layer).
     """
-    home = _agents_home()
-    dot = Path.home() / ".agents"
+    ws = Workspace.from_env()
+    host = ws.host
     roots = [
-        home,
-        dot / "skills",
-        dot / "modules",
-        dot / "memory",
-        dot / "traces",
-        dot / "schedules",
-        home / "skills",
-        home / "modules",
-        home / "memory",
-        home / "traces",
-        home / "schedules",
-        home / "routine-runs",
+        ws.dir,
+        host.keys,
+        host.secrets,
+        host.run,
+        host.cache,
+        host.logs,
+        host.clients,
+        host.agents_json,
+        host.mcp_json,
+        host.users_file(),
     ]
     for key in (
         "AGENTS_SKILLS_DIR",

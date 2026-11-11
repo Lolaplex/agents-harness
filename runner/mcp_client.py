@@ -44,17 +44,47 @@ _CACHE_MEM: dict[str, Any] = {"key": None, "modules": []}
 
 
 def mcp_config_path() -> Path:
-    raw = os.environ.get("AGENTS_MCP_CONFIG", "").strip()
+    """Host ``mcp.json``. ``AGENTS_MCP_CONFIG_FILE`` wins (alias
+    ``AGENTS_MCP_CONFIG``, one release)."""
+    raw = os.environ.get("AGENTS_MCP_CONFIG_FILE", "").strip()
+    if not raw:
+        raw = os.environ.get("AGENTS_MCP_CONFIG", "").strip()
+        if raw:
+            import warnings
+
+            warnings.warn(
+                "AGENTS_MCP_CONFIG is deprecated; use AGENTS_MCP_CONFIG_FILE "
+                "(alias removed after one release)",
+                DeprecationWarning,
+                stacklevel=2,
+            )
     if raw:
         return Path(raw).expanduser()
-    return Path.home() / ".agents" / "mcp.json"
+    from agents_workspace import Workspace
+
+    return Workspace.from_env().host.mcp_json
 
 
 def mcp_cache_path() -> Path:
-    raw = os.environ.get("AGENTS_MCP_CACHE", "").strip()
+    """``<host>/cache/mcp-tools-cache.json``. ``AGENTS_MCP_CACHE_FILE`` wins
+    (alias ``AGENTS_MCP_CACHE``, one release)."""
+    raw = os.environ.get("AGENTS_MCP_CACHE_FILE", "").strip()
+    if not raw:
+        raw = os.environ.get("AGENTS_MCP_CACHE", "").strip()
+        if raw:
+            import warnings
+
+            warnings.warn(
+                "AGENTS_MCP_CACHE is deprecated; use AGENTS_MCP_CACHE_FILE "
+                "(alias removed after one release)",
+                DeprecationWarning,
+                stacklevel=2,
+            )
     if raw:
         return Path(raw).expanduser()
-    return Path.home() / ".agents" / "mcp-tools-cache.json"
+    from agents_workspace import Workspace
+
+    return Workspace.from_env().host.cache / "mcp-tools-cache.json"
 
 
 def _cache_ttl() -> float:
@@ -91,16 +121,47 @@ def _interpolate(value: Any) -> Any:
     return value
 
 
-def load_mcp_config(path: Path | None = None) -> dict[str, Any] | None:
-    cfg_path = path or mcp_config_path()
-    if not cfg_path.is_file():
+def _load_one(path: Path) -> dict[str, Any] | None:
+    if not path.is_file():
         return None
     try:
-        data = json.loads(cfg_path.read_text(encoding="utf-8"))
+        data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
-        print(f"[!] MCP config {cfg_path}: {exc}", file=sys.stderr)
+        print(f"[!] MCP config {path}: {exc}", file=sys.stderr)
         return None
-    if not isinstance(data, dict):
+    return data if isinstance(data, dict) else None
+
+
+def _merge_mcp(base: dict[str, Any], overlay: dict[str, Any]) -> dict[str, Any]:
+    """Workspace overlay wins per key; dict sections merge deep."""
+    out = dict(base)
+    for key, value in overlay.items():
+        if isinstance(value, dict) and isinstance(out.get(key), dict):
+            out[key] = {**out[key], **value}
+        else:
+            out[key] = value
+    return out
+
+
+def load_mcp_config(path: Path | None = None) -> dict[str, Any] | None:
+    """Host ``mcp.json`` plus the optional ``<ws>/mcp.json`` overlay
+    (D-mcp-level). An explicit ``path`` short-circuits the merge."""
+    if path is not None:
+        data = _load_one(path)
+        return _interpolate(data) if data is not None else None
+    cfg_path = mcp_config_path()
+    data = _load_one(cfg_path)
+    if data is None and not cfg_path.is_file():
+        return None
+    data = data or {}
+    from agents_workspace import Workspace
+
+    overlay_path = Workspace.from_env().dir / "mcp.json"
+    if overlay_path != cfg_path and overlay_path.is_file():
+        overlay = _load_one(overlay_path)
+        if overlay:
+            data = _merge_mcp(data, overlay)
+    if not data:
         return None
     return _interpolate(data)
 

@@ -57,10 +57,7 @@ def configured_timezone(workspace: "Workspace | None" = None) -> str:
     if tz:
         return tz
     ws = workspace or Workspace.from_env()
-    candidates: list[Path] = [ws.config]
-    legacy = Path.home() / ".agents" / "config.json"
-    if legacy != ws.config:
-        candidates.append(legacy)
+    candidates: list[Path] = [ws.host.agents_json, ws.config]
     for path in candidates:
         if not path.is_file():
             continue
@@ -203,6 +200,9 @@ def run_routine(job: Dict[str, Any], ws: "Workspace | None" = None) -> Dict[str,
     """
     handler = _routine_handler
     prepared = dict(job)
+    if ws is not None:
+        # The ticking workspace owns the manifest; handlers read the object.
+        prepared["workspace_obj"] = ws
     prepared["timeout_sec"] = _job_timeout(prepared)
     if handler is None:
         if prepared.get("verb"):

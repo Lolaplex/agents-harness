@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 from pathlib import Path
 
@@ -31,7 +32,8 @@ def _agents_home_paths() -> list[str]:
     if raw:
         candidates.append(raw)
     candidates.append(str(ws.root))
-    legacy = str(Path.home() / ".agents")
+    candidates.append(str(ws.host.dir))
+    legacy = os.path.expanduser("~/.agents")
     if legacy not in candidates:
         candidates.append(legacy)
     prefixes: list[str] = []
