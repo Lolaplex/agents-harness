@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `workdir_root()` replaces `workspace_root()` (name said workspace, meant workdir). `AGENTS_WORKDIR_LOCK` (alias `AGENTS_WORKSPACE_LOCK`) and `AGENTS_WORKDIR_ALLOW` (alias `AGENTS_WORKSPACE_ALLOW`), each a deprecated one-release alias that warns.
 - `runner.loop --workspace <id>` selects the data workspace explicitly (validated against the Host; default `AGENTS_WORKSPACE`). The resolved `Workspace` object is threaded into modules, skills, schedules, memory rules and the user profile.
 - `runner.schedule.tick()`, `add_schedule`, `list_dynamic_schedules`, `remove_schedule`, `dynamic_schedules_dir` and `configured_timezone` accept `workspace=...` so a host process can tick several workspaces in one process without mutating `os.environ`. Claimed jobs run with `ws.env()` via `execute_job(workspace=...)`.
 - `runner.modules.list_modules`/`find_module`/`find_module_for_tool`/`enabled_tool_names`, `runner.skills` dir/list/load/prompt-block helpers, `runner.user_profile.load_user_profile` and `runner.memory_rules` helpers accept `workspace=...` (default: env-selected workspace).

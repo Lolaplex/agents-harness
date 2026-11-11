@@ -359,3 +359,35 @@ class TestWorkspaceLock(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestWorkdirAliases(unittest.TestCase):
+    def test_workdir_lock_new_name(self):
+        import os, warnings
+        from runner import executor
+        old_lock = os.environ.pop("AGENTS_WORKSPACE_LOCK", None)
+        old_new = os.environ.pop("AGENTS_WORKDIR_LOCK", None)
+        try:
+            os.environ["AGENTS_WORKDIR_LOCK"] = "1"
+            self.assertTrue(executor._lock_on())
+        finally:
+            os.environ.pop("AGENTS_WORKDIR_LOCK", None)
+            if old_lock is not None:
+                os.environ["AGENTS_WORKSPACE_LOCK"] = old_lock
+            if old_new is not None:
+                os.environ["AGENTS_WORKDIR_LOCK"] = old_new
+
+    def test_workspace_lock_alias_warns(self):
+        import os, warnings
+        from runner import executor
+        old = os.environ.pop("AGENTS_WORKDIR_LOCK", None)
+        try:
+            os.environ["AGENTS_WORKSPACE_LOCK"] = "1"
+            with warnings.catch_warnings(record=True) as seen:
+                warnings.simplefilter("always")
+                self.assertTrue(executor._lock_on())
+            self.assertTrue(any("AGENTS_WORKSPACE_LOCK is deprecated" in str(w.message) for w in seen))
+        finally:
+            os.environ.pop("AGENTS_WORKSPACE_LOCK", None)
+            if old is not None:
+                os.environ["AGENTS_WORKDIR_LOCK"] = old
