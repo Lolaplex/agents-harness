@@ -78,7 +78,9 @@ def content_dir() -> Path:
     raw = os.environ.get("AGENTS_CONTENT_DIR", "").strip()
     if raw:
         return Path(raw).expanduser()
-    return Path.home() / ".agents" / "harness-content"
+    from agents_workspace import Workspace
+
+    return Workspace.from_env().content
 
 
 def _normalize_digest(digest: str) -> str:

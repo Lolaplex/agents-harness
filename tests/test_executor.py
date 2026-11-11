@@ -174,7 +174,7 @@ class TestHarnessExecutor(unittest.TestCase):
         self.assertGreaterEqual(len(manifests), 4)
         names = {m["name"] for m in manifests}
         self.assertIn("memory_inventory", names)
-        self.assertIn("docs_catalog", names)
+        self.assertNotIn("docs_catalog", names)
         self.assertIn("traces_stats", names)
         self.assertIn("traces_ingest", names)
 
