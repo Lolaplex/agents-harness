@@ -654,7 +654,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--limit", type=int, default=24, help="History turns to rebuild")
     parser.add_argument("--system", default="", help="Optional instructions blob (stable prefix)")
     parser.add_argument("--provider", default="", help="Provider name (openai.default, echo, …)")
-    parser.add_argument("--persona", default="", help="Persona manifest name (runner/personas/)")
+    parser.add_argument("--persona", default="", help="Persona id (<ws>/personas/<id> first, package fallback; default: AGENTS_PERSONA or the workspace default)")
     parser.add_argument("--assemble-only", action="store_true", help="Print reconstructed payload, no HTTP")
     parser.add_argument("--complete", action="store_true", help="Complete via the selected provider and record")
     parser.add_argument(
@@ -697,6 +697,9 @@ def main(argv: list[str] | None = None) -> int:
             return 2
         ws = host.workspace(args.workspace)
         os.environ["AGENTS_WORKSPACE"] = ws.id
+    from .personas import resolve_persona_id
+    persona_id = resolve_persona_id(args.persona, workspace=ws)
+    os.environ["AGENTS_PERSONA"] = persona_id
 
     try:
         from . import __version__
@@ -788,10 +791,10 @@ def main(argv: list[str] | None = None) -> int:
         except Exception:
             pass
 
-    if args.persona:
+    if persona_id:
         from .personas import persona_system_append
 
-        system = persona_system_append(args.persona, base=system)
+        system = persona_system_append(persona_id, base=system, workspace=ws)
 
     messages = build_payload(
         session,
