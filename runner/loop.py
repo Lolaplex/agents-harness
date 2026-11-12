@@ -622,7 +622,7 @@ def _complete_once(provider: Any, req: CompletionRequest) -> CompletionResult:
     return _coerce_tool_calls(provider.complete(req))
 
 
-def main(argv: list[str] | None = None) -> int:
+def _main_impl(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Per-request loop: assemble trace, complete, or call a Cordis module"
     )
@@ -1061,6 +1061,22 @@ def main(argv: list[str] | None = None) -> int:
         response_flags=response_flags,
     )
     return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Run the loop, restoring host-level env vars it sets for children."""
+    saved = {
+        k: os.environ.get(k)
+        for k in ("AGENTS_PERSONA", "AGENTS_WORKSPACE")
+    }
+    try:
+        return _main_impl(argv)
+    finally:
+        for key, val in saved.items():
+            if val is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = val
 
 
 if __name__ == "__main__":
