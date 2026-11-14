@@ -1,0 +1,169 @@
+{
+  "name": "git",
+  "kind": "mcp",
+  "when": "on_request",
+  "cadence": "on_request",
+  "verb": "python -m runner.git_tool",
+  "rests_on": "git with protected-branch, force-push, and author guards. The default branch is protected when git records it. Force-push is blocked. Authors are not checked unless configured. exit 0 = ran; exit 2 = guard refusal",
+  "expected_exit": 0,
+  "mutates": true,
+  "timeout_sec": 60,
+  "as_tool": true,
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "command": {
+        "type": "string",
+        "description": "policy, status, diff, log, show, rev-parse, add, commit, push, checkout, switch, or branch"
+      },
+      "repo": {
+        "type": "string",
+        "description": "Repository path. Default: AGENTS_GIT_REPO, else the git root of the working directory."
+      },
+      "message": {"type": "string", "description": "Commit message"},
+      "author": {
+        "type": "string",
+        "description": "Commit author as 'Name <email>'. Enforced only when authors are configured."
+      },
+      "remote": {"type": "string"},
+      "branch": {"type": "string", "description": "Push destination branch"},
+      "ref": {"type": "string", "description": "Branch to check out"},
+      "name": {"type": "string", "description": "Branch name for create or delete"},
+      "paths": {
+        "type": "array",
+        "items": {"type": "string"},
+        "description": "Paths to add"
+      },
+      "force": {"type": "boolean", "description": "Force-push. Blocked unless force_push is allow, and never to a protected branch."},
+      "force_with_lease": {"type": "boolean"},
+      "delete": {"type": "boolean", "description": "Delete the named branch. Protected branches are refused."},
+      "staged": {"type": "boolean"},
+      "max_count": {"type": "integer"},
+      "rev": {"type": "string"}
+    },
+    "required": ["command"]
+  },
+  "commands": {
+    "policy": {
+      "side_effects": "read-only",
+      "action": "git.policy",
+      "parameters": {
+        "type": "object",
+        "properties": {"repo": {"type": "string"}}
+      }
+    },
+    "status": {
+      "side_effects": "read-only",
+      "action": "git.status",
+      "parameters": {
+        "type": "object",
+        "properties": {"repo": {"type": "string"}}
+      }
+    },
+    "diff": {
+      "side_effects": "read-only",
+      "action": "git.diff",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "repo": {"type": "string"},
+          "staged": {"type": "boolean"}
+        }
+      }
+    },
+    "log": {
+      "side_effects": "read-only",
+      "action": "git.log",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "repo": {"type": "string"},
+          "max_count": {"type": "integer"}
+        }
+      }
+    },
+    "show": {
+      "side_effects": "read-only",
+      "action": "git.show",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "repo": {"type": "string"},
+          "rev": {"type": "string"}
+        }
+      }
+    },
+    "rev-parse": {
+      "side_effects": "read-only",
+      "action": "git.rev_parse",
+      "parameters": {
+        "type": "object",
+        "properties": {"repo": {"type": "string"}}
+      }
+    },
+    "add": {
+      "side_effects": "mutating",
+      "action": "git.add",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "repo": {"type": "string"},
+          "paths": {"type": "array", "items": {"type": "string"}}
+        },
+        "required": ["paths"]
+      }
+    },
+    "commit": {
+      "side_effects": "mutating",
+      "action": "git.commit",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "repo": {"type": "string"},
+          "message": {"type": "string"},
+          "author": {"type": "string"}
+        }
+      }
+    },
+    "push": {
+      "side_effects": "mutating",
+      "action": "git.push",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "repo": {"type": "string"},
+          "remote": {"type": "string"},
+          "branch": {"type": "string"},
+          "force": {"type": "boolean"},
+          "force_with_lease": {"type": "boolean"},
+          "delete": {"type": "boolean"}
+        }
+      }
+    },
+    "checkout": {
+      "side_effects": "mutating",
+      "action": "git.checkout",
+      "aliases": ["switch"],
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "repo": {"type": "string"},
+          "ref": {"type": "string"}
+        },
+        "required": ["ref"]
+      }
+    },
+    "branch": {
+      "side_effects": "mutating",
+      "action": "git.branch",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "repo": {"type": "string"},
+          "name": {"type": "string"},
+          "delete": {"type": "boolean"}
+        }
+      }
+    }
+  }
+}

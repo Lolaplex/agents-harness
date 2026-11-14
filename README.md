@@ -129,6 +129,20 @@ python -m runner.loop --user 123 --message "what is this?" --attach ./shot.png -
 
 Mutating `call_job` tools ask first when `AGENTS_APPROVAL_CMD` is set. `{user}` in that command becomes the turn's channel user. `AGENTS_APPROVAL_MODE=ask` gates mutators (the default once a command is set). Creating or listing a schedule does not ask in `ask` mode; removing one does. `strict` gates every tool that is not read-only, including schedule create. `off`, or no command, keeps the old behavior. Exit 0 approves, 1 denies, 2 is timeout/unavailable (denied). A denial tells the model not to retry.
 
+Per-action rules sit on that tier. They do not replace it. A rule is `{"action": "git.push:*", "decision": "ask"}` (also `deny` or `allow`). Put the list in host `agents.json` or workspace `config.json` under `approval.rules`, in the file `AGENTS_APPROVAL_POLICY`, or in `AGENTS_APPROVAL_RULES`. Matching rules accumulate. The strictest match wins, so `allow` does not cancel a prompt `ask` or `strict` already requires, and it does not cancel a `deny`. `deny` blocks even when the mode is `off` and no command is set. `ask` prompts only when a command is set, including for a read-only call the tier would skip. With no rules the gate is unchanged.
+
+Action keys are `tool:<module>`, `cmd:<command>` when a declared command matches, the command spec's `action` string, and keys the git tool adds (`git.push`, `git.push:<branch>`, `git.force_push:<branch>`). A manifest declares a stable id without the harness guessing from the command name:
+
+```json
+"delete": {"side_effects": "mutating", "action": "fs.delete"}
+```
+
+`register_action_classifier(fn)` appends keys for a host. It cannot remove keys.
+
+The `git` module (`python -m runner.git_tool`) is the guarded git surface: `status`, `diff`, `log`, `show`, `rev-parse`, `add`, `commit`, `push`, `checkout` / `switch`, `branch`, and `policy`. The default branch is protected when git records it (`origin/HEAD`, or the only local branch). A branch name is never assumed. Push and delete of a protected branch are refused. Force-push (`--force`, `--force-with-lease`, `--force-if-includes`, a `+` refspec, `--mirror`) is refused. `AGENTS_GIT_FORCE_PUSH=allow` permits force-push to a branch that is not protected. `AGENTS_GIT_PROTECTED` replaces the protected list (`$default` is the detected branch, `none` protects nothing). Commit author and committer are not checked unless `authors` is set. `author_mode=allow` refuses a commit whose author or committer is outside that list. `author_mode=require` needs exactly one identity and sets both for that commit only. It does not write git config. The same fields live under config key `git`. A push is blocked when `$default` is configured and the default branch cannot be detected. These guards apply to the `git` tool. A shell started through another module is not intercepted.
+
+Recall before a turn is off. `AGENTS_RECALL=1`, or `"recall": {"enabled": true}` in workspace config, adds one instruction line. Hits are a separate fenced message, capped by `AGENTS_RECALL_MAX_CHARS` (default 4000) and `AGENTS_RECALL_MAX_HITS` (default 5). Sources (`AGENTS_RECALL_SOURCES`, default `registered,command,repo`) are in-process providers (`register_recall_provider`), `AGENTS_RECALL_CMD` (JSON on stdin, JSON hits or plain text on stdout), and a bounded text scan of `AGENTS_RECALL_ROOT` or the workspace workdir. No memory package is imported. `AGENTS_RECALL=0` turns it off even when config enables it. `python -m runner.recall_eval` scores replies for cases whose fact is already known: using it or searching passes; asking for it does not. Leave recall off until those cases pass for the transcripts you care about.
+
 Side effects on a help-json command, or on any manifest that carries the same fields, use `side_effects` (`read-only` or `mutating`), then `mutates`, then `annotations.readOnlyHint`. The command name is not a signal, and neither is the text of the arguments. A command or a module with none of those fields is mutating. `AGENTS_APPROVAL_MODE` still defaults to `off` when no approval command is set, so those tools run without a prompt until someone opts into `ask` or `strict`. In `ask` and `strict`, a module that used to look read-only only because its name ended in `search` or `list` is now asked, unless the manifest sets one of those fields. Bundled manifests set `mutates`. Creating or listing a schedule still does not ask in `ask` mode. `commands_from: "help-json"` runs that module's verb with `--help-json` and caches it. `mcp.terminal` sets this. A declared command is passed through and gated from its own metadata. Other terminal argv still goes to `run --` and stays mutating when help-json is missing.
 
 `mcp.terminal` sets `"pin": true`. The system prompt then lists its hot commands with a ready `call_job` example, so a model does not need `load_schema` for every file operation. The block is capped at 2500 characters and clipped with `[pinned block clipped]`. `AGENTS_PINNED_VERBS=0` disables it. `call_job` does not pass stdin, so the `edit` example uses `--old/--new` and `write` uses `--content`.
@@ -178,6 +192,18 @@ Cron uses the job's `timezone` (else `AGENTS_TIMEZONE`, `TZ`, or `timezone` in `
 | `AGENTS_HISTORY_TOOL_PREVIEW` | 400 | Preview length for each of those results before a ref |
 | `AGENTS_PINNED_VERBS` | 1 | `0`/`false`/`no`/`off` hides the pinned-verb block from the system prompt |
 | `AGENTS_APPROVAL_TIMEOUT` | `--timeout` in the command + 15 s, else 330 s | Seconds to wait for the approval command before denying |
+| `AGENTS_APPROVAL_RULES` | unset | JSON list of `{action, decision}` rules. Merged with file rules; the strictest match wins |
+| `AGENTS_APPROVAL_POLICY` | unset | Path of a JSON policy file (`{"rules": [...]}` or `{"approval": {"rules": [...]}}`) |
+| `AGENTS_GIT_PROTECTED` | `$default` | Comma-separated protected branches. `$default` is the detected default branch. `none` protects nothing |
+| `AGENTS_GIT_FORCE_PUSH` | `deny` | `deny` blocks force-push. `allow` permits it except onto a protected branch |
+| `AGENTS_GIT_AUTHORS` | unset | Allowed commit identities, `Name <email>` separated by `;`, or a JSON list. Unset means no author check |
+| `AGENTS_GIT_AUTHOR_MODE` | `off` | `off` does not check. `allow` requires author and committer to be in the list. `require` sets the single configured identity for that commit |
+| `AGENTS_GIT_REPO` | unset | Repository for the git tool when `--repo` is omitted |
+| `AGENTS_RECALL` | off | `1` enables pre-turn recall. `0` disables it. Unset reads `recall.enabled` (default off) |
+| `AGENTS_RECALL_SOURCES` | `registered,command,repo` | Which recall sources run when recall is on |
+| `AGENTS_RECALL_CMD` | unset | Program that reads a JSON query on stdin and writes hits on stdout |
+| `AGENTS_RECALL_MAX_CHARS` | 4000 | Character budget for retrieved notes |
+| `AGENTS_RECALL_MAX_HITS` | 5 | Maximum number of retrieved notes |
 | `AGENTS_SCHEDULE_GRACE_MIN` | 5 | Minutes a missed cron slot still runs once (a job's `grace_min` wins) |
 | `AGENTS_SCHEDULES_DIR` | `<ws>/schedules` | Dynamic reminder manifests; also an overlay for `runner.executor` schedules |
 | `AGENTS_BUNDLED_SCHEDULES` | `1` | `0`/`false`/`no`/`off` hides the bundled `runner/schedules/` from `runner.executor` |
