@@ -135,14 +135,14 @@ Side effects on a help-json command, or on any manifest that carries the same fi
 
 Every tool result the model sees is wrapped in `<untrusted_data source="...">...</untrusted_data>` after redaction. Only messages the harness builds itself (approval denials, loop notices) stay outside that fence; tool text that merely starts with `Denied:` is still fenced.
 
-Tool stdout and stderr shown to the model use `AGENTS_TOOL_OUTPUT_MAX` characters (default 32768) for the clipped body. Shorter output is unchanged. Longer output keeps the head and the tail and marks the gap as `[... N chars omitted ...]`. That clipped body fits the cap. One `<ref digest="..." sha256="..." chars="..." truncated="1"/>` line is then appended, so the shown string can be longer than the cap by that single line. The same shape applies to schedule tick results and to `call_job` on the harness MCP server. Trace records (`logs/runner.jsonl` and `~/.agents/traces/runner.jsonl`) still store only a 1000-character tail. The full strings are on the in-process `execute_job` result (`stdout`, `stderr`).
+Tool stdout and stderr shown to the model use `AGENTS_TOOL_OUTPUT_MAX` characters (default 32768) for the first page. Shorter output is unchanged. Longer output keeps that prefix. One `<page offset="..." next_offset="..." total="..." truncated="1" digest="..." sha256="..."/>` line is then appended, so the shown string can be longer than the cap by that single line. The same shape applies to schedule tick results and to `call_job` on the harness MCP server. Trace records (`logs/runner.jsonl` and `~/.agents/traces/runner.jsonl`) still store only a 1000-character tail. The full strings are on the in-process `execute_job` result (`stdout`, `stderr`).
 
-`call_job` name `read_content` pages that ref, or any `<ref digest="..."/>` already in the prompt. Arguments are `digest` (12 to 64 hex), `offset` (default 0), `limit` (default 8000; negative reads through the end), and optional `session_id`. The result is `text`, `digest` (SHA-256 of the full body), `total_chars`, and `truncated`. Register a backend in-process or point `AGENTS_CONTENT_READ_CMD` at a program that reads a JSON object on stdin and writes one on stdout:
+`call_job` name `read_content` continues that page. Pass `next` true, or `offset` set to `next_offset`. `digest` is optional for the latest page in this process; pass it for an older `<page>` or `<ref digest="..."/>`. `limit` defaults to `AGENTS_PAGE_CHARS` (32768). A negative limit reads through the end. The result is `text`, `digest` (SHA-256 of the full body), `total_chars`, `truncated`, and `next_offset` when more remains. The same names in `<ws>/config.json` or `<host>/agents.json` apply when the env var is unset (`tool_output_max`, `page_chars`). Register a backend in-process or point `AGENTS_CONTENT_READ_CMD` at a program that reads a JSON object on stdin and writes one on stdout:
 
 ```python
 from runner import register_content_backend, register_final_check
 
-def read_content(session_id, digest, offset=0, limit=8000):
+def read_content(session_id, digest, offset=0, limit=32768):
     # Return text, digest (full sha256), total_chars, truncated.
     # Traces `read_content` matches this when called with those keywords.
     ...
@@ -159,7 +159,13 @@ register_final_check(check)
 
 No backend and no stored body: the tool says the content is unavailable and the model is told not to invent it. The harness does not import agents-traces or agents-memory to do this. Bytes the harness clipped are stored under `AGENTS_CONTENT_DIR` (default `~/.agents/harness-content`) and are readable without a host backend.
 
-Recent tool context includes up to `AGENTS_HISTORY_TOOL_EVENTS` calls (default 12). Each preview is at most `AGENTS_HISTORY_TOOL_PREVIEW` characters (default 400) plus a ref when the body is longer.
+Recent tool context includes up to `AGENTS_HISTORY_TOOL_EVENTS` calls (default 12). Each preview is at most `AGENTS_HISTORY_TOOL_PREVIEW` characters (default 4096) plus a page tag when the body is longer.
+
+grep, glob, and search results get a harness line after the untrusted fence: `<search files_searched="..." truncated="0|1" matches="..."/>`. The tool's own count wins, including a `truncated` line on stderr. When a finished search omits the count, the harness counts files in the workdir up to `AGENTS_SEARCH_MAX_FILES` (default 50000), skipping VCS, dependency, and cache directories. `AGENTS_SEARCH_CENSUS=0` skips that walk. Do not treat a search as complete when `files_searched` is `unknown` or `truncated` is 1.
+
+When the workdir is a git repo, or has `AGENTS.md`, that file is added to the system prompt. `README` fills in when `AGENTS.md` is missing, and a short summary when both exist. `AGENTS_PROJECT_CONTEXT=0` turns this off. `AGENTS_PROJECT_CONTEXT_MAX` (default 24000) bounds the text.
+
+`call_job` name `repo.pre_pr` lists test and build commands discovered from `package.json` scripts, `pyproject.toml`, `Makefile` targets, and fenced commands in `AGENTS.md`. `run` true executes that argv and nothing else. Several projects require `path`. `AGENTS_PRE_PR_TIMEOUT` (default 300 seconds) bounds each command.
 
 A successful mutating call appends `agents_harness.tool_receipt.v1` (`tool`, `args_digest`, `success`, and the tool's own receipt object when the output contains JSON with a `schema`). For a CLI job, success is a zero exit code. `FAILED`, `TIMEOUT`, `ERROR`, and a non-zero `exit_code` are not success, even when stdout contains a receipt object or the text `error:`. The harness does not decide success by scanning tool output. Text the harness itself writes as a failure (`Denied:`, `error: timeout`, `error: non-zero exit`, `refused:`) is also not a receipt. The system prompt says to claim a side effect only when such a receipt exists. `register_final_check` may flag a draft; the loop asks for one revision and puts any remaining findings in the buffered trailer as `response_flags`. Nothing in the harness treats the word "saved" as special.
 
@@ -171,11 +177,18 @@ Cron uses the job's `timezone` (else `AGENTS_TIMEZONE`, `TZ`, or `timezone` in `
 
 | Variable | Default | Effect |
 | --- | --- | --- |
-| `AGENTS_TOOL_OUTPUT_MAX` | 32768 | Max characters of the clipped tool body shown to the model or a schedule caller. Over the cap, the middle is omitted and marked. One trailing `<ref>` line is extra and can make the shown string longer than this cap |
-| `AGENTS_CONTENT_DIR` | `~/.agents/harness-content` | Where clipped tool bodies are stored for `read_content` |
+| `AGENTS_TOOL_OUTPUT_MAX` | 32768 | Max characters of the first tool page shown to the model or a schedule caller. One trailing `<page>` line is extra and can make the shown string longer than this cap |
+| `AGENTS_PAGE_CHARS` | 32768 | `read_content` page size when `limit` is omitted. Workspace key `page_chars` |
+| `AGENTS_CONTENT_DIR` | `<ws>/content` | Where paged tool bodies are stored for `read_content` |
 | `AGENTS_CONTENT_READ_CMD` | unset | Optional host program for digests this process did not store. JSON on stdin, JSON page on stdout |
 | `AGENTS_HISTORY_TOOL_EVENTS` | 12 | How many recent tool results are copied into the next turn |
-| `AGENTS_HISTORY_TOOL_PREVIEW` | 400 | Preview length for each of those results before a ref |
+| `AGENTS_HISTORY_TOOL_PREVIEW` | 4096 | Preview length for each of those results before a page tag |
+| `AGENTS_PROJECT_CONTEXT` | on | `0`/`false`/`no`/`off` skips loading `AGENTS.md` / `README` from the workdir repo |
+| `AGENTS_PROJECT_CONTEXT_MAX` | 24000 | Character budget for that repository context |
+| `AGENTS_SEARCH_CENSUS` | on | `0`/`false`/`no`/`off` does not count files when a search omits `files_searched` |
+| `AGENTS_SEARCH_MAX_FILES` | 50000 | Cap for that count. Hitting it leaves `files_searched` unknown |
+| `AGENTS_SEARCH_SKIP_DIRS` | VCS, dependency, and cache names | `os.pathsep` list that replaces the default skip list. Empty means skip nothing |
+| `AGENTS_PRE_PR_TIMEOUT` | 300 | Seconds for each command `repo.pre_pr` runs |
 | `AGENTS_PINNED_VERBS` | 1 | `0`/`false`/`no`/`off` hides the pinned-verb block from the system prompt |
 | `AGENTS_APPROVAL_TIMEOUT` | `--timeout` in the command + 15 s, else 330 s | Seconds to wait for the approval command before denying |
 | `AGENTS_SCHEDULE_GRACE_MIN` | 5 | Minutes a missed cron slot still runs once (a job's `grace_min` wins) |

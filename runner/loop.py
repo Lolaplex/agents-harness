@@ -28,8 +28,11 @@ from .modules import (
     openai_tools,
 )
 from .providers import CompletionRequest, CompletionResult, find_provider, get_provider, list_providers
+from .pre_pr import PRE_PR_NOTE
+from .project_context import project_context_block
 from .receipts import GROUNDING_NOTE, final_check_findings, format_receipt_context
 from .retrieve import RETRIEVAL_NOTE, iter_refs, tool_history_block
+from .search_report import SEARCH_NOTE
 from .skills import skills_prompt_block
 from .memory_rules import memory_rules_prompt_block
 from .pinned import pinned_verbs_prompt_block
@@ -168,6 +171,8 @@ def _augment_system(system: str, project: str = "", workspace=None) -> str:
     chunks = [system.strip()] if system and system.strip() else []
     chunks.append(FENCE_SYSTEM_NOTE)
     chunks.append(RETRIEVAL_NOTE)
+    chunks.append(SEARCH_NOTE)
+    chunks.append(PRE_PR_NOTE)
     chunks.append(GROUNDING_NOTE)
     rules = memory_rules_prompt_block(project, workspace=workspace)
     if rules:
@@ -178,6 +183,12 @@ def _augment_system(system: str, project: str = "", workspace=None) -> str:
     pinned = pinned_verbs_prompt_block()
     if pinned:
         chunks.append(pinned)
+    try:
+        project_block = project_context_block(workspace)
+    except Exception:
+        project_block = ""
+    if project_block:
+        chunks.append(project_block)
     return "\n\n".join(chunks)
 
 
@@ -245,7 +256,7 @@ def _run_tool_calls(
     default_channel: str = "",
     default_timezone: str = "",
     on_status: Callable[[str], None] | None = None,
-    turn_cache: dict[tuple[str, str], str] | None = None,
+    turn_cache: dict[tuple[str, str], tuple[str, str]] | None = None,
     receipts: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
     """Route tool_calls through the three Cordis tools (closed carrier) with loop protection and trace recording."""
@@ -286,12 +297,16 @@ def _run_tool_calls(
             source = _tool_source(name, raw_args)
 
             if turn_cache is not None and not is_mutator and call_key in turn_cache:
-                prev_out = turn_cache[call_key]
+                prev_out, prev_notice = turn_cache[call_key]
+                replay = fence_untrusted(source, _replay_snippet(prev_out))
+                if prev_notice:
+                    replay = replay + "\n" + prev_notice
                 content = HarnessMessage(
                     f"[Notice: '{name}' was already called with identical arguments earlier in this turn. "
                     "State has not changed. Previous output:] "
-                    + fence_untrusted(source, _replay_snippet(prev_out))
+                    + replay
                 )
+                notice = ""
             else:
                 outcome = run_cordis_tool(
                     name,
@@ -302,6 +317,7 @@ def _run_tool_calls(
                     session=session,
                 )
                 content = outcome.text
+                notice = outcome.notice
                 receipt = receipt_for(outcome)
                 if receipt is not None:
                     batch.append(receipt)
@@ -311,22 +327,27 @@ def _run_tool_calls(
                     if is_mutator:
                         turn_cache.clear()
                     else:
-                        turn_cache[call_key] = content
+                        turn_cache[call_key] = (content, notice)
         else:
             content = HarnessError(f"refused: unknown tool {name} (use call_job with a catalog name)")
+            notice = ""
 
+        recorded = content if not notice else notice + "\n" + content
         _record_tool(
             session=session,
             tool=name,
             args=raw_args,
-            result=content,
-            status="ok" if not content.startswith("refused") else "error",
+            result=recorded,
+            status="ok" if not str(content).startswith("refused") else "error",
         )
+        presented = present_tool_result(source if is_cordis_tool(name) else name, content)
+        if notice:
+            presented = presented + "\n" + notice
         messages.append(
             {
                 "role": "tool",
                 "tool_call_id": call_id,
-                "content": present_tool_result(source if is_cordis_tool(name) else name, content),
+                "content": presented,
             }
         )
     if batch:
@@ -879,7 +900,7 @@ def _main_impl(argv: list[str] | None = None) -> int:
     if (result.text or "").strip():
         last_scratch = result.text.strip()
 
-    turn_cache: dict[tuple[str, str], str] = {}
+    turn_cache: dict[tuple[str, str], tuple[str, str]] = {}
     turn_receipts: list[dict[str, Any]] = []
 
     for _round in range(max_rounds):

@@ -7,7 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Search coverage for grep, glob, and search. The harness appends `<search files_searched="..." truncated="0|1" matches="..."/>` after the untrusted fence. A tool count or a `truncated` stderr line wins. A finished search that omits the count gets a bounded workdir census (`AGENTS_SEARCH_MAX_FILES`, default 50000; `AGENTS_SEARCH_CENSUS=0` skips it; `AGENTS_SEARCH_SKIP_DIRS` replaces the default skip list). Absence claims need an integer `files_searched` and `truncated` 0.
+- Repository context. A git repo in the workdir (or `AGENTS.md` at the workdir) loads `AGENTS.md` into the system prompt, with `README` as the fallback or a short summary. `AGENTS_PROJECT_CONTEXT=0` disables it. `AGENTS_PROJECT_CONTEXT_MAX` (default 24000) bounds it. The same keys live in `<ws>/config.json` or `<host>/agents.json`.
+- `repo.pre_pr` discovers test and build commands from `package.json` scripts, `pyproject.toml`, `Makefile` targets, and fenced commands in `AGENTS.md`, then runs that argv when `run` is true. It does not invent a command. `AGENTS_PRE_PR_TIMEOUT` (default 300) bounds each command.
+
 ### Changed
+- Tool text over `AGENTS_TOOL_OUTPUT_MAX` is a prefix page plus `<page next_offset="..."/>`, not a head-and-tail clip. `read_content` continues with `next` true or `offset` set to `next_offset`. Digest is optional for the latest page in this process. `AGENTS_PAGE_CHARS` (default 32768) is the page size. History preview default is 4096 (`AGENTS_HISTORY_TOOL_PREVIEW`).
 - `.mailmap` maps legacy `Klix`/`Felix Kempf` author names to `Klix927` (no history rewrite; display only).
 
 ### Added
