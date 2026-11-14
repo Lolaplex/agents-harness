@@ -13,10 +13,13 @@ from .helpjson import declared_argv, with_discovered_commands
 from .modules import find_module, find_module_for_tool, list_modules, openai_tool_name
 from .receipts import harness_failure, make_receipt, subprocess_succeeded
 from .redact import redact_tool_output
-from .retrieve import DEFAULT_READ_LIMIT, annotate_clip, read_content, render_read_result
+from .pre_pr import pre_pr_report
+from .retrieve import annotate_clip, read_content, render_read_result
+from .search_report import search_notice, strip_search_tags
 from .skills import format_skill_list, load_skill
 
 _SKILL_MODULES = ("skill.list", "skill.load", "skill.catalog")
+_PRE_PR = "repo.pre_pr"
 
 CORDIS_TOOL_NAMES = ("list_catalog", "load_schema", "call_job")
 
@@ -362,6 +365,7 @@ class CordisOutcome:
     mutating: bool
     arguments: Any
     receipt_source: str = ""
+    notice: str = ""
 
 
 def _outcome(
@@ -372,6 +376,7 @@ def _outcome(
     mutating: bool = False,
     arguments: Any = None,
     receipt_source: str = "",
+    notice: str = "",
 ) -> CordisOutcome:
     return CordisOutcome(
         text=text,
@@ -380,6 +385,7 @@ def _outcome(
         mutating=mutating,
         arguments=arguments if arguments is not None else {},
         receipt_source=receipt_source if receipt_source else text,
+        notice=notice,
     )
 
 
@@ -397,19 +403,39 @@ def _run_read_content(arguments: Any, *, session: str) -> CordisOutcome:
     if set(args.keys()) == {"arguments"} and isinstance(args.get("arguments"), dict):
         args = args["arguments"]
     digest = str(args.get("digest") or args.get("sha256") or "").strip()
-    if not digest:
-        return _outcome(HarnessError("error: read_content requires digest"), success=False, tool="read_content")
-    offset = _read_int(args.get("offset"), 0)
-    if offset is None:
-        return _outcome(HarnessError("error: read_content offset must be an integer"), success=False, tool="read_content")
+    next_page = _cli_flag_set(args.get("next")) or _cli_flag_set(args.get("next_page"))
+    has_offset = "offset" in args and args.get("offset") not in (None, "")
+    if has_offset:
+        offset: int | None = _read_int(args.get("offset"), 0)
+        if offset is None:
+            return _outcome(
+                HarnessError("error: read_content offset must be an integer"),
+                success=False,
+                tool="read_content",
+            )
+    elif next_page or not digest:
+        offset = None
+        next_page = True
+    else:
+        offset = 0
+    limit_kwargs: dict[str, Any] = {}
     if "limit" in args and args.get("limit") not in (None, ""):
         limit = _read_int(args.get("limit"), 0)
         if limit is None:
-            return _outcome(HarnessError("error: read_content limit must be an integer"), success=False, tool="read_content")
-    else:
-        limit = DEFAULT_READ_LIMIT
+            return _outcome(
+                HarnessError("error: read_content limit must be an integer"),
+                success=False,
+                tool="read_content",
+            )
+        limit_kwargs["limit"] = limit
     session_id = str(args.get("session_id") or args.get("session") or session or "")
-    page = read_content(session_id, digest, offset=offset, limit=limit)
+    page = read_content(
+        session_id,
+        digest,
+        offset=offset,
+        next_page=next_page,
+        **limit_kwargs,
+    )
     text = render_read_result(page)
     return _outcome(text, success=bool(page.get("available")), tool="read_content", arguments=args)
 
@@ -495,6 +521,11 @@ def run_cordis_tool(
         job_args = args.get("arguments")
         if job_args is None:
             job_args = {k: v for k, v in args.items() if k != "name"}
+        if str(mod.get("name") or mod_name) == _PRE_PR and isinstance(job_args, dict):
+            running = _cli_flag_set(job_args.get("run"))
+            mod = dict(mod)
+            mod["side_effects"] = "mutating" if running else "read-only"
+            mod["mutates"] = running
         if str(mod.get("name") or "") == "mcp.schedule.add" and isinstance(job_args, dict):
             job_args = dict(job_args)
             if not job_args.get("user") and default_user:
@@ -542,6 +573,17 @@ def run_cordis_tool(
             )
         if tool_name == "read_content":
             return _run_read_content(job_args, session=session)
+        if tool_name == _PRE_PR:
+            report, ok = pre_pr_report(job_args)
+            text = _visible_output(report, session_id=session)
+            return _outcome(
+                text,
+                success=ok and not harness_failure(text),
+                tool=tool_name,
+                mutating=mutating,
+                arguments=job_args,
+                receipt_source=report,
+            )
         if str(mod.get("kind") or "") == "mcp_remote":
             from .mcp_client import RemoteToolError, call_remote
 
@@ -562,20 +604,37 @@ def run_cordis_tool(
                     receipt_source=message,
                 )
             failed = isinstance(remote_out, RemoteToolError)
-            redacted = redact_tool_output(remote_out or "")
+            shown, source, notice = _search_visible(
+                mod,
+                job_args,
+                remote_out or "",
+                "",
+                session_id=session,
+            )
             return _outcome(
-                _visible_output(remote_out or "", session_id=session),
+                shown,
                 success=not failed,
                 tool=tool_name,
                 mutating=mutating,
                 arguments=job_args,
-                receipt_source=redacted,
+                receipt_source=source,
+                notice=notice,
             )
         extra = _arguments_to_argv(mod, job_args)
         rec = execute_job(mod, extra_argv=extra or None)
         ok = subprocess_succeeded(rec)
+        notice = ""
         if ok:
-            shown, source = _job_visible_text(rec, failed=False, session_id=session)
+            raw_out = rec.get("stdout")
+            if raw_out is None:
+                raw_out = rec.get("stdout_tail") or ""
+            shown, source, notice = _search_visible(
+                mod,
+                job_args,
+                str(raw_out),
+                str(rec.get("stderr") or ""),
+                session_id=session,
+            )
         else:
             err = str(rec.get("stderr") or rec.get("stderr_tail") or "").strip()
             if err:
@@ -599,6 +658,7 @@ def run_cordis_tool(
             mutating=mutating,
             arguments=job_args,
             receipt_source=source,
+            notice=notice,
         )
     return _outcome(HarnessError(f"unknown cordis tool {name}"), success=False, tool=name)
 
@@ -614,6 +674,20 @@ def receipt_for(outcome: CordisOutcome) -> dict[str, Any] | None:
     )
 
 
+def _search_visible(
+    mod: dict[str, Any],
+    job_args: Any,
+    stdout: str,
+    stderr: str,
+    *,
+    session_id: str,
+) -> tuple[str, str, str]:
+    """Page stdout. A search coverage line stays out of the paged body."""
+    notice = search_notice(mod, job_args, stdout, stderr)
+    body = strip_search_tags(stdout) if notice else stdout
+    return _visible_output(body, session_id=session_id), redact_tool_output(body), notice
+
+
 def handle_cordis_tool(
     name: str,
     call: dict[str, Any],
@@ -623,14 +697,17 @@ def handle_cordis_tool(
     default_timezone: str = "",
     session: str = "",
 ) -> str:
-    return run_cordis_tool(
+    outcome = run_cordis_tool(
         name,
         call,
         default_user=default_user,
         default_channel=default_channel,
         default_timezone=default_timezone,
         session=session,
-    ).text
+    )
+    if outcome.notice:
+        return outcome.text + "\n" + outcome.notice
+    return outcome.text
 
 
 def is_cordis_tool(name: str) -> bool:
