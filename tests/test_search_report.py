@@ -11,6 +11,7 @@ from unittest.mock import patch
 
 from runner.loop import _run_tool_calls
 from runner.search_report import search_notice
+from runner.workspace_tree import DEFAULT_SKIP_DIRS
 
 
 class TestSearchNotice(unittest.TestCase):
@@ -46,6 +47,8 @@ class TestSearchNotice(unittest.TestCase):
             (root / "README.md").write_text("y", encoding="utf-8")
             (root / "node_modules").mkdir()
             (root / "node_modules" / "skip.js").write_text("z", encoding="utf-8")
+            (root / ".relay-inbox").mkdir()
+            (root / ".relay-inbox" / "shot.png").write_text("img", encoding="utf-8")
             with patch.dict(os.environ, {"AGENTS_WORKDIR": tmp}, clear=False):
                 notice = search_notice(
                     {"name": "mcp.terminal"},
@@ -53,6 +56,7 @@ class TestSearchNotice(unittest.TestCase):
                     "",
                     "",
                 )
+        self.assertIn(".relay-inbox", DEFAULT_SKIP_DIRS)
         self.assertIn('files_searched="2"', notice)
         self.assertIn('truncated="0"', notice)
         self.assertIn('matches="0"', notice)

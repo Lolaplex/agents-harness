@@ -11,6 +11,7 @@ DEFAULT_SKIP_DIRS = frozenset(
         ".git",
         ".hg",
         ".svn",
+        ".relay-inbox",
         "node_modules",
         ".venv",
         "venv",

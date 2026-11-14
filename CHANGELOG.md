@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `repo.pre_pr` discovers test and build commands from `package.json` scripts, `pyproject.toml`, `Makefile` targets, and fenced commands in `AGENTS.md`, then runs that argv when `run` is true. It does not invent a command. `AGENTS_PRE_PR_TIMEOUT` (default 300) bounds each command.
 
 ### Changed
+- The workspace tree skips `.relay-inbox`, where agents-relay copies chat attachments.
 - Tool text over `AGENTS_TOOL_OUTPUT_MAX` is a prefix page plus `<page next_offset="..."/>`, not a head-and-tail clip. `read_content` continues with `next` true or `offset` set to `next_offset`. Digest is optional for the latest page in this process. `AGENTS_PAGE_CHARS` (default 32768) is the page size. History preview default is 4096 (`AGENTS_HISTORY_TOOL_PREVIEW`).
 - `.mailmap` maps legacy `Klix`/`Felix Kempf` author names to `Klix927` (no history rewrite; display only).
 
