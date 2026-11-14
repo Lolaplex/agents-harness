@@ -422,6 +422,7 @@ def run_cordis_tool(
     default_channel: str = "",
     default_timezone: str = "",
     session: str = "",
+    workspace: Any = None,
 ) -> CordisOutcome:
     """Execute one Cordis tool. Receipts are derived from this outcome."""
     tool = name.strip().lower()
@@ -478,6 +479,7 @@ def run_cordis_tool(
                 default_channel=default_channel,
                 default_timezone=default_timezone,
                 session=session,
+                workspace=workspace,
             )
             return inner
         if mod_name == "read_content":
@@ -509,6 +511,7 @@ def run_cordis_tool(
             job_args if isinstance(job_args, dict) else {"arguments": job_args},
             session=session,
             user=default_user,
+            workspace=workspace,
         )
         tool_name = str(mod.get("name") or mod_name)
         if not allowed:
@@ -622,6 +625,7 @@ def handle_cordis_tool(
     default_channel: str = "",
     default_timezone: str = "",
     session: str = "",
+    workspace: Any = None,
 ) -> str:
     return run_cordis_tool(
         name,
@@ -630,6 +634,7 @@ def handle_cordis_tool(
         default_channel=default_channel,
         default_timezone=default_timezone,
         session=session,
+        workspace=workspace,
     ).text
 
 

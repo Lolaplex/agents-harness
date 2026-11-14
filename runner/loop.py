@@ -33,6 +33,7 @@ from .retrieve import RETRIEVAL_NOTE, iter_refs, tool_history_block
 from .skills import skills_prompt_block
 from .memory_rules import memory_rules_prompt_block
 from .pinned import pinned_verbs_prompt_block
+from .recall import recall_message, recall_prompt_line
 
 
 def _assemble(session: str, limit: int) -> list[dict[str, Any]]:
@@ -178,6 +179,9 @@ def _augment_system(system: str, project: str = "", workspace=None) -> str:
     pinned = pinned_verbs_prompt_block()
     if pinned:
         chunks.append(pinned)
+    line = recall_prompt_line(workspace)
+    if line:
+        chunks.append(line)
     return "\n\n".join(chunks)
 
 
@@ -247,6 +251,7 @@ def _run_tool_calls(
     on_status: Callable[[str], None] | None = None,
     turn_cache: dict[tuple[str, str], str] | None = None,
     receipts: list[dict[str, Any]] | None = None,
+    workspace: Any = None,
 ) -> list[dict[str, Any]]:
     """Route tool_calls through the three Cordis tools (closed carrier) with loop protection and trace recording."""
     messages: list[dict[str, Any]] = []
@@ -300,6 +305,7 @@ def _run_tool_calls(
                     default_channel=default_channel,
                     default_timezone=default_timezone,
                     session=session,
+                    workspace=workspace,
                 )
                 content = outcome.text
                 receipt = receipt_for(outcome)
@@ -455,6 +461,9 @@ def build_payload(
             messages.append(
                 {"role": "system", "content": f"<clock>{weekday} {stamp}</clock>"}
             )
+        notes = recall_message(user_message, workspace=workspace, project=project)
+        if notes:
+            messages.append({"role": "system", "content": notes})
         if user_content:
             messages.append({"role": "user", "content": user_content})
         return messages
@@ -475,6 +484,9 @@ def build_payload(
     messages.extend(_assemble(session, limit=limit))
     if include_clock:
         messages.append(clock_message(timezone_name=timezone_name))
+    notes = recall_message(user_message, workspace=workspace, project=project)
+    if notes:
+        messages.append({"role": "system", "content": notes})
     if user_content:
         messages.append({"role": "user", "content": user_content})
     return messages
@@ -894,6 +906,7 @@ def _main_impl(argv: list[str] | None = None) -> int:
             on_status=on_status,
             turn_cache=turn_cache,
             receipts=turn_receipts,
+            workspace=ws,
         )
         messages.append(
             {
@@ -949,6 +962,7 @@ def _main_impl(argv: list[str] | None = None) -> int:
             on_status=on_status,
             turn_cache=turn_cache,
             receipts=turn_receipts,
+            workspace=ws,
         )
         messages.append(
             {

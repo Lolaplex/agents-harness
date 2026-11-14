@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Git tool `git` (`python -m runner.git_tool`). The repository's default branch is protected when git records it (`origin/HEAD`, otherwise the only local branch). No branch name is assumed. Force-push is blocked. Commit author and committer are checked only when a `Name <email>` list is configured (`allow` checks, `require` sets both for that commit and does not write git config). `AGENTS_GIT_PROTECTED=none` clears branch protection. `AGENTS_GIT_FORCE_PUSH=allow` permits force-push except onto a protected branch.
+- Approval policy layered on `off` / `ask` / `strict`. Rules in host `agents.json`, workspace `config.json` (`approval.rules`), `AGENTS_APPROVAL_POLICY`, or `AGENTS_APPROVAL_RULES` match action keys such as `git.push:<branch>` and `fs.delete`. `deny` blocks. `ask` prompts when an approval command is set. `allow` does not remove a prompt the tier already requires. No rules leaves the gate unchanged. Hosts add keys with `register_action_classifier`.
+- Pre-turn recall, off unless `AGENTS_RECALL=1` or `recall.enabled` in workspace config. One instruction line, plus a bounded fenced note when a provider returns hits. Providers are `register_recall_provider`, `AGENTS_RECALL_CMD`, and an optional bounded repo scan. `python -m runner.recall_eval` scores whether a reply used or searched for a known fact instead of asking for it.
+
 ### Changed
 - `.mailmap` maps legacy `Klix`/`Felix Kempf` author names to `Klix927` (no history rewrite; display only).
 
