@@ -47,21 +47,20 @@ DEFAULT_TOOL_OUTPUT_MAX = 32768
 
 
 def tool_output_max() -> int:
-    """Character cap for tool text shown to a model or a schedule caller.
+    """Character cap for the first page of tool text shown to a model.
 
-    ``AGENTS_TOOL_OUTPUT_MAX`` overrides the default. A non-integer or a
-    negative value falls back to the default. Zero is a real cap.
+    ``AGENTS_TOOL_OUTPUT_MAX`` overrides workspace config ``tool_output_max``,
+    which overrides the default. A non-integer or a negative value falls back
+    to the default. Zero is a real cap.
     """
-    raw = os.environ.get("AGENTS_TOOL_OUTPUT_MAX", "").strip()
-    if not raw:
-        return DEFAULT_TOOL_OUTPUT_MAX
-    try:
-        value = int(raw)
-    except ValueError:
-        return DEFAULT_TOOL_OUTPUT_MAX
-    if value < 0:
-        return DEFAULT_TOOL_OUTPUT_MAX
-    return value
+    from .settings import int_setting
+
+    return int_setting(
+        "AGENTS_TOOL_OUTPUT_MAX",
+        "tool_output_max",
+        DEFAULT_TOOL_OUTPUT_MAX,
+        minimum=0,
+    )
 
 
 def clip_tool_output(text: str, limit: int | None = None) -> str:
@@ -127,10 +126,10 @@ def clip_tool_output(text: str, limit: int | None = None) -> str:
 def present_job_result(record: Dict[str, Any]) -> Dict[str, Any]:
     """Copy a job record for a model or a user.
 
-    Full ``stdout`` and ``stderr`` are not included. Those strings are clipped
-    into the tail fields. A clipped field keeps a ``<ref>`` so ``read_content``
-    can load the full text. The trace record written by ``execute_job`` is
-    separate and still holds only the short tail.
+    Full ``stdout`` and ``stderr`` are not included. Those strings are paged
+    into the tail fields. A paged field keeps a ``<page .../>`` line so
+    ``read_content`` can load the next page. The trace record written by
+    ``execute_job`` is separate and still holds only the short tail.
     """
     from .retrieve import annotate_clip
 

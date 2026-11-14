@@ -14,21 +14,24 @@
     "properties": {
       "digest": {
         "type": "string",
-        "description": "12 to 64 hex digest from a <ref digest=\"...\"> or the sha256 attribute. This is the address of the full body."
+        "description": "Optional 12 to 64 hex digest from a <page digest=\"...\"> or <ref digest=\"...\">. Omit to continue the latest page in this turn."
+      },
+      "next": {
+        "type": "boolean",
+        "description": "Continue the latest page. Offset becomes that page's next_offset. Digest is optional."
       },
       "session_id": {
         "type": "string",
-        "description": "Session the ref belongs to. Omit to use the current turn session. Passed through to the host backend."
+        "description": "Session the page belongs to. Omit to use the current turn session. Passed through to the host backend."
       },
       "offset": {
         "type": "integer",
-        "description": "Character offset into the full body. Default 0. The next page starts at offset plus the length of the returned text."
+        "description": "Character offset into the full body. Omit with next true to use next_offset from the latest page."
       },
       "limit": {
         "type": "integer",
-        "description": "Maximum characters to return. Default 8000. A negative limit reads through the end."
+        "description": "Maximum characters to return. Default is AGENTS_PAGE_CHARS (32768) or workspace config page_chars. A negative limit reads through the end."
       }
-    },
-    "required": ["digest"]
+    }
   }
 }

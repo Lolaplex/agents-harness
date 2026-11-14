@@ -22,19 +22,24 @@ from pathlib import Path
 from typing import Any, Callable
 
 RETRIEVAL_NOTE = (
-    "When text contains a <ref digest=\"...\" .../> address or an omission marker "
-    "like [... N chars omitted ...], fetch that digest before summarizing or "
-    "quoting the missing part. Use call_job with name read_content and arguments "
-    "digest, offset, and limit. The next page starts at offset plus the length of "
-    "the returned text. If read_content says the content is unavailable, say so. "
+    "Long tool output is a prefix page, not a sample of both ends. "
+    "A page ends with <page offset=\"...\" next_offset=\"...\" total=\"...\" "
+    "truncated=\"1\" digest=\"...\"/>. "
+    "Call call_job read_content with next true to continue the latest page in this turn. "
+    "Or pass offset set to next_offset. "
+    "Digest is optional for that latest page. Pass digest when the page tag names an older body. "
+    "A negative limit reads through the end. "
+    "The result includes next_offset when more text remains. "
+    "If read_content says the content is unavailable, say so. "
     "Do not invent or summarize text you have not retrieved."
 )
 
-DEFAULT_READ_LIMIT = 8000
-TOOL_PREVIEW_CHARS = 400
+DEFAULT_READ_LIMIT = 32768
+TOOL_PREVIEW_CHARS = 4096
 TOOL_EVENT_LIMIT = 12
 
 _REF_TAG = re.compile(r"<ref\s+([^>]*?)\s*/?>", re.IGNORECASE)
+_PAGE_TAG = re.compile(r"<page\b[^>]*/>", re.IGNORECASE)
 _ATTR = re.compile(r'([A-Za-z_][A-Za-z0-9_]*)="([^"]*)"')
 _HEX = frozenset("0123456789abcdef")
 
@@ -42,6 +47,7 @@ ContentBackend = Callable[..., Any]
 
 _backend: ContentBackend | None = None
 _memory: dict[str, str] = {}
+_cursors: dict[str, dict[str, Any]] = {}
 
 
 def register_content_backend(backend: ContentBackend | None) -> ContentBackend | None:
@@ -68,6 +74,7 @@ def reset_content_state() -> None:
     global _backend
     _backend = None
     _memory.clear()
+    _cursors.clear()
 
 
 def content_sha256(text: str) -> str:
@@ -119,6 +126,62 @@ def format_ref(sha256: str, chars: int, *, session_id: str = "", digest: str = "
         safe = str(session_id).replace('"', "'").replace("\n", " ")
         attrs.append(f'session="{safe}"')
     return "<ref " + " ".join(attrs) + "/>"
+
+
+def format_page(
+    *,
+    offset: int,
+    next_offset: int,
+    total: int,
+    sha256: str,
+    session_id: str = "",
+) -> str:
+    """Continuation address. The shown body is the prefix; this line is extra."""
+    short = sha256.strip().lower()[:12]
+    attrs = [
+        f'offset="{int(offset)}"',
+        f'next_offset="{int(next_offset)}"',
+        f'total="{int(total)}"',
+        'truncated="1"',
+        f'digest="{short}"',
+        f'sha256="{sha256.strip().lower()}"',
+    ]
+    if session_id:
+        safe = str(session_id).replace('"', "'").replace("\n", " ")
+        attrs.append(f'session="{safe}"')
+    return "<page " + " ".join(attrs) + "/>"
+
+
+def page_limit(workspace: Any = None) -> int:
+    """``read_content`` page size. Env ``AGENTS_PAGE_CHARS``, else config ``page_chars``."""
+    from .settings import int_setting
+
+    return int_setting(
+        "AGENTS_PAGE_CHARS",
+        "page_chars",
+        DEFAULT_READ_LIMIT,
+        minimum=1,
+        workspace=workspace,
+    )
+
+
+def iter_pages(text: str) -> list[str]:
+    return [match.group(0) for match in _PAGE_TAG.finditer(text or "")]
+
+
+def _track_cursor(session_id: str, sha: str, next_offset: int, total: int) -> None:
+    if len(sha) != 64:
+        return
+    slot = {"sha": sha, "next_offset": int(next_offset), "total": int(total)}
+    _cursors[""] = slot
+    if session_id:
+        _cursors[session_id] = slot
+
+
+def _cursor_for(session_id: str) -> dict[str, Any] | None:
+    if session_id and session_id in _cursors:
+        return _cursors[session_id]
+    return _cursors.get("")
 
 
 def parse_ref_attrs(tag: str) -> dict[str, str]:
@@ -359,17 +422,69 @@ def _command_backend(session_id: str, digest: str, offset: int, limit: int | Non
     return page if page is not None else _unavailable(digest, "content_unavailable")
 
 
+def _resolve_address(
+    session_id: str,
+    digest: str,
+    offset: int | None,
+    *,
+    next_page: bool,
+) -> tuple[str, int] | dict[str, Any]:
+    """Pick the body and offset. An empty digest continues the latest page."""
+    query = (digest or "").strip().lower()
+    slot = _cursor_for(session_id or "")
+    if not query:
+        if not slot:
+            return _unavailable("", "not_found")
+        query = str(slot.get("sha") or "")
+        if offset is None or next_page:
+            offset = int(slot.get("next_offset") or 0)
+    elif next_page or offset is None:
+        if slot and (str(slot.get("sha") or "") == query or str(slot.get("sha") or "").startswith(query)):
+            offset = int(slot.get("next_offset") or 0)
+        elif offset is None:
+            offset = 0
+    if offset is None:
+        offset = 0
+    return query, offset
+
+
+class _UsePageDefault:
+    """Sentinel: omitted ``limit`` reads ``page_limit()`` at call time."""
+
+
+_USE_PAGE_DEFAULT = _UsePageDefault()
+
+
+def _finish_page(session_id: str, page: dict[str, Any]) -> dict[str, Any]:
+    if page.get("available"):
+        sha = str(page.get("digest") or "")
+        offset = page.get("offset") if isinstance(page.get("offset"), int) else 0
+        text = "" if page.get("text") is None else str(page.get("text"))
+        total = page.get("total_chars") if isinstance(page.get("total_chars"), int) else offset + len(text)
+        _track_cursor(session_id, sha, offset + len(text), total)
+    return page
+
+
 def read_content(
     session_id: str,
     digest: str,
-    offset: int = 0,
-    limit: int | None = DEFAULT_READ_LIMIT,
+    offset: int | None = 0,
+    limit: Any = _USE_PAGE_DEFAULT,
+    *,
+    next_page: bool = False,
 ) -> dict[str, Any]:
     """Return one page or an unavailable object. Never synthesizes a body.
 
     Local clips are checked first. Then the registered backend, then
     ``AGENTS_CONTENT_READ_CMD``. ``limit < 0`` or ``None`` reads through the end.
+    An empty ``digest`` with ``next_page`` continues the latest page in this process.
     """
+    resolved = _resolve_address(session_id or "", digest, offset, next_page=next_page)
+    if isinstance(resolved, dict):
+        return resolved
+    digest, offset = resolved
+    if isinstance(limit, _UsePageDefault):
+        limit = page_limit()
     if offset < 0:
         return _unavailable(str(digest or ""), "invalid_offset")
     window: int | None
@@ -394,14 +509,17 @@ def read_content(
         full_text = matches[0]
         piece, truncated = _window(full_text, offset, window)
         sha = content_sha256(full_text)
-        return _page(
-            piece,
-            digest=sha,
-            total_chars=len(full_text),
-            truncated=truncated,
-            offset=offset,
-            limit=window,
-            extra={"digest_short": sha[:12]},
+        return _finish_page(
+            session_id or "",
+            _page(
+                piece,
+                digest=sha,
+                total_chars=len(full_text),
+                truncated=truncated,
+                offset=offset,
+                limit=window,
+                extra={"digest_short": sha[:12]},
+            ),
         )
 
     if _backend is not None:
@@ -411,12 +529,12 @@ def read_content(
             return _unavailable(query, _error_code(exc))
         page = _from_backend_value(value, query=query, offset=offset, limit=window)
         if page is not None:
-            return page
+            return _finish_page(session_id or "", page)
         return _unavailable(query, "not_found")
 
     commanded = _command_backend(session_id or "", query, offset, window)
     if commanded is not None:
-        return commanded
+        return _finish_page(session_id or "", commanded)
     return _unavailable(query, "not_found")
 
 
@@ -444,17 +562,25 @@ def render_read_result(page: dict[str, Any]) -> str:
         shown["digest_short"] = page["digest_short"]
     if "stored_truncated" in page:
         shown["stored_truncated"] = bool(page.get("stored_truncated"))
+    offset = page.get("offset") if isinstance(page.get("offset"), int) else 0
+    text = "" if page.get("text") is None else str(page.get("text"))
+    total = page.get("total_chars") if isinstance(page.get("total_chars"), int) else len(text)
+    if page.get("truncated") and text and offset + len(text) < total:
+        shown["next_offset"] = offset + len(text)
+    else:
+        shown["next_offset"] = None
     return json.dumps(shown, ensure_ascii=False)
 
 
 def annotate_clip(text: str, limit: int | None = None, *, session_id: str = "") -> str:
-    """Clip like ``clip_tool_output`` and append one ref line when text was removed.
+    """Keep a prefix page and append one ``<page .../>`` line when text was removed.
 
-    The clipped body fits ``limit``. The trailing ``<ref .../>`` line is extra,
-    so the returned string can be longer than ``limit`` by that one line.
-    The stored body is the full string passed in (already redacted by the caller).
+    The page body fits ``limit``. The trailing page line is extra, so the
+    returned string can be longer than ``limit`` by that one line. The stored
+    body is the full string passed in (already redacted by the caller).
+    Continue with ``read_content`` ``next`` true, or ``offset`` = ``next_offset``.
     """
-    from .executor import clip_tool_output, tool_output_max
+    from .executor import tool_output_max
 
     body = "" if text is None else str(text)
     cap = tool_output_max() if limit is None else limit
@@ -462,33 +588,46 @@ def annotate_clip(text: str, limit: int | None = None, *, session_id: str = "") 
         cap = int(cap)
     except (TypeError, ValueError):
         cap = tool_output_max()
-    clipped = clip_tool_output(body, cap)
-    if clipped == body:
+    if cap < 0:
+        cap = tool_output_max()
+    if len(body) <= cap:
         return body
-    ref = remember_content(body, session_id=session_id)
-    return clipped + "\n" + ref
+    sha = content_sha256(body)
+    remember_content(body, session_id=session_id)
+    page = body[:cap] if cap > 0 else ""
+    _track_cursor(session_id, sha, len(page), len(body))
+    tag = format_page(
+        offset=0,
+        next_offset=len(page),
+        total=len(body),
+        sha256=sha,
+        session_id=session_id,
+    )
+    if not page:
+        return tag
+    return page + "\n" + tag
 
 
 def _preview_limit() -> int:
-    raw = os.environ.get("AGENTS_HISTORY_TOOL_PREVIEW", "").strip()
-    if not raw:
-        return TOOL_PREVIEW_CHARS
-    try:
-        value = int(raw)
-    except ValueError:
-        return TOOL_PREVIEW_CHARS
-    return value if value >= 0 else TOOL_PREVIEW_CHARS
+    from .settings import int_setting
+
+    return int_setting(
+        "AGENTS_HISTORY_TOOL_PREVIEW",
+        "history_tool_preview",
+        TOOL_PREVIEW_CHARS,
+        minimum=0,
+    )
 
 
 def _event_limit() -> int:
-    raw = os.environ.get("AGENTS_HISTORY_TOOL_EVENTS", "").strip()
-    if not raw:
-        return TOOL_EVENT_LIMIT
-    try:
-        value = int(raw)
-    except ValueError:
-        return TOOL_EVENT_LIMIT
-    return value if value >= 0 else TOOL_EVENT_LIMIT
+    from .settings import int_setting
+
+    return int_setting(
+        "AGENTS_HISTORY_TOOL_EVENTS",
+        "history_tool_events",
+        TOOL_EVENT_LIMIT,
+        minimum=0,
+    )
 
 
 def _event_meta(event: Any) -> dict[str, Any]:
@@ -497,6 +636,9 @@ def _event_meta(event: Any) -> dict[str, Any]:
 
 
 def _preserved_ref(text: str, meta: dict[str, Any], *, session_id: str) -> str:
+    pages = iter_pages(text)
+    if pages:
+        return pages[-1]
     found = iter_refs(text)
     if found:
         return found[-1]
@@ -514,13 +656,13 @@ def _preserved_ref(text: str, meta: dict[str, Any], *, session_id: str) -> str:
 
 
 def tool_history_block(events: list[Any], *, session_id: str = "") -> str:
-    """Bounded recent tool evidence. Longer bodies keep a retrievable ref.
+    """Bounded recent tool evidence. Longer bodies keep a page address.
 
     The newest ``AGENTS_HISTORY_TOOL_EVENTS`` calls are included (default 12).
     Each preview is at most ``AGENTS_HISTORY_TOOL_PREVIEW`` characters
-    (default 400). Older calls outside that count are not copied. A body that
-    is already a traces prefix keeps that ref and is not stored as if it were
-    the full text.
+    (default 4096). Older calls outside that count are not copied. A body that
+    already carries a page or ref tag keeps that tag and is not stored as if
+    the preview were the full text.
     """
     limit = _event_limit()
     preview = _preview_limit()
@@ -549,8 +691,8 @@ def tool_history_block(events: list[Any], *, session_id: str = "") -> str:
             lines.append(line)
             continue
         if preview >= 0 and len(full) > preview:
-            ref = remember_content(full, session_id=session_id)
-            lines.append(f"- {label}: {full[:preview]}\n  {ref}")
+            shown = annotate_clip(full, limit=preview, session_id=session_id)
+            lines.append(f"- {label}: {shown}")
             continue
         lines.append(f"- {label}: {full}")
     if not lines:

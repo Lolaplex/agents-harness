@@ -145,10 +145,11 @@ class TestRetrieve(unittest.TestCase):
             body = f"EVENT{i}-" + ("m" * 500) + f"-END{i}"
             fulls.append(body)
             events.append(SimpleNamespace(tool="call_job", args={"name": f"mod.{i}"}, result=body, metadata={}))
-        block = tool_history_block(events, session_id="ses_hist")
+        with patch.dict(os.environ, {"AGENTS_HISTORY_TOOL_PREVIEW": "400"}, clear=False):
+            block = tool_history_block(events, session_id="ses_hist")
         self.assertIn("mod.0", block)
         self.assertIn("mod.4", block)
-        self.assertEqual(block.count("<ref "), 5)
+        self.assertEqual(block.count("<page "), 5)
         digest = block.split('digest="', 1)[1].split('"', 1)[0]
         page = read_content("ses_hist", digest, offset=0, limit=-1)
         self.assertEqual(page["text"], fulls[0])
