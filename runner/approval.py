@@ -12,6 +12,11 @@ The command gets one JSON object on stdin and exits 0 (approved), 1 (denied),
 or 2 (timeout / unavailable, treated as denied). ``{user}`` in the command is
 replaced with the turn's channel user before the process starts.
 
+Per-action rules (``runner.approval_policy``) sit on top of these tiers.
+``deny`` blocks the call. ``ask`` adds a prompt when a command is set, including
+when the tier is ``off``. ``allow`` does not remove a prompt the tier already
+requires. With no rules, behavior is unchanged.
+
 Denied results are harness instructions. They are not untrusted tool data, and
 they tell the model not to retry the same call.
 """
@@ -166,6 +171,7 @@ def request_approval(
     session: str = "",
     user: str = "",
     summary: str = "",
+    actions: list[str] | None = None,
 ) -> tuple[bool, str]:
     """Run the approval command. ``(True, "")`` means proceed."""
     req_id = str(uuid.uuid4())
@@ -177,6 +183,8 @@ def request_approval(
         "args": _jsonable(args),
         "summary": summary or summarize(tool, args),
     }
+    if actions:
+        payload["actions"] = list(actions)
     argv = _command_argv(user or "")
     if not argv:
         return False, _denied(req_id, tool, "approval command is empty")
@@ -211,16 +219,39 @@ def gate_module(
     *,
     session: str = "",
     user: str = "",
+    workspace: Any = None,
 ) -> tuple[bool, str]:
-    """Return ``(allowed, denial_message)``. Skipped gates are allowed."""
-    if not needs_approval(mod, args):
-        return True, ""
+    """Return ``(allowed, denial_message)``. Skipped gates are allowed.
+
+    The tier (``needs_approval``) is applied first. A matching ``deny`` rule
+    blocks even when the tier would not ask. A matching ``ask`` rule asks
+    when an approval command is set. A matching ``allow`` rule does not
+    cancel the tier.
+    """
+    from .approval_policy import PolicyError, action_keys, load_rules, strongest_rule
+
     tool = str(mod.get("name") or "")
+    req_id = str(uuid.uuid4())
+    try:
+        keys = action_keys(mod, args)
+        rule, matched = strongest_rule(load_rules(workspace), keys)
+    except PolicyError as exc:
+        return False, _denied(req_id, tool, str(exc))
+    if rule is not None and rule.decision == "deny":
+        return False, _denied(req_id, tool, f"policy denied {matched or rule.action}")
+    tier_ask = needs_approval(mod, args)
+    rule_ask = rule is not None and rule.decision == "ask" and bool(approval_command())
+    if not tier_ask and not rule_ask:
+        return True, ""
     payload = args if isinstance(args, dict) else {"arguments": args}
+    summary = summarize(tool, args)
+    if keys:
+        summary = f"{summary} actions={','.join(keys[:6])}"[:240]
     return request_approval(
         tool=tool,
         args=payload,
         session=session,
         user=user,
-        summary=summarize(tool, args),
+        summary=summary,
+        actions=keys,
     )
