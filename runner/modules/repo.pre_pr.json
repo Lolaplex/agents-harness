@@ -1,0 +1,31 @@
+{
+  "name": "repo.pre_pr",
+  "kind": "mcp",
+  "when": "on_request",
+  "cadence": "on_request",
+  "verb": "python -c \"print('repo.pre_pr')\"",
+  "rests_on": "Discover test and build commands from package.json scripts, pyproject.toml, Makefile, and AGENTS.md. call_job runs them in-process when run is true. No command is invented.",
+  "expected_exit": 0,
+  "mutates": false,
+  "side_effects": "read-only",
+  "timeout_sec": 30,
+  "as_tool": true,
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "path": {
+        "type": "string",
+        "description": "Project directory inside the workdir. Omit to use the workdir, or its single nested repo."
+      },
+      "run": {
+        "type": "boolean",
+        "description": "Execute the discovered test, build, lint, typecheck, and check commands. Omit or false to only list them."
+      },
+      "only": {
+        "type": "array",
+        "items": {"type": "string"},
+        "description": "Kinds to include: test, build, lint, typecheck, check. Omit to include every discovered kind."
+      }
+    }
+  }
+}

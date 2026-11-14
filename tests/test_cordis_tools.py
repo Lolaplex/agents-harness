@@ -133,17 +133,19 @@ class TestCordisTools(unittest.TestCase):
             with patch("runner.cordis_tools.execute_job", return_value=rec):
                 out = handle_cordis_tool("call_job", call)
         self.assertTrue(out.startswith("START"), out)
-        self.assertIn("END", out)
-        self.assertIn("chars omitted", out)
-        self.assertIn("<ref ", out)
+        self.assertNotIn("END", out.split("\n<page ", 1)[0])
+        self.assertNotIn("chars omitted", out)
+        self.assertIn("<page ", out)
         self.assertIn('truncated="1"', out)
-        body, ref = out.split("\n<ref ", 1)
-        ref_line = "<ref " + ref
+        self.assertIn('next_offset="', out)
+        body, ref = out.rsplit("\n<page ", 1)
+        ref_line = "<page " + ref
         self.assertNotIn("\n", ref_line)
         self.assertLessEqual(len(body), 180)
         self.assertLessEqual(len(out), 180 + 1 + len(ref_line))
         self.assertEqual(len(out), len(body) + 1 + len(ref_line))
         self.assertNotEqual(out, full[-1000:])
+        self.assertEqual(body, full[: len(body)])
         digest = re.search(r'digest="([0-9a-f]+)"', out)
         self.assertIsNotNone(digest)
         assert digest is not None
@@ -180,12 +182,12 @@ class TestCordisTools(unittest.TestCase):
             with patch("runner.cordis_tools.execute_job", return_value=rec):
                 out = handle_cordis_tool("call_job", call)
         self.assertTrue(out.startswith("ERRHEAD"), out)
-        self.assertIn("ERRTAIL", out)
-        self.assertIn("chars omitted", out)
-        self.assertIn("<ref ", out)
+        self.assertNotIn("ERRTAIL", out.split("\n<page ", 1)[0])
+        self.assertNotIn("chars omitted", out)
+        self.assertIn("<page ", out)
         self.assertNotIn("ignored-stdout", out)
-        body, ref = out.split("\n<ref ", 1)
-        ref_line = "<ref " + ref
+        body, ref = out.rsplit("\n<page ", 1)
+        ref_line = "<page " + ref
         self.assertNotIn("\n", ref_line)
         self.assertLessEqual(len(body), 160)
         self.assertLessEqual(len(out), 160 + 1 + len(ref_line))
