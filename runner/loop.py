@@ -779,7 +779,15 @@ def _main_impl(argv: list[str] | None = None) -> int:
     timezone_name = (identity_tz or profile.get("timezone") or "").strip()
 
     attachments = [str(item) for item in (args.attach or []) if str(item).strip()]
-    provider_manifest = find_provider(args.provider) if args.provider else None
+    provider_name = args.provider
+    if not provider_name:
+        try:
+            from .model import selected_provider_name
+
+            provider_name = os.environ.get("LLM_PROVIDER", "").strip() or selected_provider_name()
+        except Exception:
+            provider_name = os.environ.get("LLM_PROVIDER", "").strip()
+    provider_manifest = find_provider(provider_name) if provider_name else None
     vision = vision_enabled(provider_manifest)
 
     system = args.system
@@ -835,7 +843,7 @@ def _main_impl(argv: list[str] | None = None) -> int:
         print("Error: --message is required unless --assemble-only with existing history", file=sys.stderr)
         return 1
 
-    provider = get_provider(args.provider)
+    provider = get_provider(args.provider or provider_name)
     mode, on_status, on_delta, emit = bind_delivery(args.channel, override=args.deliver)
     if user_text or attachments:
         recorded = user_text
@@ -852,8 +860,16 @@ def _main_impl(argv: list[str] | None = None) -> int:
             project=project,
         )
     tools = openai_tools(workspace=ws)
+    model_override = args.model
+    if not model_override:
+        try:
+            from .model import selected_model
+
+            model_override = selected_model()
+        except Exception:
+            model_override = ""
     req = CompletionRequest(
-        model=args.model,
+        model=model_override,
         messages=messages,
         tools=tools or None,
         on_status=on_status,

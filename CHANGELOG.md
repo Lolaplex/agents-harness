@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `mcp.model` module (`python -m runner.model`): persistent workspace provider/model switch. `use --provider <name> [--model <id>]` writes the pick to `<ws>/config.json` under `model`; `current`, `list`, `clear` inspect or remove it. Resolution order — provider: `--provider` > `LLM_PROVIDER` > workspace pick > `openai.default`; model: `--model` > workspace pick > `LLM_MODEL` > manifest model. `runner.loop` and `get_provider` honor the pick when no explicit flag/env applies.
+
 ### Changed
 - `.mailmap` maps legacy `Klix`/`Felix Kempf` author names to `Klix927` (no history rewrite; display only).
 

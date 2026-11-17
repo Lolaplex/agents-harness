@@ -223,6 +223,21 @@ def _arguments_to_argv(mod: dict[str, Any], arguments: Any) -> list[str]:
         return [str(target)] if target else []
     if name == "mcp.schedule.list":
         return []
+    if name == "mcp.model":
+        action = str(arguments.get("action") or "current").strip().lower()
+        if action in ("set", "switch", "select"):
+            action = "use"
+        if action == "reset":
+            action = "clear"
+        out = [action]
+        if action == "use":
+            provider = arguments.get("provider") or arguments.get("name") or ""
+            if provider:
+                out += ["--provider", str(provider)]
+            model = arguments.get("model")
+            if model not in (None, ""):
+                out += ["--model", str(model)]
+        return out
     if name == "mcp.calendar.add":
         out = []
         summary = arguments.get("summary")
