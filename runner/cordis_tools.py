@@ -221,6 +221,30 @@ def _arguments_to_argv(mod: dict[str, Any], arguments: Any) -> list[str]:
     if name == "mcp.schedule.remove":
         target = arguments.get("name") or arguments.get("slug") or arguments.get("id") or ""
         return [str(target)] if target else []
+    if name == "mcp.delegate":
+        action = str(arguments.get("action") or "spawn").strip().lower()
+        if action in ("wait", "collect"):
+            action = "result"
+        out = [action]
+        if action == "spawn":
+            task = arguments.get("task") or arguments.get("prompt") or arguments.get("message") or ""
+            if task:
+                out += ["--task", str(task)]
+            for k in ("provider", "model", "persona", "workdir"):
+                val = arguments.get(k)
+                if val not in (None, ""):
+                    out += [f"--{k}", str(val)]
+            return out
+        did = arguments.get("id") or arguments.get("delegate") or ""
+        if did:
+            out.append(str(did))
+        timeout = arguments.get("timeout_sec") or arguments.get("timeout")
+        if timeout not in (None, ""):
+            out += ["--timeout", str(timeout)]
+        tail = arguments.get("tail")
+        if tail not in (None, ""):
+            out += ["--tail", str(tail)]
+        return out
     if name == "mcp.schedule.list":
         return []
     if name == "mcp.calendar.add":
