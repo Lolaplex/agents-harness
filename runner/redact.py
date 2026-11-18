@@ -27,7 +27,7 @@ def _agents_home_paths() -> list[str]:
     ws = Workspace.from_env()
     candidates: list[str] = []
     raw = str(
-        ws.source_env.get("AGENTS_WORKSPACE_ROOT") or ws.source_env.get("AGENTS_HOME") or ""
+        ws.source_env.get("AGENTS_WORKSPACE_ROOT") or ""
     ).strip()
     if raw:
         candidates.append(raw)
