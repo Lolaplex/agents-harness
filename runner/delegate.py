@@ -361,11 +361,59 @@ def main(argv: list[str] | None = None) -> int:
                     "name": "mcp.delegate",
                     "description": "Spawn and manage isolated subagent turns (delegate_task).",
                     "commands": {
-                        "spawn": {"side_effects": "mutating"},
-                        "status": {"side_effects": "read-only"},
-                        "result": {"side_effects": "read-only"},
-                        "list": {"side_effects": "read-only"},
-                        "cancel": {"side_effects": "mutating"},
+                        "spawn": {
+                            "usage": "spawn --task TEXT [--provider NAME] [--model ID] [--persona ID] [--workdir DIR]",
+                            "side_effects": "mutating",
+                            "parameters": {
+                                "type": "object",
+                                "properties": {
+                                    "task": {"type": "string", "description": "Task the subagent turn works on (required)"},
+                                    "provider": {"type": "string", "description": "Provider name for the turn"},
+                                    "model": {"type": "string", "description": "Model id override"},
+                                    "persona": {"type": "string", "description": "Persona id"},
+                                    "workdir": {"type": "string", "description": "Session working dir"},
+                                },
+                            },
+                        },
+                        "status": {
+                            "usage": "status ID",
+                            "side_effects": "read-only",
+                            "parameters": {
+                                "type": "object",
+                                "properties": {
+                                    "id": {"type": "string", "description": "dlg_<id>"},
+                                },
+                                "required": ["id"],
+                            },
+                        },
+                        "result": {
+                            "usage": "result ID [--timeout SEC] [--tail N]",
+                            "side_effects": "read-only",
+                            "parameters": {
+                                "type": "object",
+                                "properties": {
+                                    "id": {"type": "string", "description": "dlg_<id>"},
+                                    "timeout": {"type": "number", "description": "Max seconds to wait (default 600)"},
+                                    "tail": {"type": "integer", "description": "Max output lines (default 200)"},
+                                },
+                                "required": ["id"],
+                            },
+                        },
+                        "list": {
+                            "usage": "list",
+                            "side_effects": "read-only",
+                        },
+                        "cancel": {
+                            "usage": "cancel ID",
+                            "side_effects": "mutating",
+                            "parameters": {
+                                "type": "object",
+                                "properties": {
+                                    "id": {"type": "string", "description": "dlg_<id>"},
+                                },
+                                "required": ["id"],
+                            },
+                        },
                     },
                 },
                 indent=2,

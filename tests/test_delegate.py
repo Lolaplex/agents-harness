@@ -46,5 +46,36 @@ class TestDelegate(unittest.TestCase):
             delegate.spawn("   ")
 
 
+class TestDelegateDeclaredCommands(unittest.TestCase):
+    """commands_from: help-json wires the module without a cordis_tools shim."""
+
+    def test_declared_argv(self) -> None:
+        from runner.helpjson import declared_argv, with_discovered_commands
+        from runner.modules import find_module
+
+        mod = with_discovered_commands(find_module("mcp.delegate"))
+        self.assertEqual(
+            declared_argv(mod, {"command": "spawn", "task": "say hi"}),
+            ["spawn", "--task", "say hi"],
+        )
+        self.assertEqual(
+            declared_argv(mod, {"command": "status", "id": "dlg_x"}),
+            ["status", "dlg_x"],
+        )
+        self.assertEqual(
+            declared_argv(mod, {"command": "result", "id": "dlg_x", "timeout": 30, "tail": 50}),
+            ["result", "dlg_x", "--timeout", "30", "--tail", "50"],
+        )
+        self.assertEqual(declared_argv(mod, {"command": "cancel", "id": "dlg_x"}), ["cancel", "dlg_x"])
+
+    def test_declared_effects(self) -> None:
+        from runner.helpjson import call_effects, with_discovered_commands
+        from runner.modules import find_module
+
+        mod = with_discovered_commands(find_module("mcp.delegate"))
+        self.assertEqual(call_effects(mod, {"command": "spawn"}), "mutating")
+        self.assertEqual(call_effects(mod, {"command": "result"}), "read-only")
+
+
 if __name__ == "__main__":
     unittest.main()

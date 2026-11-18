@@ -9,12 +9,13 @@
   "mutates": true,
   "timeout_sec": 660,
   "as_tool": true,
+  "commands_from": "help-json",
   "parameters": {
     "type": "object",
     "properties": {
-      "action": {
+      "command": {
         "type": "string",
-        "description": "spawn | status | result | list | cancel. 'wait' is accepted as 'result'."
+        "description": "Declared command: spawn | status | result | list | cancel."
       },
       "task": {
         "type": "string",
@@ -49,6 +50,6 @@
         "description": "result: max output lines returned (default 200)"
       }
     },
-    "required": ["action"]
+    "required": ["command"]
   }
 }
