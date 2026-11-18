@@ -262,7 +262,7 @@ def load_help_json(verb: str) -> dict[str, Any] | None:
             argv,
             shell=False,
             capture_output=True,
-            text=True,
+            encoding="utf-8", errors="replace",
             timeout=_HELP_TIMEOUT_SEC,
         )
     except (OSError, subprocess.TimeoutExpired):

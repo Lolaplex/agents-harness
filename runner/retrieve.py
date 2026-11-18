@@ -406,7 +406,7 @@ def _command_backend(session_id: str, digest: str, offset: int, limit: int | Non
             argv,
             input=json.dumps(payload),
             capture_output=True,
-            text=True,
+            encoding="utf-8", errors="replace",
             timeout=30,
             shell=False,
         )

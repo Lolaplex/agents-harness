@@ -193,7 +193,7 @@ def request_approval(
             argv,
             input=json.dumps(payload, ensure_ascii=False),
             capture_output=True,
-            text=True,
+            encoding="utf-8", errors="replace",
             timeout=_timeout_sec(argv),
             shell=False,
         )
