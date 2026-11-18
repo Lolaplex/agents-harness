@@ -12,6 +12,7 @@ from unittest.mock import patch
 from agents_workspace import Workspace
 
 from runner.executor import execute_job, list_schedules, load_manifest, traces_dir
+from runner.redact import redact_tool_output
 
 
 class TestWorkspaceJob(unittest.TestCase):
@@ -38,8 +39,10 @@ class TestWorkspaceJob(unittest.TestCase):
                     "workspace": "demo",
                 }
                 result = execute_job(manifest, log_path=None)
+                # execute_job redacts the active workspace root out of stdout.
+                expected = redact_tool_output(str(ws.memory))
             self.assertEqual(result["status"], "SUCCESS")
-            self.assertEqual(result["stdout"].strip(), str(ws.memory))
+            self.assertEqual(result["stdout"].strip(), expected)
 
     def test_execute_job_rejects_unknown_workspace(self):
         with tempfile.TemporaryDirectory() as tmp:
