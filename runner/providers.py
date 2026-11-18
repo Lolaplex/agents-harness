@@ -14,6 +14,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Iterable, Protocol
 
+from agents_workspace import resolve_secret
+
 from .executor import load_manifest
 
 PROVIDERS_DIR = Path(__file__).parent / "providers"
@@ -287,7 +289,7 @@ class OpenAICompatProvider:
         ).rstrip("/")
         if url and not url.endswith("/chat/completions"):
             url = f"{url}/chat/completions"
-        key = os.environ.get(self.manifest.get("key_env") or "LLM_API_KEY", "") or str(
+        key = resolve_secret(self.manifest.get("key_env") or "LLM_API_KEY") or str(
             self.manifest.get("api_key") or ""
         )
         model = req.model or os.environ.get(

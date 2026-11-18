@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - `redact` drops the `AGENTS_HOME` source-env fallback (alias removed from agents-workspace); `AGENTS_WORKSPACE_ROOT` remains the escape hatch.
+- `executor._internal_roots()` and the `runner.delegate` workdir clamp now delegate to `agents_workspace.allowed_roots()` (single source for the lock allow list). Behaviour unchanged.
+- Provider API keys resolve via `agents_workspace.resolve_secret()`: `<ws>/secrets.json` > `<host>/secrets.json` > env (`key_env`) > manifest `api_key`. A workspace can pin per-ws provider keys without exporting them.
+
+### Fixed
+- `pre_pr` strips wrapping quotes from Windows `shlex.split` tokens: a quoted `-c` body ran as a string literal and produced empty stdout.
+- Tests pin `AGENTS_HOST_DIR` instead of the removed `AGENTS_HOME` alias; the internal-dirs fixture uses host infra (`run/`) rather than the host root; the pinned-verbs map covers the new `bg`/`proc` commands.
 
 ### Added
 - `mcp.model` module (`python -m runner.model`): persistent workspace provider/model switch. `use --provider <name> [--model <id>]` writes the pick to `<ws>/config.json` under `model`; `current`, `list`, `clear` inspect or remove it. Resolution order — provider: `--provider` > `LLM_PROVIDER` > workspace pick > `openai.default`; model: `--model` > workspace pick > `LLM_MODEL` > manifest model. `runner.loop` and `get_provider` honor the pick when no explicit flag/env applies.

@@ -351,6 +351,13 @@ def _command_line(line: str) -> dict[str, Any] | None:
         argv = shlex.split(text, posix=(os.name != "nt"))
     except ValueError:
         return None
+    if os.name == "nt":
+        # posix=False keeps quote chars inside the token; a quoted -c body
+        # would run as a string literal, not code.
+        argv = [
+            item[1:-1] if len(item) >= 2 and item[0] == item[-1] and item[0] in "\"'" else item
+            for item in argv
+        ]
     if not argv:
         return None
     kind = _kind_of(argv)

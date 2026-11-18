@@ -252,7 +252,8 @@ class TestWorkspaceLock(unittest.TestCase):
             "AGENTS_WORKSPACE_DIR",
             "AGENTS_WORKSPACE_LOCK",
             "AGENTS_WORKSPACE_ALLOW",
-            "AGENTS_HOME",
+            "AGENTS_HOST_DIR",
+            "AGENTS_HOST_DIR",
             "AGENTS_SKILLS_DIR",
             "AGENTS_SKILLS_EXTRA",
             "AGENTS_MODULES_DIR",
@@ -313,12 +314,12 @@ class TestWorkspaceLock(unittest.TestCase):
             "AGENTS_TRACES_DIR": self.tmp / "traces",
             "AGENTS_SCHEDULES_DIR": self.tmp / "schedules",
         }
-        home.mkdir()
+        (home / "run").mkdir(parents=True)
         for folder in named.values():
             folder.mkdir()
         verb = "python -c \"print('ok')\""
-        with self._env(True, AGENTS_HOME=str(home), **{key: str(path) for key, path in named.items()}):
-            home_cwd = execute_job(self._job(verb, str(home)), log_path=self.log)
+        with self._env(True, AGENTS_HOST_DIR=str(home), **{key: str(path) for key, path in named.items()}):
+            home_cwd = execute_job(self._job(verb, str(home / "run")), log_path=self.log)
             self.assertEqual(home_cwd["status"], "SUCCESS", home_cwd["stderr"])
             for folder in named.values():
                 result = execute_job(self._job(verb, str(folder)), log_path=self.log)
