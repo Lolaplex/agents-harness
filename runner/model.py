@@ -174,10 +174,35 @@ def main(argv: list[str] | None = None) -> int:
                     "name": "mcp.model",
                     "description": "Show or switch the workspace LLM provider/model.",
                     "commands": {
-                        "list": {"side_effects": "read-only"},
-                        "current": {"side_effects": "read-only"},
-                        "use": {"side_effects": "mutating"},
-                        "clear": {"side_effects": "mutating"},
+                        "list": {
+                            "usage": "list",
+                            "side_effects": "read-only",
+                        },
+                        "current": {
+                            "usage": "current",
+                            "side_effects": "read-only",
+                        },
+                        "use": {
+                            "usage": "use --provider NAME [--model ID]",
+                            "side_effects": "mutating",
+                            "parameters": {
+                                "type": "object",
+                                "properties": {
+                                    "provider": {
+                                        "type": "string",
+                                        "description": "Provider manifest name (required; see list)",
+                                    },
+                                    "model": {
+                                        "type": "string",
+                                        "description": "Optional model id override",
+                                    },
+                                },
+                            },
+                        },
+                        "clear": {
+                            "usage": "clear",
+                            "side_effects": "mutating",
+                        },
                     },
                 },
                 indent=2,

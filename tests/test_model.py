@@ -61,5 +61,33 @@ class TestModelPick(unittest.TestCase):
         self.assertEqual(cur["model_source"], "workspace")
 
 
+class TestModelDeclaredCommands(unittest.TestCase):
+    """commands_from: help-json wires the module without a cordis_tools shim."""
+
+    def test_declared_argv(self) -> None:
+        from runner.helpjson import declared_argv, with_discovered_commands
+        from runner.modules import find_module
+
+        mod = with_discovered_commands(find_module("mcp.model"))
+        self.assertEqual(
+            declared_argv(mod, {"command": "use", "provider": "echo"}),
+            ["use", "--provider", "echo"],
+        )
+        self.assertEqual(
+            declared_argv(mod, {"command": "use", "provider": "echo", "model": "m1"}),
+            ["use", "--provider", "echo", "--model", "m1"],
+        )
+        self.assertEqual(declared_argv(mod, {"command": "current"}), ["current"])
+        self.assertEqual(declared_argv(mod, {"command": "clear"}), ["clear"])
+
+    def test_declared_effects(self) -> None:
+        from runner.helpjson import call_effects, with_discovered_commands
+        from runner.modules import find_module
+
+        mod = with_discovered_commands(find_module("mcp.model"))
+        self.assertEqual(call_effects(mod, {"command": "use"}), "mutating")
+        self.assertEqual(call_effects(mod, {"command": "current"}), "read-only")
+
+
 if __name__ == "__main__":
     unittest.main()

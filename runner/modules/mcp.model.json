@@ -9,22 +9,23 @@
   "mutates": true,
   "timeout_sec": 30,
   "as_tool": true,
+  "commands_from": "help-json",
   "parameters": {
     "type": "object",
     "properties": {
-      "action": {
+      "command": {
         "type": "string",
-        "description": "current | list | use | clear. 'set'/'switch'/'select' map to use, 'reset' to clear."
+        "description": "Declared command: list | current | use | clear."
       },
       "provider": {
         "type": "string",
-        "description": "use: provider manifest name (see action=list)"
+        "description": "use: provider manifest name (see list)"
       },
       "model": {
         "type": "string",
         "description": "use: optional model id override; empty keeps the manifest/env model"
       }
     },
-    "required": ["action"]
+    "required": ["command"]
   }
 }
