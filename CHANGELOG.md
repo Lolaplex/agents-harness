@@ -22,6 +22,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `.mailmap` maps legacy `Klix`/`Felix Kempf` author names to `Klix927` (no history rewrite; display only).
 
 ### Added
+- `mcp.delegate` module (`python -m runner.delegate`): delegate a task to an isolated subagent turn. `spawn --task "…" [--provider|--model|--persona|--workdir]` starts a detached `runner.loop --detached-session` supervisor and returns `dlg_<id>`; `status`, `result [--timeout|--tail]`, `list`, `cancel` manage it. State lives under `AGENTS_DELEGATES_DIR` (default `<ws>/delegates`): `meta.json`, `out.log`, `err.log`, `exit.json`. The subagent inherits the workspace environment but gets its own session (`ses_dlg_<id>`), so it can run tools while the parent turn continues. Guards: `AGENTS_DELEGATE_DEPTH`/`AGENTS_DELEGATE_MAX_DEPTH` (default 1) stop a delegate from spawning delegates, and `--workdir` must resolve inside the roots the child's workdir lock would honor — the jail boundary cannot be widened by a spawn argument. Declared commands come from `runner.delegate --help-json` (`commands_from`), so no cordis_tools arg shim exists.
+
+### Added
 - Personas load from `<ws>/personas/<id>/persona.json` first, package `runner/personas/*.json` as fallback; `--persona <id>` / `AGENTS_PERSONA` select the persona (default: workspace `default_persona`). Personas are equal - a role is description text, not hierarchy. Optional private notes live under `<ws>/personas/<id>/notes.md`.
 
 ### Changed

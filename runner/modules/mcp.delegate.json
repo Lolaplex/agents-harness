@@ -1,0 +1,55 @@
+{
+  "name": "mcp.delegate",
+  "kind": "mcp",
+  "when": "on_request",
+  "cadence": "on_request",
+  "verb": "python -m runner.delegate",
+  "rests_on": "runner.delegate spawns a detached runner.loop turn (isolated subagent). exit 0 = action ok",
+  "expected_exit": 0,
+  "mutates": true,
+  "timeout_sec": 660,
+  "as_tool": true,
+  "commands_from": "help-json",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "command": {
+        "type": "string",
+        "description": "Declared command: spawn | status | result | list | cancel."
+      },
+      "task": {
+        "type": "string",
+        "description": "spawn: the task the subagent turn works on"
+      },
+      "id": {
+        "type": "string",
+        "description": "status/result/cancel: dlg_<id> returned by spawn"
+      },
+      "provider": {
+        "type": "string",
+        "description": "spawn: provider name for the subagent turn"
+      },
+      "model": {
+        "type": "string",
+        "description": "spawn: model id override for the subagent turn"
+      },
+      "persona": {
+        "type": "string",
+        "description": "spawn: persona id for the subagent turn"
+      },
+      "workdir": {
+        "type": "string",
+        "description": "spawn: session working dir for the subagent (AGENTS_WORKDIR)"
+      },
+      "timeout": {
+        "type": "number",
+        "description": "result: max seconds to wait (default 600)"
+      },
+      "tail": {
+        "type": "integer",
+        "description": "result: max output lines returned (default 200)"
+      }
+    },
+    "required": ["command"]
+  }
+}
