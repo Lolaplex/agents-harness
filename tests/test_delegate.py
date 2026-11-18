@@ -45,6 +45,36 @@ class TestDelegate(unittest.TestCase):
         with self.assertRaises(delegate.DelegateError):
             delegate.spawn("   ")
 
+    def test_depth_guard_blocks_nested_spawn(self) -> None:
+        from unittest.mock import patch
+
+        with patch.dict(os.environ, {"AGENTS_DELEGATE_DEPTH": "1"}):
+            with self.assertRaises(delegate.DelegateError):
+                delegate.spawn("nested")
+
+    def test_workdir_escape_refused(self) -> None:
+        with self.assertRaises(delegate.DelegateError):
+            delegate.spawn("x", workdir="C:\\Windows" if os.name == "nt" else "/etc")
+
+    def test_workdir_inside_workspace_accepted(self) -> None:
+        from agents_workspace import Workspace
+
+        ws = Workspace.from_env()
+        spawned = delegate.spawn("echo-wd", provider="echo", workdir=str(ws.dir))
+        try:
+            out = delegate.result(spawned["id"], timeout_sec=120)
+            self.assertEqual(out["state"], "exited")
+            self.assertEqual(out["exit_code"], 0)
+        finally:
+            delegate.cancel(spawned["id"])
+
+    def test_dash_task_not_parsed_as_flag(self) -> None:
+        """A task starting with '-' must reach the child as a value, not an option."""
+        spawned = delegate.spawn("--verbose marker", provider="echo")
+        out = delegate.result(spawned["id"], timeout_sec=120)
+        self.assertEqual(out["state"], "exited")
+        self.assertEqual(out["exit_code"], 0)
+
 
 class TestDelegateDeclaredCommands(unittest.TestCase):
     """commands_from: help-json wires the module without a cordis_tools shim."""

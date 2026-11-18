@@ -14,6 +14,10 @@ while the parent turn continues. State lives under
 The supervisor is ``python -m runner.delegate _run <id>``: a tiny child that
 runs the loop as a normal subprocess, so the exit code is exact on every
 platform (no shell wrappers).
+
+Guards: ``AGENTS_DELEGATE_DEPTH`` counts nesting (a delegate cannot spawn
+delegates past ``AGENTS_DELEGATE_MAX_DEPTH``, default 1), and ``--workdir``
+must resolve inside the roots the child's workdir lock would honor.
 """
 
 from __future__ import annotations
@@ -115,6 +119,41 @@ def _state(ddir: Path) -> dict[str, Any]:
     }
 
 
+def _depth() -> int:
+    try:
+        return int(os.environ.get("AGENTS_DELEGATE_DEPTH", "0") or 0)
+    except ValueError:
+        return 0
+
+
+def _max_depth() -> int:
+    try:
+        return int(os.environ.get("AGENTS_DELEGATE_MAX_DEPTH", "1") or 1)
+    except ValueError:
+        return 1
+
+
+def _checked_workdir(raw: str) -> str:
+    """A delegate workdir must stay inside roots the child's lock would allow.
+
+    The child runs with ``AGENTS_WORKDIR_LOCK=1``; letting it point anywhere
+    would make the jail boundary whatever the caller asked for. The accepted
+    set is the same one the harness lock honors: the locked workdir root plus
+    ``executor._internal_roots()`` (workspace tree, host infra, allow list).
+    """
+    from agents_workspace import Workspace  # noqa: F401 - env parity with the lock
+    from .executor import _internal_roots, _under, workdir_root
+
+    candidate = Path(raw).expanduser().resolve(strict=False)
+    roots = list(_internal_roots())
+    locked = workdir_root()
+    if locked is not None:
+        roots.append(locked)
+    if not any(_under(root, candidate) for root in roots):
+        raise DelegateError("workdir escapes the workspace boundary", code=2)
+    return str(candidate)
+
+
 def spawn(
     task: str,
     *,
@@ -126,6 +165,13 @@ def spawn(
     task = task.strip()
     if not task:
         raise DelegateError("spawn requires --task", code=2)
+    depth = _depth()
+    if depth >= _max_depth():
+        raise DelegateError(
+            f"delegate depth limit reached (AGENTS_DELEGATE_DEPTH={depth})", code=2
+        )
+    if workdir:
+        workdir = _checked_workdir(workdir)
     dlg_id = "dlg_" + uuid.uuid4().hex[:12]
     ddir = _root() / dlg_id
     ddir.mkdir(parents=True, exist_ok=True)
@@ -144,6 +190,7 @@ def spawn(
 
     env = dict(os.environ)
     env["AGENTS_DELEGATE"] = dlg_id
+    env["AGENTS_DELEGATE_DEPTH"] = str(depth + 1)
     if workdir:
         env["AGENTS_WORKDIR"] = workdir
         env["AGENTS_WORKDIR_LOCK"] = "1"
@@ -176,29 +223,26 @@ def _run_supervisor(dlg_id: str) -> int:
     ddir = _dir(dlg_id)
     meta = _read_json(ddir / "meta.json")
     session = str(meta.get("session") or "")
+    # ``--opt=value`` form everywhere: a task (or id) starting with "-" must not
+    # be parsed as another option by the child loop's argparse.
     argv = [
         sys.executable,
         "-m",
         "runner.loop",
         "--detached-session",
-        "--session",
-        session,
-        "--channel",
-        "delegate",
-        "--user",
-        dlg_id,
-        "--message",
-        str(meta.get("task") or ""),
+        f"--session={session}",
+        "--channel=delegate",
+        f"--user={dlg_id}",
+        f"--message={meta.get('task') or ''}",
         "--complete",
-        "--deliver",
-        "buffered",
+        "--deliver=buffered",
     ]
     if meta.get("provider"):
-        argv += ["--provider", str(meta["provider"])]
+        argv.append(f"--provider={meta['provider']}")
     if meta.get("model"):
-        argv += ["--model", str(meta["model"])]
+        argv.append(f"--model={meta['model']}")
     if meta.get("persona"):
-        argv += ["--persona", str(meta["persona"])]
+        argv.append(f"--persona={meta['persona']}")
     out_f = ddir / "out.log"
     err_f = ddir / "err.log"
     try:
@@ -371,7 +415,7 @@ def main(argv: list[str] | None = None) -> int:
                                     "provider": {"type": "string", "description": "Provider name for the turn"},
                                     "model": {"type": "string", "description": "Model id override"},
                                     "persona": {"type": "string", "description": "Persona id"},
-                                    "workdir": {"type": "string", "description": "Session working dir"},
+                                    "workdir": {"type": "string", "description": "Session working dir; must stay inside the workspace boundary"},
                                 },
                             },
                         },
