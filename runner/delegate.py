@@ -139,13 +139,13 @@ def _checked_workdir(raw: str) -> str:
     The child runs with ``AGENTS_WORKDIR_LOCK=1``; letting it point anywhere
     would make the jail boundary whatever the caller asked for. The accepted
     set is the same one the harness lock honors: the locked workdir root plus
-    ``executor._internal_roots()`` (workspace tree, host infra, allow list).
+    ``agents_workspace.allowed_roots()`` (workspace tree, host infra, allow list).
     """
-    from agents_workspace import Workspace  # noqa: F401 - env parity with the lock
-    from .executor import _internal_roots, _under, workdir_root
+    from agents_workspace import Workspace, allowed_roots
+    from .executor import _under, workdir_root
 
     candidate = Path(raw).expanduser().resolve(strict=False)
-    roots = list(_internal_roots())
+    roots = allowed_roots(Workspace.from_env())
     locked = workdir_root()
     if locked is not None:
         roots.append(locked)

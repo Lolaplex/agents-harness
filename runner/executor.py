@@ -18,7 +18,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from agents_workspace import Workspace
+from agents_workspace import Workspace, allowed_roots
 
 from .redact import redact_tool_output
 
@@ -223,12 +223,6 @@ def _flag(name: str) -> bool:
     return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
 
 
-def _paths(name: str) -> list[Path]:
-    """Path-list config: entries separated by ``os.pathsep``."""
-    raw = os.environ.get(name, "")
-    return [Path(part.strip()).expanduser() for part in raw.split(os.pathsep) if part.strip()]
-
-
 def _flag_alias(new: str, old: str) -> bool:
     if _flag(new):
         return True
@@ -289,54 +283,11 @@ def _under(root: Path, path: Path) -> bool:
 def _internal_roots() -> list[Path]:
     """Dirs the workspace lock must not treat as escapes.
 
-    The active workspace's own tree plus explicitly listed host infra parts
-    (keys, secrets, run, cache, logs, clients, agents.json, host mcp.json).
-    Host memory/skills do not exist — they are never allowed (D-host-layer).
+    Canonical list lives in ``agents_workspace.allowed_roots`` (ws tree,
+    host infra, env-listed dirs, allow list). Host memory/skills do not
+    exist — they are never allowed (D-host-layer).
     """
-    ws = Workspace.from_env()
-    host = ws.host
-    roots = [
-        ws.dir,
-        host.keys,
-        host.secrets,
-        host.run,
-        host.cache,
-        host.logs,
-        host.clients,
-        host.agents_json,
-        host.mcp_json,
-        host.users_file(),
-    ]
-    for key in (
-        "AGENTS_SKILLS_DIR",
-        "AGENTS_MODULES_DIR",
-        "AGENTS_MEMORY_PATH",
-        "AGENTS_TRACES_DIR",
-        "AGENTS_SCHEDULES_DIR",
-        "AGENTS_ROUTINE_RUNS_DIR",
-    ):
-        raw = os.environ.get(key, "").strip()
-        if raw:
-            roots.append(Path(raw).expanduser())
-    roots.extend(_paths("AGENTS_SKILLS_EXTRA"))
-    allow = os.environ.get("AGENTS_WORKDIR_ALLOW", "").strip()
-    if not allow:
-        legacy = os.environ.get("AGENTS_WORKSPACE_ALLOW", "")
-        if legacy.strip():
-            import warnings
-            warnings.warn(
-                "AGENTS_WORKSPACE_ALLOW is deprecated; use AGENTS_WORKDIR_ALLOW "
-                "(alias removed after one release)",
-                DeprecationWarning,
-                stacklevel=3,
-            )
-            allow = legacy
-    roots.extend(
-        Path(part.strip()).expanduser()
-        for part in allow.split(os.pathsep)
-        if part.strip()
-    )
-    return roots
+    return allowed_roots(Workspace.from_env())
 
 
 def _permitted(path: Path, root: Path) -> bool:

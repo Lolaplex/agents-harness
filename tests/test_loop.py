@@ -184,7 +184,7 @@ class TestModulesAndLoop(unittest.TestCase):
                     "AGENTS_IDENTITY_PATH": str(ident),
                     "AGENTS_TRACES_DIR": str(traces),
                     "AGENTS_MEMORY_PATH": str(memory),
-                    "AGENTS_HOME": str(root / "home"),
+                    "AGENTS_HOST_DIR": str(root / "home"),
                 },
             ):
                 with redirect_stdout(out), redirect_stderr(err):
@@ -282,7 +282,7 @@ class TestModulesAndLoop(unittest.TestCase):
                     "AGENTS_IDENTITY_PATH": str(ident),
                     "AGENTS_TRACES_DIR": str(traces),
                     "AGENTS_MEMORY_PATH": str(memory),
-                    "AGENTS_HOME": str(root / "home"),
+                    "AGENTS_HOST_DIR": str(root / "home"),
                 }
             )
             with patch.dict(os.environ, env, clear=True):
@@ -344,7 +344,7 @@ class TestModulesAndLoop(unittest.TestCase):
             env = dict(os.environ)
             env.update(
                 {
-                    "AGENTS_HOME": tmp,
+                    "AGENTS_HOST_DIR": tmp,
                     "AGENTS_TRACES_DIR": str(Path(tmp) / "traces"),
                     "AGENTS_IDENTITY_PATH": str(Path(tmp) / "identity.json"),
                 }
@@ -404,7 +404,7 @@ class TestModulesAndLoop(unittest.TestCase):
             env = dict(os.environ)
             env.update(
                 {
-                    "AGENTS_HOME": tmp,
+                    "AGENTS_HOST_DIR": tmp,
                     "AGENTS_TRACES_DIR": str(Path(tmp) / "traces"),
                     "AGENTS_IDENTITY_PATH": str(Path(tmp) / "identity.json"),
                 }
@@ -461,7 +461,7 @@ class TestModulesAndLoop(unittest.TestCase):
             traces_dir = Path(tmp) / "traces"
             env.update(
                 {
-                    "AGENTS_HOME": tmp,
+                    "AGENTS_HOST_DIR": tmp,
                     "AGENTS_TRACES_DIR": str(traces_dir),
                     "AGENTS_IDENTITY_PATH": str(Path(tmp) / "identity.json"),
                 }
@@ -540,7 +540,7 @@ class TestModulesAndLoop(unittest.TestCase):
             env = dict(os.environ)
             env.update(
                 {
-                    "AGENTS_HOME": tmp,
+                    "AGENTS_HOST_DIR": tmp,
                     "AGENTS_TRACES_DIR": str(Path(tmp) / "traces"),
                     "AGENTS_IDENTITY_PATH": str(Path(tmp) / "identity.json"),
                     "AGENTS_SKILLS_DIR": str(Path(tmp) / "skills"),
@@ -602,7 +602,7 @@ class TestModulesAndLoop(unittest.TestCase):
             env = dict(os.environ)
             env.update(
                 {
-                    "AGENTS_HOME": tmp,
+                    "AGENTS_HOST_DIR": tmp,
                     "AGENTS_TRACES_DIR": str(Path(tmp) / "traces"),
                     "AGENTS_IDENTITY_PATH": str(Path(tmp) / "identity.json"),
                     "AGENTS_SKILLS_DIR": str(Path(tmp) / "skills"),
@@ -673,7 +673,7 @@ class TestModulesAndLoop(unittest.TestCase):
                 env = dict(os.environ)
                 env.update(
                     {
-                        "AGENTS_HOME": tmp,
+                        "AGENTS_HOST_DIR": tmp,
                         "AGENTS_TRACES_DIR": str(Path(tmp) / "traces"),
                         "AGENTS_IDENTITY_PATH": str(Path(tmp) / "identity.json"),
                         "AGENTS_SKILLS_DIR": str(Path(tmp) / "skills"),

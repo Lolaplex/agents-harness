@@ -21,9 +21,9 @@ class UpdateCheckTests(unittest.TestCase):
         self._tmpdir = tempfile.TemporaryDirectory()
         self.home = Path(self._tmpdir.name) / "agents"
         self._old = {k: os.environ.get(k) for k in (
-            "AGENTS_HOME", "AGENTS_NO_UPDATE_CHECK", "CI", "GITHUB_ACTIONS", "XDG_CACHE_HOME"
+            "AGENTS_HOST_DIR", "AGENTS_NO_UPDATE_CHECK", "CI", "GITHUB_ACTIONS", "XDG_CACHE_HOME"
         )}
-        os.environ["AGENTS_HOME"] = str(self.home)
+        os.environ["AGENTS_HOST_DIR"] = str(self.home)
         for k in ("AGENTS_NO_UPDATE_CHECK", "CI", "GITHUB_ACTIONS", "XDG_CACHE_HOME"):
             os.environ.pop(k, None)
         u._mcp_checked.clear()

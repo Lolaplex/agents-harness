@@ -163,7 +163,7 @@ class TestReceiptLoop(unittest.TestCase):
             env = dict(os.environ)
             env.update(
                 {
-                    "AGENTS_HOME": tmp,
+                    "AGENTS_HOST_DIR": tmp,
                     "AGENTS_TRACES_DIR": str(Path(tmp) / "traces"),
                     "AGENTS_IDENTITY_PATH": str(Path(tmp) / "identity.json"),
                     "AGENTS_CONTENT_DIR": str(Path(tmp) / "content"),
