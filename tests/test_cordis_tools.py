@@ -69,7 +69,7 @@ class TestCordisTools(unittest.TestCase):
         self.assertEqual(argv[1:3], ["-m", "agents_docs"])
 
     def test_redact_sk_and_agents_paths(self):
-        with patch.dict(os.environ, {"AGENTS_HOME": "/data/.agents"}, clear=False):
+        with patch.dict(os.environ, {"AGENTS_WORKSPACE_ROOT": "/data/.agents"}, clear=False):
             raw = "token sk-abcdefghijklmnopqrstuvwxyz path /data/.agents/identity.json"
             out = redact_tool_output(raw)
         self.assertNotIn("sk-abcdefghijklmnopqrstuvwxyz", out)

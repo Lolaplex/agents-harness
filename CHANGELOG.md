@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- `redact` drops the `AGENTS_HOME` source-env fallback (alias removed from agents-workspace); `AGENTS_WORKSPACE_ROOT` remains the escape hatch.
+
 ### Added
 - `mcp.model` module (`python -m runner.model`): persistent workspace provider/model switch. `use --provider <name> [--model <id>]` writes the pick to `<ws>/config.json` under `model`; `current`, `list`, `clear` inspect or remove it. Resolution order — provider: `--provider` > `LLM_PROVIDER` > workspace pick > `openai.default`; model: `--model` > workspace pick > `LLM_MODEL` > manifest model. `runner.loop` and `get_provider` honor the pick when no explicit flag/env applies.
 - Git tool `git` (`python -m runner.git_tool`). The repository's default branch is protected when git records it (`origin/HEAD`, otherwise the only local branch). No branch name is assumed. Force-push is blocked. Commit author and committer are checked only when a `Name <email>` list is configured (`allow` checks, `require` sets both for that commit and does not write git config). `AGENTS_GIT_PROTECTED=none` clears branch protection. `AGENTS_GIT_FORCE_PUSH=allow` permits force-push except onto a protected branch.
