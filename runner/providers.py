@@ -412,6 +412,13 @@ _KINDS = {
 
 def get_provider(name: str = "", providers_dir: Path | None = None) -> Provider:
     wanted = (name or os.environ.get("LLM_PROVIDER") or "").strip()
+    if not wanted:
+        try:
+            from .model import selected_provider_name
+
+            wanted = selected_provider_name()
+        except Exception:
+            wanted = ""
     rows = list_providers(providers_dir)
     manifest = None
     if wanted:

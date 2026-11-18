@@ -1,0 +1,31 @@
+{
+  "name": "mcp.model",
+  "kind": "mcp",
+  "when": "on_request",
+  "cadence": "on_request",
+  "verb": "python -m runner.model",
+  "rests_on": "runner.model shows or switches the workspace LLM provider/model pick. exit 0 = ok",
+  "expected_exit": 0,
+  "mutates": true,
+  "timeout_sec": 30,
+  "as_tool": true,
+  "commands_from": "help-json",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "command": {
+        "type": "string",
+        "description": "Declared command: list | current | use | clear."
+      },
+      "provider": {
+        "type": "string",
+        "description": "use: provider manifest name (see list)"
+      },
+      "model": {
+        "type": "string",
+        "description": "use: optional model id override; empty keeps the manifest/env model"
+      }
+    },
+    "required": ["command"]
+  }
+}
