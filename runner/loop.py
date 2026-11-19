@@ -684,7 +684,7 @@ def _main_impl(argv: list[str] | None = None) -> int:
         metavar="PATH",
         help="Attach a file (repeatable). Images are vision parts when AGENTS_VISION=1 or the provider advertises vision; otherwise the path is text.",
     )
-    parser.add_argument("--limit", type=int, default=24, help="History turns to rebuild")
+    parser.add_argument("--limit", type=int, default=int(os.environ.get("AGENTS_HISTORY_LIMIT", "24")), help="History turns to rebuild")
     parser.add_argument("--system", default="", help="Optional instructions blob (stable prefix)")
     parser.add_argument("--provider", default="", help="Provider name (openai.default, echo, …)")
     parser.add_argument("--model", default="", help="Model id override (default: LLM_MODEL env or provider manifest model)")

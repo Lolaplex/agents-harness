@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- `runner.loop --limit` (history turns rebuilt from traces) honors `AGENTS_HISTORY_LIMIT` as its default, matching the `AGENTS_MAX_TOOL_ROUNDS` pattern — hosts can widen the window without a wrapper command.
 - `redact` drops the `AGENTS_HOME` source-env fallback (alias removed from agents-workspace); `AGENTS_WORKSPACE_ROOT` remains the escape hatch.
 - `executor._internal_roots()` and the `runner.delegate` workdir clamp now delegate to `agents_workspace.allowed_roots()` (single source for the lock allow list). Behaviour unchanged.
 - Provider API keys resolve via `agents_workspace.resolve_secret()`: `<ws>/secrets.json` > `<host>/secrets.json` > env (`key_env`) > manifest `api_key`. A workspace can pin per-ws provider keys without exporting them.
