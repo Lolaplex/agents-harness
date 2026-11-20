@@ -9,6 +9,11 @@ them is mutating too: ``classify_spec(..., default=None)`` reports that the
 metadata is absent, and the approval gate treats that absence as mutating.
 The tool name is not a class. Unknown ``side_effects`` values are mutating.
 
+A command spec may nest one more level in ``subcommands``: each entry is a
+full command spec (usage/parameters/side_effects) selected by ``argv[1]`` or
+an ``action``/``subcommand`` argument — ``proc poll`` can be read-only while
+``proc kill`` is mutating. One level only; deeper nesting is not resolved.
+
 This module does not import agents-terminal or any other tool package.
 ``commands_from: "help-json"`` optionally runs that module's own verb with
 ``--help-json`` and caches the document.
@@ -91,18 +96,42 @@ def unwrap_arguments(arguments: Any) -> Any:
     return arguments
 
 
-def select_command(manifest: Any, arguments: Any) -> tuple[str, dict[str, Any]] | None:
-    """Resolve a declared command from arguments. Names only look up metadata.
+def _select_subcommand(
+    spec: dict[str, Any],
+    args: Any,
+    *,
+    parent_canonical: str,
+) -> tuple[str, dict[str, Any]] | None:
+    """One level deeper: ``subcommands`` entry named by argv[1] or action."""
+    subs = spec.get("subcommands") if isinstance(spec, dict) else None
+    if not isinstance(subs, dict) or not subs:
+        return None
+    token = ""
+    if isinstance(args, list):
+        if len(args) > 1:
+            token = str(args[1])
+    elif isinstance(args, dict):
+        argv = args.get("argv")
+        if isinstance(argv, list) and len(argv) > 1 and str(argv[0]) == parent_canonical:
+            token = str(argv[1])
+        for key in ("action", "subcommand"):
+            val = args.get(key)
+            if isinstance(val, str) and val.strip() in subs:
+                token = val.strip()
+                break
+    token = token.strip()
+    sub = subs.get(token)
+    if isinstance(sub, dict):
+        return token, sub
+    return None
 
-    ``command`` matches only when the whole string is a command or alias.
-    A shell line is not split, so ``git status`` does not become a command
-    named ``git``. ``argv[0]`` matches when that token is declared.
-    """
+
+def _select_level1(manifest: Any, arguments: Any) -> tuple[str, dict[str, Any]] | None:
     index = command_index(manifest)
     if not index:
         nested = manifest.get("help_json") if isinstance(manifest, dict) else None
         if isinstance(nested, dict) and nested is not manifest:
-            return select_command(nested, arguments)
+            return _select_level1(nested, arguments)
         return None
     args = unwrap_arguments(arguments)
     if isinstance(args, str):
@@ -139,6 +168,37 @@ def select_command(manifest: Any, arguments: Any) -> tuple[str, dict[str, Any]] 
     return None
 
 
+def select_command(manifest: Any, arguments: Any) -> tuple[str, dict[str, Any]] | None:
+    """Resolve a declared command from arguments. Names only look up metadata.
+
+    ``command`` matches only when the whole string is a command or alias.
+    A shell line is not split, so ``git status`` does not become a command
+    named ``git``. ``argv[0]`` matches when that token is declared. When the
+    spec has ``subcommands``, ``argv[1]`` or an ``action``/``subcommand``
+    argument resolves one level deeper; the returned name is then
+    ``"<canonical> <sub>"``.
+    """
+    selected = _select_level1(manifest, arguments)
+    if selected is None:
+        return None
+    canonical, spec = selected
+    args = unwrap_arguments(arguments)
+    # argv[0] may be an alias; sub lookup compares against the invoked token.
+    invoked = canonical
+    if isinstance(args, list) and args:
+        invoked = str(args[0])
+    elif isinstance(args, dict):
+        argv = args.get("argv")
+        if isinstance(argv, list) and argv:
+            invoked = str(argv[0])
+    sub = _select_subcommand(spec, args, parent_canonical=invoked)
+    if sub is None and invoked != canonical:
+        sub = _select_subcommand(spec, args, parent_canonical=canonical)
+    if sub is not None:
+        return f"{canonical} {sub[0]}", sub[1]
+    return selected
+
+
 def call_effects(manifest: Any, arguments: Any) -> str | None:
     """Class of the invoked command, or None when arguments name no command.
 
@@ -165,7 +225,8 @@ def _wants_double_dash(spec: dict[str, Any]) -> bool:
     return " -- " in usage or usage.rstrip().endswith(" --")
 
 
-def _schema_args(spec: dict[str, Any], arguments: dict[str, Any], invoked: str) -> list[str]:
+def _schema_args(spec: dict[str, Any], arguments: dict[str, Any], invoked: str | list[str]) -> list[str]:
+    head = [invoked] if isinstance(invoked, str) else list(invoked)
     params = spec.get("parameters") if isinstance(spec.get("parameters"), dict) else {}
     props = params.get("properties") if isinstance(params, dict) and isinstance(params.get("properties"), dict) else {}
     required = [str(item) for item in (params.get("required") or [])] if isinstance(params, dict) else []
@@ -186,7 +247,7 @@ def _schema_args(spec: dict[str, Any], arguments: dict[str, Any], invoked: str) 
             if key == "argv" and _wants_double_dash(spec):
                 if body[:1] == ["--"]:
                     body = body[1:]
-                return [invoked, "--", *body]
+                return [*head, "--", *body]
             if key in required:
                 out.extend(body)
             else:
@@ -197,7 +258,7 @@ def _schema_args(spec: dict[str, Any], arguments: dict[str, Any], invoked: str) 
             out.append(str(arguments[key]))
             continue
         out.extend([flag, str(arguments[key])])
-    return [invoked, *out]
+    return [*head, *out]
 
 
 def declared_argv(mod: Any, arguments: Any) -> list[str] | None:
@@ -210,9 +271,12 @@ def declared_argv(mod: Any, arguments: Any) -> list[str] | None:
     if selected is None:
         return None
     canonical, spec = selected
+    base, _, sub_name = canonical.partition(" ")
     args = unwrap_arguments(arguments)
-    names = {canonical}
-    aliases = spec.get("aliases") if isinstance(spec.get("aliases"), list) else []
+    names = {base}
+    parent = _select_level1(mod, arguments)
+    parent_spec = parent[1] if parent is not None else spec
+    aliases = parent_spec.get("aliases") if isinstance(parent_spec.get("aliases"), list) else []
     names.update(str(alias).strip() for alias in aliases if str(alias).strip())
     if isinstance(args, list) and args and str(args[0]) in names:
         head = str(args[0])
@@ -221,7 +285,7 @@ def declared_argv(mod: Any, arguments: Any) -> list[str] | None:
             return [head, "--", *rest]
         return [head, *rest]
     if not isinstance(args, dict):
-        return [canonical]
+        return canonical.split()
     argv = args.get("argv")
     if isinstance(argv, list) and argv:
         head = str(argv[0])
@@ -234,14 +298,15 @@ def declared_argv(mod: Any, arguments: Any) -> list[str] | None:
             body = [str(item) for item in argv]
             if body[:1] == ["--"]:
                 body = body[1:]
-            return [canonical, "--", *body]
-    invoked = canonical
+            return [*canonical.split(), "--", *body]
+    invoked = base
     for key in ("command_name", "subcommand", "command", "cmd", "name"):
         val = args.get(key)
         if isinstance(val, str) and val.strip() in names:
             invoked = val.strip()
             break
-    return _schema_args(spec, args, invoked)
+    head_tokens = [invoked] + ([sub_name] if sub_name else [])
+    return _schema_args(spec, args, head_tokens)
 
 
 def load_help_json(verb: str) -> dict[str, Any] | None:

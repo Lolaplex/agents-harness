@@ -313,5 +313,89 @@ class TestClassify(unittest.TestCase):
         clear_help_cache()
 
 
+NESTED = {
+    "name": "mcp.proc",
+    "kind": "mcp",
+    "mutates": True,
+    "commands": {
+        "proc": {
+            "side_effects": "mutating",
+            "subcommands": {
+                "list": {"side_effects": "read-only"},
+                "poll": {"side_effects": "read-only"},
+                "log": {"side_effects": "read-only"},
+                "kill": {"side_effects": "mutating"},
+                "write": {
+                    "side_effects": "mutating",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "id": {"type": "string"},
+                            "data": {"type": "string"},
+                        },
+                        "required": ["id"],
+                    },
+                },
+            },
+        },
+        "bg": {"side_effects": "mutating"},
+    },
+}
+
+
+class TestSubcommands(unittest.TestCase):
+    def test_argv1_resolves_subcommand(self) -> None:
+        self.assertEqual(call_effects(NESTED, {"argv": ["proc", "list"]}), READ_ONLY)
+        self.assertEqual(call_effects(NESTED, {"argv": ["proc", "kill", "p1"]}), MUTATING)
+        self.assertEqual(call_effects(NESTED, {"argv": ["proc", "nonsense"]}), MUTATING)
+
+    def test_action_and_subcommand_keys(self) -> None:
+        self.assertEqual(
+            call_effects(NESTED, {"command": "proc", "action": "poll", "id": "p1"}),
+            READ_ONLY,
+        )
+        self.assertEqual(
+            call_effects(NESTED, {"command": "proc", "subcommand": "kill", "id": "p1"}),
+            MUTATING,
+        )
+
+    def test_parent_class_when_no_sub_match(self) -> None:
+        # subcommands exist but the token names none -> parent spec decides
+        self.assertEqual(call_effects(NESTED, {"argv": ["proc"]}), MUTATING)
+        self.assertEqual(call_effects(NESTED, {"argv": ["bg"]}), MUTATING)
+
+    def test_declared_argv_named_command(self) -> None:
+        argv = declared_argv(NESTED, {"command": "proc", "action": "write", "id": "p1", "data": "x"})
+        self.assertEqual(argv[:2], ["proc", "write"])
+        self.assertIn("p1", argv)
+
+    def test_list_args_pass_through(self) -> None:
+        argv = declared_argv(NESTED, ["proc", "kill", "p1"])
+        self.assertEqual(argv, ["proc", "kill", "p1"])
+
+    def test_approval_key_includes_subcommand(self) -> None:
+        from runner.approval_policy import action_keys
+
+        keys = action_keys(NESTED, {"argv": ["proc", "kill", "p1"]})
+        self.assertIn("cmd:proc kill", keys)
+
+    def test_pinned_expands_one_level(self) -> None:
+        from unittest.mock import patch
+
+        from runner import pinned
+
+        mod = dict(NESTED)
+        mod["pin"] = True
+        with patch.object(pinned, "list_modules", return_value=[mod]):
+            entries = pinned.pinned_entries()
+        names = {e["command"] for e in entries if "command" in e}
+        self.assertIn("proc kill", names)
+        self.assertIn("proc poll", names)
+        entry = next(e for e in entries if e.get("command") == "proc kill")
+        self.assertEqual(entry["arguments"]["command"], "proc")
+        self.assertEqual(entry["arguments"]["action"], "kill")
+        self.assertEqual(entry["side_effects"], "mutating")
+
+
 if __name__ == "__main__":
     unittest.main()

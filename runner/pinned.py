@@ -119,21 +119,35 @@ def pinned_entries() -> list[dict[str, Any]]:
         for command, spec in commands.items():
             if not isinstance(spec, dict):
                 continue
-            raw_params = spec.get("parameters")
-            params: dict[str, Any] = raw_params if isinstance(raw_params, dict) else {}
-            raw_props = params.get("properties")
-            props: dict[str, Any] = raw_props if isinstance(raw_props, dict) else {}
-            arguments = _example_arguments(str(command), spec)
-            entries.append(
-                {
-                    "module": name,
-                    "command": str(command),
-                    "side_effects": classify_spec(spec, default=MUTATING) or MUTATING,
-                    "arguments": arguments,
-                    "call": _example_call(name, arguments),
-                    "stdin_option": any(key in props for key in ("stdin", "stdin_json")),
-                }
-            )
+            subs = spec.get("subcommands")
+            # One level of subcommands renders one entry per action.
+            expanded: list[tuple[str, dict[str, Any], str | None]] = []
+            if isinstance(subs, dict) and subs:
+                expanded = [
+                    (f"{command} {sub_name}", sub_spec, str(sub_name))
+                    for sub_name, sub_spec in subs.items()
+                    if isinstance(sub_spec, dict)
+                ]
+            else:
+                expanded = [(str(command), spec, None)]
+            for display, eff_spec, sub in expanded:
+                raw_params = eff_spec.get("parameters")
+                params: dict[str, Any] = raw_params if isinstance(raw_params, dict) else {}
+                raw_props = params.get("properties")
+                props: dict[str, Any] = raw_props if isinstance(raw_props, dict) else {}
+                arguments = _example_arguments(str(command), eff_spec)
+                if sub is not None:
+                    arguments["action"] = sub
+                entries.append(
+                    {
+                        "module": name,
+                        "command": display,
+                        "side_effects": classify_spec(eff_spec, default=MUTATING) or MUTATING,
+                        "arguments": arguments,
+                        "call": _example_call(name, arguments),
+                        "stdin_option": any(key in props for key in ("stdin", "stdin_json")),
+                    }
+                )
     return entries
 
 
