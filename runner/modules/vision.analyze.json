@@ -1,0 +1,36 @@
+{
+  "name": "vision.analyze",
+  "kind": "mcp",
+  "when": "on_request",
+  "cadence": "on_request",
+  "verb": "python -m runner.vision_analyze",
+  "rests_on": "vision-capable provider (AGENTS_VISION=1 or manifest vision/capabilities); sends image as image_url part, exit 0 = answered",
+  "expected_exit": 0,
+  "mutates": false,
+  "timeout_sec": 180,
+  "as_tool": true,
+  "commands_from": "help-json",
+  "command_pin": "analyze",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "image": {
+        "type": "string",
+        "description": "Image path (png/jpg/jpeg/gif/webp), max 20MB"
+      },
+      "prompt": {
+        "type": "string",
+        "description": "What to look for (default: describe the image)"
+      },
+      "provider": {
+        "type": "string",
+        "description": "Provider name (default: workspace pick)"
+      },
+      "model": {
+        "type": "string",
+        "description": "Model id override"
+      }
+    },
+    "required": ["image"]
+  }
+}
