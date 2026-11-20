@@ -212,7 +212,7 @@ class TestModulesAndLoop(unittest.TestCase):
         env = {k: v for k, v in os.environ.items() if k != "AGENTS_MODULES_DIR"}
         with patch.dict(os.environ, env, clear=True):
             names = {t["function"]["name"] for t in openai_tools()}
-            self.assertEqual(names, {"list_catalog", "load_schema", "call_job"})
+            self.assertEqual(names, {"list_catalog", "load_schema", "call_job", "clarify"})
 
     def test_enabled_json_filters_tools(self):
         with tempfile.TemporaryDirectory() as tmp:

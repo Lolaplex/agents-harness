@@ -97,6 +97,7 @@ def _emit_trailer(
     seal_digest: str = "",
     seal_error: str = "",
     response_flags: list[str] | None = None,
+    clarify: dict[str, Any] | None = None,
 ) -> None:
     # Stream delivery used to return here, so /v1/stream never received session.
     _ = mode
@@ -107,6 +108,8 @@ def _emit_trailer(
         data["seal_error"] = seal_error
     if response_flags:
         data["response_flags"] = list(response_flags)
+    if clarify:
+        data["clarify"] = clarify
     trailer = json.dumps(data, ensure_ascii=False)
     print(f"{LOOP_TRAILER_MARKER}\n{trailer}", file=sys.stdout, flush=True)
 
@@ -262,9 +265,10 @@ def _run_tool_calls(
     on_status: Callable[[str], None] | None = None,
     turn_cache: dict[tuple[str, str], tuple[str, str]] | None = None,
     receipts: list[dict[str, Any]] | None = None,
+    clarifies: list[dict[str, Any]] | None = None,
     workspace: Any = None,
 ) -> list[dict[str, Any]]:
-    """Route tool_calls through the three Cordis tools (closed carrier) with loop protection and trace recording."""
+    """Route tool_calls through the Cordis tools (closed carrier) with loop protection and trace recording."""
     messages: list[dict[str, Any]] = []
     batch: list[dict[str, Any]] = []
     for i, call in enumerate(calls):
@@ -324,6 +328,8 @@ def _run_tool_calls(
                 )
                 content = outcome.text
                 notice = outcome.notice
+                if outcome.clarify and clarifies is not None:
+                    clarifies.append(outcome.clarify)
                 receipt = receipt_for(outcome)
                 if receipt is not None:
                     batch.append(receipt)
@@ -984,6 +990,7 @@ def _main_impl(argv: list[str] | None = None) -> int:
 
     turn_cache: dict[tuple[str, str], tuple[str, str]] = {}
     turn_receipts: list[dict[str, Any]] = []
+    turn_clarifies: list[dict[str, Any]] = []
 
     for _round in range(max_rounds):
         if not result.tool_calls:
@@ -997,6 +1004,7 @@ def _main_impl(argv: list[str] | None = None) -> int:
             on_status=on_status,
             turn_cache=turn_cache,
             receipts=turn_receipts,
+            clarifies=turn_clarifies,
             workspace=ws,
         )
         messages.append(
@@ -1007,6 +1015,8 @@ def _main_impl(argv: list[str] | None = None) -> int:
             }
         )
         messages.extend(tool_msgs)
+        if turn_clarifies:
+            break
         is_last = _round >= max_rounds - 1
         round_tools = None if is_last else tools
         if is_last:
@@ -1098,7 +1108,15 @@ def _main_impl(argv: list[str] | None = None) -> int:
 
     final_text = (result.text or "").strip() or last_scratch
     response_flags: list[str] = []
-    if final_text:
+    if turn_clarifies:
+        # The turn ends with the question; channels render options where they can.
+        ask = turn_clarifies[-1]
+        lines = [ask["question"]]
+        for i, opt in enumerate(ask.get("options") or [], 1):
+            lines.append(f"{i}. {opt}")
+        final_text = "\n".join(lines)
+        response_flags = []
+    if final_text and not turn_clarifies:
         findings = final_check_findings(final_text, turn_receipts)
         if findings:
             messages.append({"role": "assistant", "content": final_text})
@@ -1164,6 +1182,7 @@ def _main_impl(argv: list[str] | None = None) -> int:
         seal_digest=seal_digest,
         seal_error=seal_error,
         response_flags=response_flags,
+        clarify=turn_clarifies[-1] if turn_clarifies else None,
     )
     return 0
 

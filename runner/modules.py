@@ -158,7 +158,7 @@ def openai_tools(
     modules: List[Dict[str, Any]] | None = None,
     workspace: "Workspace | None" = None,
 ) -> list[dict[str, Any]]:
-    """Three always-on Cordis tools. Host verbs are call_job-only (closed carrier)."""
+    """Always-on Cordis tools. Host verbs are call_job-only (closed carrier)."""
     from .cordis_tools import openai_cordis_tools
 
     _ = modules  # catalog is resolved inside call_job at execution time
@@ -169,7 +169,7 @@ def openai_tools(
     # Overlay enabled.json can disable all tools (empty list) for tests.
     if not allow:
         return []
-    # When overlay lists specific module names, still expose the three Cordis tools.
+    # When overlay lists specific module names, still expose the Cordis tools.
     return tools
 
 

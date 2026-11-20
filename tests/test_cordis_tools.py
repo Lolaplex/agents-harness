@@ -17,9 +17,9 @@ from runner.redact import redact_tool_output
 
 
 class TestCordisTools(unittest.TestCase):
-    def test_openai_tools_are_three(self):
+    def test_openai_tools_surface(self):
         names = {t["function"]["name"] for t in openai_tools()}
-        self.assertEqual(names, {"list_catalog", "load_schema", "call_job"})
+        self.assertEqual(names, {"list_catalog", "load_schema", "call_job", "clarify"})
 
     def test_list_catalog_includes_terminal(self):
         out = handle_cordis_tool("list_catalog", {"function": {"arguments": "{}"}})
@@ -202,7 +202,7 @@ class TestCordisTools(unittest.TestCase):
 
     def test_openai_cordis_tools_schema(self):
         tools = openai_cordis_tools()
-        self.assertEqual(len(tools), 3)
+        self.assertEqual(len(tools), 4)
 
     def test_arguments_to_argv_memory_add_strips_duplicate_add(self):
         from runner.cordis_tools import _arguments_to_argv

@@ -3,7 +3,7 @@
 A module manifest may set ``"pin": true``. Its discovered commands are
 rendered as compact ``call_job`` examples so a model does not spend a
 ``load_schema`` round trip on every file operation. The closed carrier
-stays: the three Cordis tools are unchanged.
+stays: the built-in Cordis tools are unchanged.
 
 ``AGENTS_PINNED_VERBS=0`` disables the block. Help-json discovery is cached
 per process by ``helpjson.load_help_json``; there is no disk cache. The

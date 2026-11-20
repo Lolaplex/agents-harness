@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from .approval import call_is_mutator, gate_module
-from .fence import HarnessError
+from .fence import HarnessError, HarnessMessage
 from .executor import execute_job
 from .helpjson import declared_argv, with_discovered_commands
 from .modules import find_module, find_module_for_tool, list_modules, openai_tool_name
@@ -22,7 +22,7 @@ from .skills import format_skill_list, load_skill
 _SKILL_MODULES = ("skill.list", "skill.load", "skill.catalog")
 _PRE_PR = "repo.pre_pr"
 
-CORDIS_TOOL_NAMES = ("list_catalog", "load_schema", "call_job")
+CORDIS_TOOL_NAMES = ("list_catalog", "load_schema", "call_job", "clarify")
 
 _LIST_CATALOG_SCHEMA = {
     "type": "object",
@@ -60,6 +60,22 @@ _CALL_JOB_SCHEMA = {
     "required": ["name"],
 }
 
+_CLARIFY_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "question": {
+            "type": "string",
+            "description": "The clarifying question to ask the user",
+        },
+        "options": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "Optional answer choices; channels that support it render them as buttons",
+        },
+    },
+    "required": ["question"],
+}
+
 
 def openai_cordis_tools() -> list[dict[str, Any]]:
     return [
@@ -85,6 +101,18 @@ def openai_cordis_tools() -> list[dict[str, Any]]:
                 "name": "call_job",
                 "description": "Run one catalog module by name. Unknown names fail closed.",
                 "parameters": _CALL_JOB_SCHEMA,
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "clarify",
+                "description": (
+                    "Pause the turn and ask the user a structured question when "
+                    "their request is ambiguous. Options are rendered as buttons "
+                    "where the channel supports it. The turn ends with the question."
+                ),
+                "parameters": _CLARIFY_SCHEMA,
             },
         },
     ]
@@ -367,6 +395,7 @@ class CordisOutcome:
     arguments: Any
     receipt_source: str = ""
     notice: str = ""
+    clarify: dict[str, Any] | None = None
 
 
 def _outcome(
@@ -378,6 +407,7 @@ def _outcome(
     arguments: Any = None,
     receipt_source: str = "",
     notice: str = "",
+    clarify: dict[str, Any] | None = None,
 ) -> CordisOutcome:
     return CordisOutcome(
         text=text,
@@ -387,6 +417,7 @@ def _outcome(
         arguments=arguments if arguments is not None else {},
         receipt_source=receipt_source if receipt_source else text,
         notice=notice,
+        clarify=clarify,
     )
 
 
@@ -454,6 +485,26 @@ def run_cordis_tool(
     """Execute one Cordis tool. Receipts are derived from this outcome."""
     tool = name.strip().lower()
     args = _parse_arguments(call)
+    if tool == "clarify":
+        question = str(args.get("question") or "").strip()
+        if not question:
+            return _outcome(
+                HarnessError("error: clarify needs a non-empty question"),
+                success=False,
+                tool="clarify",
+            )
+        options = args.get("options")
+        options = [str(o).strip() for o in options if str(o).strip()] if isinstance(options, list) else []
+        return _outcome(
+            HarnessMessage(
+                "clarify: the turn ends here. Ask the user exactly this question "
+                "and wait for their reply: " + question
+            ),
+            success=True,
+            tool="clarify",
+            arguments=args,
+            clarify={"question": question, "options": options},
+        )
     if tool == "list_catalog":
         kind = str(args.get("kind") or "").strip().lower()
         rows = filter_modules(
