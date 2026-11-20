@@ -15,9 +15,12 @@ The supervisor is ``python -m runner.delegate _run <id>``: a tiny child that
 runs the loop as a normal subprocess, so the exit code is exact on every
 platform (no shell wrappers).
 
-Guards: ``AGENTS_DELEGATE_DEPTH`` counts nesting (a delegate cannot spawn
-delegates past ``AGENTS_DELEGATE_MAX_DEPTH``, default 1), and ``--workdir``
-must resolve inside the roots the child's workdir lock would honor.
+Guards: depth is counted in a host-side ledger at ``<ws>/run/delegate.depth``
+written before each spawn (``AGENTS_DELEGATE_DEPTH`` env is kept as a
+compatibility hint; effective depth is the max of both). A delegate cannot
+spawn past ``AGENTS_DELEGATE_MAX_DEPTH`` (default 1). The ledger is advisory —
+same-UID children share the fs — until real container isolation lands.
+``--workdir`` must resolve inside the roots the child's workdir lock honors.
 """
 
 from __future__ import annotations
@@ -119,11 +122,37 @@ def _state(ddir: Path) -> dict[str, Any]:
     }
 
 
+def _ledger_path() -> Path:
+    # <ws>/run/delegate.depth for the default <ws>/delegates root; scoped inside
+    # the delegates dir when AGENTS_DELEGATES_DIR overrides (tests, overlays).
+    base = _root() if os.environ.get("AGENTS_DELEGATES_DIR", "").strip() else _root().parent
+    return base / "run" / "delegate.depth"
+
+
+def _ledger_depth() -> int:
+    """Depth claimed on disk. Same-UID children could forge the env counter;
+    the ledger survives env tampering (advisory until real container isolation)."""
+    try:
+        return int(_ledger_path().read_text(encoding="utf-8").strip() or 0)
+    except (OSError, ValueError):
+        return 0
+
+
+def _write_ledger(depth: int) -> None:
+    path = _ledger_path()
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(f"{depth}\n", encoding="utf-8")
+    except OSError:
+        pass  # advisory ledger; spawn continues with the env counter
+
+
 def _depth() -> int:
     try:
-        return int(os.environ.get("AGENTS_DELEGATE_DEPTH", "0") or 0)
+        env_depth = int(os.environ.get("AGENTS_DELEGATE_DEPTH", "0") or 0)
     except ValueError:
-        return 0
+        env_depth = 0
+    return max(env_depth, _ledger_depth())
 
 
 def _max_depth() -> int:
@@ -187,6 +216,7 @@ def spawn(
         "created": datetime.now(timezone.utc).isoformat(),
     }
     _write_json(ddir / "meta.json", meta)
+    _write_ledger(depth + 1)
 
     env = dict(os.environ)
     env["AGENTS_DELEGATE"] = dlg_id

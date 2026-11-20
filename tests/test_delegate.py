@@ -52,6 +52,20 @@ class TestDelegate(unittest.TestCase):
             with self.assertRaises(delegate.DelegateError):
                 delegate.spawn("nested")
 
+    def test_ledger_written_and_counts_toward_depth(self) -> None:
+        # spawn at depth 0 writes the ledger; a later process reading the
+        # ledger (env counter forged to 0) is still refused at MAX_DEPTH=1.
+        spawned = delegate.spawn("ledger-probe", provider="echo")
+        try:
+            self.assertEqual(
+                delegate._ledger_path().read_text(encoding="utf-8").strip(), "1"
+            )
+            os.environ.pop("AGENTS_DELEGATE_DEPTH", None)
+            with self.assertRaises(delegate.DelegateError):
+                delegate.spawn("nested-ledger")
+        finally:
+            delegate.result(spawned["id"], timeout_sec=120)
+
     def test_workdir_escape_refused(self) -> None:
         with self.assertRaises(delegate.DelegateError):
             delegate.spawn("x", workdir="C:\\Windows" if os.name == "nt" else "/etc")
