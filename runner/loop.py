@@ -415,9 +415,13 @@ def _coerce_tool_calls(result: CompletionResult) -> CompletionResult:
     return result
 
 
-def _skills_for_prompt(workspace=None) -> list[tuple[str, str]]:
+def _skills_for_prompt(workspace=None, channel: str = "") -> list[tuple[str, str]]:
+    from .toolsets import filter_modules
+
     rows = []
-    for m in list_modules(workspace=workspace):
+    for m in filter_modules(
+        list_modules(workspace=workspace), channel=channel, workspace=workspace
+    ):
         summary = str(m.get("rests_on") or m.get("verb") or "")
         rows.append((str(m["name"]), summary))
     return rows
@@ -441,6 +445,7 @@ def build_payload(
     attachments: list[str] | None = None,
     vision: bool = False,
     workspace=None,
+    channel: str = "",
 ) -> list[dict[str, Any]]:
     """system (cached) → history → clock → new user turn.
 
@@ -491,7 +496,7 @@ def build_payload(
 
     parts = PromptParts(
         instructions=system,
-        skills=_skills_for_prompt(workspace) if include_modules else [],
+        skills=_skills_for_prompt(workspace, channel=channel) if include_modules else [],
         user_id=user_id,
         user_display=user_display,
         work=work,
@@ -689,6 +694,11 @@ def _main_impl(argv: list[str] | None = None) -> int:
     parser.add_argument("--provider", default="", help="Provider name (openai.default, echo, …)")
     parser.add_argument("--model", default="", help="Model id override (default: LLM_MODEL env or provider manifest model)")
     parser.add_argument("--persona", default="", help="Persona id (<ws>/personas/<id> first, package fallback; default: AGENTS_PERSONA or the workspace default)")
+    parser.add_argument(
+        "--toolset",
+        default="",
+        help="Named toolset (AGENTS_TOOLSET). Restricts list_catalog/load_schema/call_job and the prompt module list to member globs from the config `toolsets` section. `all` clears.",
+    )
     parser.add_argument("--assemble-only", action="store_true", help="Print reconstructed payload, no HTTP")
     parser.add_argument("--complete", action="store_true", help="Complete via the selected provider and record")
     parser.add_argument(
@@ -734,6 +744,8 @@ def _main_impl(argv: list[str] | None = None) -> int:
     from .personas import resolve_persona_id
     persona_id = resolve_persona_id(args.persona, workspace=ws)
     os.environ["AGENTS_PERSONA"] = persona_id
+    if args.toolset:
+        os.environ["AGENTS_TOOLSET"] = args.toolset.strip()
 
     try:
         from . import __version__
@@ -853,6 +865,7 @@ def _main_impl(argv: list[str] | None = None) -> int:
         attachments=attachments,
         vision=vision,
         workspace=ws,
+        channel=args.channel,
     )
     if args.assemble_only or not args.complete:
         print(
@@ -1118,7 +1131,7 @@ def main(argv: list[str] | None = None) -> int:
     """Run the loop, restoring host-level env vars it sets for children."""
     saved = {
         k: os.environ.get(k)
-        for k in ("AGENTS_PERSONA", "AGENTS_WORKSPACE")
+        for k in ("AGENTS_PERSONA", "AGENTS_WORKSPACE", "AGENTS_TOOLSET")
     }
     try:
         return _main_impl(argv)

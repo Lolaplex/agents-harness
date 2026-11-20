@@ -11,6 +11,7 @@ from .fence import HarnessError
 from .executor import execute_job
 from .helpjson import declared_argv, with_discovered_commands
 from .modules import find_module, find_module_for_tool, list_modules, openai_tool_name
+from .toolsets import filter_modules, module_allowed
 from .receipts import harness_failure, make_receipt, subprocess_succeeded
 from .redact import redact_tool_output
 from .pre_pr import pre_pr_report
@@ -455,7 +456,9 @@ def run_cordis_tool(
     args = _parse_arguments(call)
     if tool == "list_catalog":
         kind = str(args.get("kind") or "").strip().lower()
-        rows = list_modules()
+        rows = filter_modules(
+            list_modules(), channel=default_channel, workspace=workspace
+        )
         if kind:
             rows = [m for m in rows if str(m.get("kind") or "").lower() == kind]
         lines = [
@@ -469,6 +472,16 @@ def run_cordis_tool(
         mod = find_module(mod_name)
         if mod is None:
             return _outcome(f"unknown module {mod_name}", success=False, tool="load_schema")
+        if not module_allowed(
+            str(mod.get("name") or mod_name),
+            channel=default_channel,
+            workspace=workspace,
+        ):
+            return _outcome(
+                HarnessError(f"refused: module {mod_name} not in active toolset"),
+                success=False,
+                tool="load_schema",
+            )
         schema = mod.get("parameters") or {
             "type": "object",
             "properties": {
@@ -516,6 +529,16 @@ def run_cordis_tool(
         if mod is None:
             return _outcome(
                 HarnessError(f"refused: unknown module {mod_name}"),
+                success=False,
+                tool=mod_name or "call_job",
+            )
+        if not module_allowed(
+            str(mod.get("name") or mod_name),
+            channel=default_channel,
+            workspace=workspace,
+        ):
+            return _outcome(
+                HarnessError(f"refused: module {mod_name} not in active toolset"),
                 success=False,
                 tool=mod_name or "call_job",
             )
