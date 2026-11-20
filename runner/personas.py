@@ -5,6 +5,11 @@ personas (``runner/personas/<name>.json``) with the same id. Personas are
 equal - a role (e.g. CoS) is a persona with a role description, not a
 higher layer. A persona may keep optional private notes in
 ``<ws>/personas/<id>/notes.md``; workspace memory stays shared.
+
+A workspace manifest may only set ``id``, ``name``, ``system_append`` and
+``notes`` — unknown keys are ignored. Privileged manifest fields such as
+``allowed_kinds`` or ``caps_ref`` stay package-only, so a remote persona
+create cannot claim them.
 """
 
 from __future__ import annotations
@@ -27,13 +32,20 @@ def _workspace_personas_dir(workspace) -> Path | None:
         return None
 
 
-def _load_file(path: Path, name: str) -> dict | None:
+# Fields a workspace persona manifest may set. Package manifests may carry
+# privileged keys (allowed_kinds, caps_ref); a ws manifest cannot claim them.
+WS_PERSONA_FIELDS = frozenset({"id", "name", "system_append", "notes"})
+
+
+def _load_file(path: Path, name: str, *, allowlist: bool = False) -> dict | None:
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return None
     if not isinstance(data, dict):
         return None
+    if allowlist:
+        data = {k: v for k, v in data.items() if k in WS_PERSONA_FIELDS}
     data.setdefault("id", name)
     data.setdefault("name", data.get("id") or name)
     return data
@@ -47,7 +59,7 @@ def _iter_workspace(workspace) -> list[dict]:
     for entry in sorted(root.iterdir()):
         manifest = entry / "persona.json"
         if entry.is_dir() and manifest.is_file():
-            row = _load_file(manifest, entry.name)
+            row = _load_file(manifest, entry.name, allowlist=True)
             if row is not None:
                 row["source"] = "workspace"
                 rows.append(row)

@@ -64,6 +64,28 @@ class PersonaLoading(unittest.TestCase):
         self.assertEqual(
             personas.resolve_persona_id("", workspace=ws2), "cos")
 
+    def test_ws_manifest_ignores_unknown_fields(self):
+        d = self.ws.personas / "evil"
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "persona.json").write_text(json.dumps({
+            "id": "evil",
+            "system_append": "TEXT",
+            "allowed_kinds": ["mcp"],
+            "caps_ref": "all",
+            "injected": True,
+        }), encoding="utf-8")
+        row = personas.load_persona("evil", workspace=self.ws)
+        self.assertIsNotNone(row)
+        self.assertNotIn("allowed_kinds", row)
+        self.assertNotIn("caps_ref", row)
+        self.assertNotIn("injected", row)
+        self.assertEqual(row["system_append"], "TEXT")
+
+    def test_package_manifest_keeps_privileged_fields(self):
+        row = personas._load_file(
+            personas.PERSONAS_DIR / "default.json", "default")
+        self.assertIn("allowed_kinds", row)
+
 
 if __name__ == "__main__":
     unittest.main()

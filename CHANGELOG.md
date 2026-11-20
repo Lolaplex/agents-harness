@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- Workspace persona manifests are scrubbed to an allowlist (`id`, `name`, `system_append`, `notes`) on load; unknown keys — including privileged ones like `allowed_kinds` or `caps_ref` — are ignored so a remote persona create cannot claim package-only fields.
 - `a2a.peer` resolves the relay via `RELAY_URL`, then `http://127.0.0.1:$RELAY_PORT`, then `GATEWAY_URL` (deprecated) instead of hardcoding 8787 — works on-host and in-container. Transport failure exits non-zero with `{"ok": false}` (no fake `stub: true` receipt). Module text clarifies it is cross-host board DID mail; intra-workspace persona chat uses `persona.*`. Verb moved to `python -m runner.a2a_peer`.
 - `tests/conftest.py` autouse fixture snapshots and restores every `AGENTS_*` env var per test, so `runner.loop.main()` (which pins `AGENTS_PERSONA`/`AGENTS_WORKSPACE` at CLI entry) cannot leak env between tests.
 
