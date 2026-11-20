@@ -43,7 +43,7 @@ def _via_import(project: str) -> str | None:
         return ""
 
 
-def _via_cli(project: str, workspace=None) -> str:
+def _via_cli(project: str, workspace=None, extra_env: Dict[str, str] | None = None) -> str:
     cmd = [sys.executable, "-m", "agents_memory", "context"]
     if project:
         cmd.extend(["--project", project])
@@ -52,6 +52,8 @@ def _via_cli(project: str, workspace=None) -> str:
         env["AGENTS_NO_UPDATE_CHECK"] = "1"
     else:
         env = {**os.environ, "AGENTS_NO_UPDATE_CHECK": "1"}
+    if extra_env:
+        env.update(extra_env)
     try:
         proc = subprocess.run(
             cmd,
@@ -91,15 +93,50 @@ def render_memory_rules(
     return block
 
 
+def _private_persona_block(project: str, workspace=None) -> str:
+    """Second ``<memory_rules>`` block from this persona's private store."""
+    try:
+        from .personas import private_memory_root_from_env
+
+        root = private_memory_root_from_env(workspace)
+    except Exception:
+        return ""
+    if root is None:
+        return ""
+    extra = {"AGENTS_MEMORY_PATH": str(root), "AGENTS_MEMORY_DIR": str(root)}
+    if workspace is not None:
+        return (_via_cli(project or "", workspace, extra_env=extra) or "").strip()
+    saved = {k: os.environ.get(k) for k in extra}
+    try:
+        os.environ.update(extra)
+        block = _via_import(project or "")
+        if block is None:
+            block = _via_cli(project or "", extra_env=extra)
+    finally:
+        for k, v in saved.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+    return (block or "").strip()
+
+
 def memory_rules_prompt_block(project: str = "", workspace=None) -> str:
     """System-prefix fragment; empty when there is nothing to inject."""
     block = render_memory_rules(project, workspace=workspace)
-    if not block:
-        return ""
-    return (
-        "Hard rules from local agent memory (follow these; they are not tool output):\n"
-        + block
-    )
+    private = _private_persona_block(project, workspace)
+    chunks = []
+    if block:
+        chunks.append(
+            "Hard rules from local agent memory (follow these; they are not tool output):\n"
+            + block
+        )
+    if private:
+        chunks.append(
+            "Hard rules from this persona's private memory (shared only with this persona):\n"
+            + private
+        )
+    return "\n\n".join(chunks)
 
 
 def clear_cache() -> None:

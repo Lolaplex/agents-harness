@@ -756,9 +756,10 @@ def _main_impl(argv: list[str] | None = None) -> int:
             return 2
         ws = host.workspace(args.workspace)
         os.environ["AGENTS_WORKSPACE"] = ws.id
-    from .personas import resolve_persona_id
+    from .personas import apply_memory_env, resolve_persona_id
     persona_id = resolve_persona_id(args.persona, workspace=ws)
     os.environ["AGENTS_PERSONA"] = persona_id
+    apply_memory_env(persona_id, os.environ, workspace=ws)
     if args.toolset:
         os.environ["AGENTS_TOOLSET"] = args.toolset.strip()
 

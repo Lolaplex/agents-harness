@@ -117,3 +117,48 @@ def persona_system_append(name: str, *, base: str = "", workspace=None) -> str:
         return base
     parts = [p for p in (base, str(row.get("system_append") or "").strip()) if p]
     return "\n\n".join(parts)
+
+
+def memory_mode(persona, workspace=None) -> str:
+    """``"private"`` or ``"shared"`` (default). ``persona`` is a row or id."""
+    row = persona if isinstance(persona, dict) else load_persona(str(persona or ""), workspace)
+    if not isinstance(row, dict):
+        return "shared"
+    return "private" if str(row.get("memory") or "").strip().lower() == "private" else "shared"
+
+
+def persona_memory_root(persona_id: str, workspace=None):
+    """``<ws>/personas/<id>/memory`` — the private store root, or None."""
+    pid = str(persona_id or "").strip()
+    root = _workspace_personas_dir(workspace)
+    if not pid or root is None:
+        return None
+    return Path(root) / pid / "memory"
+
+
+def apply_memory_env(persona_id: str, env: dict, workspace=None) -> dict:
+    """Private persona → ``AGENTS_MEMORY_PATH``/``AGENTS_MEMORY_DIR`` on its own root.
+
+    Shared personas inherit the workspace memory env untouched. The private
+    root is created so a later store open never fails on a missing dir.
+    """
+    if memory_mode(persona_id, workspace) != "private":
+        return env
+    root = persona_memory_root(persona_id, workspace)
+    if root is None:
+        return env
+    try:
+        root.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        return env
+    env["AGENTS_MEMORY_PATH"] = str(root)
+    env["AGENTS_MEMORY_DIR"] = str(root)
+    return env
+
+
+def private_memory_root_from_env(workspace=None):
+    """Current persona's private root when ``AGENTS_PERSONA`` maps to memory=private."""
+    pid = os.environ.get("AGENTS_PERSONA", "").strip()
+    if not pid or memory_mode(pid, workspace) != "private":
+        return None
+    return persona_memory_root(pid, workspace)

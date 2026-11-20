@@ -221,6 +221,15 @@ def spawn(
     env = dict(os.environ)
     env["AGENTS_DELEGATE"] = dlg_id
     env["AGENTS_DELEGATE_DEPTH"] = str(depth + 1)
+    if persona:
+        try:
+            from agents_workspace import Workspace
+
+            from .personas import apply_memory_env
+
+            apply_memory_env(persona, env, Workspace.from_env())
+        except Exception:
+            pass
     if workdir:
         env["AGENTS_WORKDIR"] = workdir
         env["AGENTS_WORKDIR_LOCK"] = "1"
