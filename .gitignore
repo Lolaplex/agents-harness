@@ -15,3 +15,4 @@ dist/
 # .agents/memory/, .cursor/rules/user-rules.mdc, CLAUDE.md. The repo-root
 # AGENTS.md stays tracked.
 CLAUDE.md
+.board-project.json
