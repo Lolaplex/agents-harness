@@ -1,0 +1,4062 @@
+{
+ "project": {
+  "slug": "agents-harness",
+  "name": "agents-harness",
+  "description": "Agent runtime engine & scheduled task runner (CLI + loop + cron)",
+  "pinned": false,
+  "last_active_at": "2026-11-20T00:33:11Z",
+  "created_at": "2026-09-20T12:43:33Z",
+  "inherit_isolated": false,
+  "inherit_children": false,
+  "_links": {
+   "self": {
+    "href": "https://board.lolaplex.org/projects/agents-harness"
+   },
+   "me": {
+    "href": "https://board.lolaplex.org/me"
+   },
+   "wellKnownDid": {
+    "href": "https://board.lolaplex.org/.well-known/did.json"
+   },
+   "wellKnownFlow": {
+    "href": "https://board.lolaplex.org/.well-known/flow"
+   },
+   "connect": {
+    "href": "https://board.lolaplex.org/connect"
+   },
+   "projects": {
+    "href": "https://board.lolaplex.org/projects"
+   },
+   "issues": {
+    "href": "https://board.lolaplex.org/projects/agents-harness?view=list"
+   },
+   "lock": {
+    "href": "https://board.lolaplex.org/projects/agents-harness?view=lock"
+   },
+   "members": {
+    "href": "https://board.lolaplex.org/projects/agents-harness?view=members"
+   },
+   "people": {
+    "href": "https://board.lolaplex.org/projects/agents-harness?view=members"
+   },
+   "memory": {
+    "href": "https://board.lolaplex.org/projects/agents-harness/memory"
+   }
+  },
+  "parent": {
+   "slug": "agents-runtime",
+   "name": "agents-runtime"
+  }
+ },
+ "issues": [
+  {
+   "number": 1,
+   "title": "[P3] PR26: Host delivery envelope; traces/pytest, Windows, and save/delivery acceptance still pending",
+   "status": "backlog",
+   "project_slug": "agents-harness",
+   "created_at": "2026-11-10T16:50:54Z",
+   "updated_at": "2026-11-10T20:40:12Z",
+   "_links": {
+    "self": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/1"
+    },
+    "me": {
+     "href": "https://board.lolaplex.org/me"
+    },
+    "wellKnownDid": {
+     "href": "https://board.lolaplex.org/.well-known/did.json"
+    },
+    "wellKnownFlow": {
+     "href": "https://board.lolaplex.org/.well-known/flow"
+    },
+    "connect": {
+     "href": "https://board.lolaplex.org/connect"
+    },
+    "projects": {
+     "href": "https://board.lolaplex.org/projects"
+    },
+    "issue": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/1"
+    },
+    "project": {
+     "href": "https://board.lolaplex.org/projects/agents-harness"
+    },
+    "move": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/1"
+    },
+    "assign": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/1"
+    },
+    "relate": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/1"
+    },
+    "schedule": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/1"
+    }
+   },
+   "body": "Phase: P3 because the host delivery envelope is required for the P3 klanker/web React PWA and local serve (handoff/save delivery). Already [P3]; confirmed against the phase plan. (Board, per Felix 10.11. phase-in decision)\n\nStatus: unverified. Filed by felixgrokbot in Board maintenance round 1 (2026-11-10, Europe/Berlin) from Klanker QA Phase 1 and the stack review. Do not mark done without fresh evidence.\n\nOpen PR: https://github.com/Lolaplex/agents-harness/pull/26 (head ff330d94).\n\nStill pending: traces/pytest fully green, Windows, and save/delivery acceptance.\n\nDo not treat the PR as done until those acceptance checks pass.\n",
+   "labels": [],
+   "github_url": "https://github.com/Lolaplex/agents-harness/pull/26",
+   "kind": "task",
+   "jwf": {
+    "level": 0,
+    "state": "Neu",
+    "column": "backlog",
+    "derived_column": "backlog",
+    "imported_column": null,
+    "column_from_import": false,
+    "import_clears": [],
+    "chain": [
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false
+    ],
+    "kind_role": "implementation",
+    "kind_term": "user story (implementation element)",
+    "drift": [],
+    "drift_incoming": [],
+    "hierarchy_level": null,
+    "parent_number": null,
+    "level_answer": ""
+   },
+   "sort_order": 10,
+   "schedule": {
+    "baseline": {
+     "start_ms": null,
+     "finish_ms": null
+    },
+    "forecast": {
+     "start_ms": null,
+     "finish_ms": null
+    },
+    "actual": {
+     "start_ms": null,
+     "finish_ms": null
+    }
+   },
+   "relations": {
+    "depends": [],
+    "refines": [],
+    "references": [],
+    "evidences": [],
+    "implements": [],
+    "maps_to": [],
+    "follow": [],
+    "blocked_by": []
+   },
+   "assignee": null
+  },
+  {
+   "number": 8,
+   "title": "[E] E1: ExecBackend interface + subprocess backend",
+   "status": "backlog",
+   "project_slug": "agents-harness",
+   "created_at": "2026-11-10T19:55:44Z",
+   "updated_at": "2026-11-10T20:35:32Z",
+   "_links": {
+    "self": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/8"
+    },
+    "me": {
+     "href": "https://board.lolaplex.org/me"
+    },
+    "wellKnownDid": {
+     "href": "https://board.lolaplex.org/.well-known/did.json"
+    },
+    "wellKnownFlow": {
+     "href": "https://board.lolaplex.org/.well-known/flow"
+    },
+    "connect": {
+     "href": "https://board.lolaplex.org/connect"
+    },
+    "projects": {
+     "href": "https://board.lolaplex.org/projects"
+    },
+    "issue": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/8"
+    },
+    "project": {
+     "href": "https://board.lolaplex.org/projects/agents-harness"
+    },
+    "move": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/8"
+    },
+    "assign": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/8"
+    },
+    "relate": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/8"
+    },
+    "schedule": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/8"
+    }
+   },
+   "body": "deferred: after P1–P2 are done (Felix, 10.11.)\n\n**Problem**\n\nCoding agents need a single, honest execution interface. Today there is no shared `ExecBackend`: isolation is implicit, can be silently weaker than requested, and must not depend on klanker or calendar. Architecture proposal only (Felix 20:49, Track E).\n\n**Target state**\n\n`ExecBackend` interface + a stdlib-only subprocess backend, in agents-harness.\n\n- Stdlib only for this card (no Docker/Podman/bwrap/nsjail extras here; those are E2).\n- Auto-detect with a fallback chain.\n- `cwd` = workdir.\n- Reports `isolation_level` honestly: `container` | `os-sandbox` | `process` | `remote`. The reported level is never upgraded.\n- `min_isolation` -> error if unmet; never a silent downgrade.\n- Interface includes network, mounts, and an env allowlist.\n- Secrets never in the workdir.\n- Windows/macOS report `process`.\n- The chosen level is written to traces.\n- No dependency on klanker or calendar.\n- Interface stays. Work is deferred until after P1–P2 are done (Felix, 10.11.).\n\n**Steps (architecture)**\n\n- Specify the interface (methods, `isolation_level`, `min_isolation`, network/mounts/env-allowlist).\n- Specify the stdlib subprocess backend and the auto-detect / fallback chain.\n- Specify how the level is recorded in traces.\n- Implementation follows only after P1–P2 are done and Felix has not changed the Track E defaults.\n\n**Acceptance**\n\n- [ ] Interface and subprocess backend match the target (proposal accepted).\n- [ ] Reported `isolation_level` is honest and never upgraded; `min_isolation` errors instead of silently downgrading.\n- [ ] Secrets are not written into the workdir; Windows/macOS report `process`; level is in traces.\n- [ ] No import/dependency on klanker or calendar.\n\n**Depends on**\n\nnone (can start now; no P1 dependency)\n\n**Track E:** [agents-runtime#2](https://board.lolaplex.org/projects/agents-runtime/issues/2) — [E] Execution backend track (umbrella)\n\n**Repos (PR to `dev`, one PR per repo):** agents-harness\n\n*Covers:* Track E / ExecBackend (Felix 20:49)\n\n---\nAgent rules (apply to every card):\n- Author AND committer only `Klix927 <275704466+Klix927@users.noreply.github.com>`. No Co-authored-by, no Cursor/agent trailers.\n- Branch from `dev`, open a PR to `dev` only. Never push to `main`, never force-push, never push directly to `dev`.\n- Do not change CI workflows (`.github/workflows/*`). Do not bump versions. Changelog entries only under `[Unreleased]`.\n- Stack stays generic and decoupled: no Felix/NAS/VPS-specific values (hosts, users, volumes, `~/Coding`) in repos.\n- Never print, log or commit secrets, tokens, cookies or key material.\n- Line refs are hints at the pinned SHAs (see the Naming & hierarchy spec card); re-locate by symbol if lines moved.\n- Done = PR merged to dev + acceptance commands pasted in the PR + card evidence comment. No evidence, no done.\n",
+   "labels": [],
+   "github_url": "",
+   "kind": "task",
+   "jwf": {
+    "level": 0,
+    "state": "Neu",
+    "column": "backlog",
+    "derived_column": "backlog",
+    "imported_column": null,
+    "column_from_import": false,
+    "import_clears": [],
+    "chain": [
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false
+    ],
+    "kind_role": "implementation",
+    "kind_term": "user story (implementation element)",
+    "drift": [],
+    "drift_incoming": [],
+    "hierarchy_level": null,
+    "parent_number": null,
+    "level_answer": ""
+   },
+   "sort_order": 80,
+   "schedule": {
+    "baseline": {
+     "start_ms": null,
+     "finish_ms": null
+    },
+    "forecast": {
+     "start_ms": null,
+     "finish_ms": null
+    },
+    "actual": {
+     "start_ms": null,
+     "finish_ms": null
+    }
+   },
+   "relations": {
+    "depends": [],
+    "refines": [],
+    "references": [],
+    "evidences": [],
+    "implements": [],
+    "maps_to": [],
+    "follow": [],
+    "blocked_by": [
+     {
+      "number": 9,
+      "title": "[E] E-approval: Approval interface consumes isolation_level",
+      "status": "backlog"
+     },
+     {
+      "number": 10,
+      "title": "[E] E2: Container (Docker/Podman) and bwrap/nsjail backends as optional extras",
+      "status": "backlog"
+     }
+    ]
+   },
+   "assignee": null
+  },
+  {
+   "number": 9,
+   "title": "[E] E-approval: Approval interface consumes isolation_level",
+   "status": "backlog",
+   "project_slug": "agents-harness",
+   "created_at": "2026-11-10T19:55:44Z",
+   "updated_at": "2026-11-10T20:35:32Z",
+   "_links": {
+    "self": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/9"
+    },
+    "me": {
+     "href": "https://board.lolaplex.org/me"
+    },
+    "wellKnownDid": {
+     "href": "https://board.lolaplex.org/.well-known/did.json"
+    },
+    "wellKnownFlow": {
+     "href": "https://board.lolaplex.org/.well-known/flow"
+    },
+    "connect": {
+     "href": "https://board.lolaplex.org/connect"
+    },
+    "projects": {
+     "href": "https://board.lolaplex.org/projects"
+    },
+    "issue": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/9"
+    },
+    "project": {
+     "href": "https://board.lolaplex.org/projects/agents-harness"
+    },
+    "move": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/9"
+    },
+    "assign": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/9"
+    },
+    "relate": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/9"
+    },
+    "schedule": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/9"
+    }
+   },
+   "body": "deferred: after P1–P2 are done (Felix, 10.11.)\n\n**Problem**\n\nApproval risk-tier decisions need the actual `isolation_level` from the exec backend. Felix' policy must never be silently relaxed. This interface must land before E2 (container / os-sandbox extras). Architecture proposal only (Felix 20:49, Track E).\n\n**Target state**\n\nAn approval interface that consumes `isolation_level` (from E1) and uses it in the risk-tier decision.\n\n- The level feeds the risk-tier decision.\n- Felix' policy is never silently relaxed (same honesty rule as E1: no silent upgrade or downgrade of isolation in the approval path).\n- Must land before E2.\n\n**Steps (architecture)**\n\n- Specify how approval reads `isolation_level` and maps it to a risk tier.\n- Specify failure/refuse behaviour when the level is missing or weaker than policy requires.\n- Implementation follows only after Felix accepts the Track E proposals, and lands before E2 work.\n\n**Acceptance**\n\n- [ ] Approval interface consumes `isolation_level` and uses it for the risk-tier decision (proposal accepted).\n- [ ] Policy is never silently relaxed.\n- [ ] This card is done (or an accepted equivalent is in place) before E2 implementation starts.\n\n**Depends on**\n\n- E1: [agents-harness#8](https://board.lolaplex.org/projects/agents-harness/issues/8) — [E1] ExecBackend interface + subprocess backend\n\n**Track E:** [agents-runtime#2](https://board.lolaplex.org/projects/agents-runtime/issues/2) — [E] Execution backend track (umbrella)\n\n**Repos (PR to `dev`, one PR per repo):** agents-harness\n\n*Covers:* Track E / approval + isolation_level (Felix 20:49)\n\n---\nAgent rules (apply to every card):\n- Author AND committer only `Klix927 <275704466+Klix927@users.noreply.github.com>`. No Co-authored-by, no Cursor/agent trailers.\n- Branch from `dev`, open a PR to `dev` only. Never push to `main`, never force-push, never push directly to `dev`.\n- Do not change CI workflows (`.github/workflows/*`). Do not bump versions. Changelog entries only under `[Unreleased]`.\n- Stack stays generic and decoupled: no Felix/NAS/VPS-specific values (hosts, users, volumes, `~/Coding`) in repos.\n- Never print, log or commit secrets, tokens, cookies or key material.\n- Line refs are hints at the pinned SHAs (see the Naming & hierarchy spec card); re-locate by symbol if lines moved.\n- Done = PR merged to dev + acceptance commands pasted in the PR + card evidence comment. No evidence, no done.\n",
+   "labels": [],
+   "github_url": "",
+   "kind": "task",
+   "jwf": {
+    "level": 0,
+    "state": "Neu",
+    "column": "backlog",
+    "derived_column": "backlog",
+    "imported_column": null,
+    "column_from_import": false,
+    "import_clears": [],
+    "chain": [
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false
+    ],
+    "kind_role": "implementation",
+    "kind_term": "user story (implementation element)",
+    "drift": [],
+    "drift_incoming": [],
+    "hierarchy_level": null,
+    "parent_number": null,
+    "level_answer": ""
+   },
+   "sort_order": 90,
+   "schedule": {
+    "baseline": {
+     "start_ms": null,
+     "finish_ms": null
+    },
+    "forecast": {
+     "start_ms": null,
+     "finish_ms": null
+    },
+    "actual": {
+     "start_ms": null,
+     "finish_ms": null
+    }
+   },
+   "relations": {
+    "depends": [
+     {
+      "number": 8,
+      "title": "[E] E1: ExecBackend interface + subprocess backend",
+      "status": "backlog",
+      "preserves": []
+     }
+    ],
+    "refines": [],
+    "references": [],
+    "evidences": [],
+    "implements": [],
+    "maps_to": [],
+    "follow": [],
+    "blocked_by": [
+     {
+      "number": 10,
+      "title": "[E] E2: Container (Docker/Podman) and bwrap/nsjail backends as optional extras",
+      "status": "backlog"
+     }
+    ]
+   },
+   "assignee": null
+  },
+  {
+   "number": 10,
+   "title": "[E] E2: Container (Docker/Podman) and bwrap/nsjail backends as optional extras",
+   "status": "backlog",
+   "project_slug": "agents-harness",
+   "created_at": "2026-11-10T19:55:44Z",
+   "updated_at": "2026-11-10T20:35:33Z",
+   "_links": {
+    "self": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/10"
+    },
+    "me": {
+     "href": "https://board.lolaplex.org/me"
+    },
+    "wellKnownDid": {
+     "href": "https://board.lolaplex.org/.well-known/did.json"
+    },
+    "wellKnownFlow": {
+     "href": "https://board.lolaplex.org/.well-known/flow"
+    },
+    "connect": {
+     "href": "https://board.lolaplex.org/connect"
+    },
+    "projects": {
+     "href": "https://board.lolaplex.org/projects"
+    },
+    "issue": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/10"
+    },
+    "project": {
+     "href": "https://board.lolaplex.org/projects/agents-harness"
+    },
+    "move": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/10"
+    },
+    "assign": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/10"
+    },
+    "relate": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/10"
+    },
+    "schedule": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/10"
+    }
+   },
+   "body": "deferred: after P1–P2 are done (Felix, 10.11.)\n\n**Problem**\n\nStronger isolation (containers, OS sandboxes) should be available without making them a hard dependency of agents-harness. Docker that is not rootless / without user namespaces must not be reported as a full `container`. Architecture proposal only (Felix 20:49, Track E). Depends on E-approval landing first.\n\n**Target state**\n\nOptional extras for agents-harness, e.g. `agents-harness[container]`:\n\n- Container backends: Docker and Podman.\n- OS-sandbox backends: bwrap and nsjail.\n- Optional extras only; the stdlib subprocess backend (E1) stays the default.\n- Docker without rootless / user namespaces is **not** reported as full `container` (honest `isolation_level`; never upgraded).\n- Still subject to E1 rules: `min_isolation` errors rather than silent downgrade; network, mounts, env allowlist; secrets never in the workdir; level written to traces.\n\n**Steps (architecture)**\n\n- Specify extra entry points, detectability, and how each backend reports `isolation_level`.\n- Specify the Docker rootless / userns honesty rule.\n- Do not start implementation until E-approval has landed and Felix has accepted the Track E proposals.\n\n**Acceptance**\n\n- [ ] Optional extras defined (e.g. `agents-harness[container]`) for Docker/Podman and bwrap/nsjail (proposal accepted).\n- [ ] Docker without rootless/userns is not reported as full `container`.\n- [ ] Work starts only after E-approval.\n\n**Depends on**\n\n- E-approval (must land first): [agents-harness#9](https://board.lolaplex.org/projects/agents-harness/issues/9) — [E-approval] Approval interface consumes isolation_level\n- E1 (interface): [agents-harness#8](https://board.lolaplex.org/projects/agents-harness/issues/8) — [E1] ExecBackend interface + subprocess backend\n\n**Track E:** [agents-runtime#2](https://board.lolaplex.org/projects/agents-runtime/issues/2) — [E] Execution backend track (umbrella)\n\n**Repos (PR to `dev`, one PR per repo):** agents-harness\n\n*Covers:* Track E / optional container and os-sandbox backends (Felix 20:49)\n\n---\nAgent rules (apply to every card):\n- Author AND committer only `Klix927 <275704466+Klix927@users.noreply.github.com>`. No Co-authored-by, no Cursor/agent trailers.\n- Branch from `dev`, open a PR to `dev` only. Never push to `main`, never force-push, never push directly to `dev`.\n- Do not change CI workflows (`.github/workflows/*`). Do not bump versions. Changelog entries only under `[Unreleased]`.\n- Stack stays generic and decoupled: no Felix/NAS/VPS-specific values (hosts, users, volumes, `~/Coding`) in repos.\n- Never print, log or commit secrets, tokens, cookies or key material.\n- Line refs are hints at the pinned SHAs (see the Naming & hierarchy spec card); re-locate by symbol if lines moved.\n- Done = PR merged to dev + acceptance commands pasted in the PR + card evidence comment. No evidence, no done.\n",
+   "labels": [],
+   "github_url": "",
+   "kind": "task",
+   "jwf": {
+    "level": 0,
+    "state": "Neu",
+    "column": "backlog",
+    "derived_column": "backlog",
+    "imported_column": null,
+    "column_from_import": false,
+    "import_clears": [],
+    "chain": [
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false
+    ],
+    "kind_role": "implementation",
+    "kind_term": "user story (implementation element)",
+    "drift": [],
+    "drift_incoming": [],
+    "hierarchy_level": null,
+    "parent_number": null,
+    "level_answer": ""
+   },
+   "sort_order": 100,
+   "schedule": {
+    "baseline": {
+     "start_ms": null,
+     "finish_ms": null
+    },
+    "forecast": {
+     "start_ms": null,
+     "finish_ms": null
+    },
+    "actual": {
+     "start_ms": null,
+     "finish_ms": null
+    }
+   },
+   "relations": {
+    "depends": [
+     {
+      "number": 8,
+      "title": "[E] E1: ExecBackend interface + subprocess backend",
+      "status": "backlog",
+      "preserves": []
+     },
+     {
+      "number": 9,
+      "title": "[E] E-approval: Approval interface consumes isolation_level",
+      "status": "backlog",
+      "preserves": []
+     }
+    ],
+    "refines": [],
+    "references": [],
+    "evidences": [],
+    "implements": [],
+    "maps_to": [],
+    "follow": [],
+    "blocked_by": []
+   },
+   "assignee": null
+  },
+  {
+   "number": 11,
+   "title": "[test] conftest env scrub: loop.main() pins AGENTS_* in-process",
+   "status": "backlog",
+   "project_slug": "agents-harness",
+   "created_at": "2026-11-11T17:51:44Z",
+   "updated_at": "2026-11-11T17:51:44Z",
+   "_links": {
+    "self": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/11"
+    },
+    "me": {
+     "href": "https://board.lolaplex.org/me"
+    },
+    "wellKnownDid": {
+     "href": "https://board.lolaplex.org/.well-known/did.json"
+    },
+    "wellKnownFlow": {
+     "href": "https://board.lolaplex.org/.well-known/flow"
+    },
+    "connect": {
+     "href": "https://board.lolaplex.org/connect"
+    },
+    "projects": {
+     "href": "https://board.lolaplex.org/projects"
+    },
+    "issue": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/11"
+    },
+    "project": {
+     "href": "https://board.lolaplex.org/projects/agents-harness"
+    },
+    "move": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/11"
+    },
+    "assign": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/11"
+    },
+    "relate": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/11"
+    },
+    "schedule": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/11"
+    }
+   },
+   "body": "QA 11.11: `test_personas.py::test_resolve_persona_id_order` fails in the full suite (green alone). `runner.loop.main()` pins `os.environ['AGENTS_PERSONA']` + `AGENTS_WORKSPACE` (CLI-entry contract, correct in a real process) but tests invoke it in-process → env leaks across tests.\n\nFix: `tests/conftest.py` autouse fixture snapshotting/restoring all `AGENTS_*` env vars per test (same scrub pattern as klanker's gate fixture).",
+   "labels": [],
+   "github_url": "",
+   "kind": "task",
+   "jwf": {
+    "level": 0,
+    "state": "Neu",
+    "column": "backlog",
+    "derived_column": "backlog",
+    "imported_column": null,
+    "column_from_import": false,
+    "import_clears": [],
+    "chain": [
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false
+    ],
+    "kind_role": "implementation",
+    "kind_term": "user story (implementation element)",
+    "drift": [],
+    "drift_incoming": [],
+    "hierarchy_level": null,
+    "parent_number": null,
+    "level_answer": ""
+   },
+   "sort_order": 110,
+   "schedule": {
+    "baseline": {
+     "start_ms": null,
+     "finish_ms": null
+    },
+    "forecast": {
+     "start_ms": null,
+     "finish_ms": null
+    },
+    "actual": {
+     "start_ms": null,
+     "finish_ms": null
+    }
+   },
+   "relations": {
+    "depends": [],
+    "refines": [],
+    "references": [],
+    "evidences": [],
+    "implements": [],
+    "maps_to": [],
+    "follow": [],
+    "blocked_by": []
+   },
+   "assignee": null
+  },
+  {
+   "number": 12,
+   "title": "[P3] persona.json: allowlist manifest fields a ws persona may set",
+   "status": "backlog",
+   "project_slug": "agents-harness",
+   "created_at": "2026-11-11T17:51:44Z",
+   "updated_at": "2026-11-11T17:51:44Z",
+   "_links": {
+    "self": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/12"
+    },
+    "me": {
+     "href": "https://board.lolaplex.org/me"
+    },
+    "wellKnownDid": {
+     "href": "https://board.lolaplex.org/.well-known/did.json"
+    },
+    "wellKnownFlow": {
+     "href": "https://board.lolaplex.org/.well-known/flow"
+    },
+    "connect": {
+     "href": "https://board.lolaplex.org/connect"
+    },
+    "projects": {
+     "href": "https://board.lolaplex.org/projects"
+    },
+    "issue": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/12"
+    },
+    "project": {
+     "href": "https://board.lolaplex.org/projects/agents-harness"
+    },
+    "move": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/12"
+    },
+    "assign": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/12"
+    },
+    "relate": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/12"
+    },
+    "schedule": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/12"
+    }
+   },
+   "body": "QA 11.11: relay `create_persona` persists arbitrary POST body fields into `<ws>/personas/<id>/persona.json`. Today only `system_append` is consumed by `persona_system_append`, so injected fields are inert — but package manifest already carries `allowed_kinds`/`caps_ref` that future consumers might honor.\n\nHardening: schema allowlist (id/name/system_append/notes?) in `create_persona` + loader ignoring unknown keys.",
+   "labels": [],
+   "github_url": "",
+   "kind": "task",
+   "jwf": {
+    "level": 0,
+    "state": "Neu",
+    "column": "backlog",
+    "derived_column": "backlog",
+    "imported_column": null,
+    "column_from_import": false,
+    "import_clears": [],
+    "chain": [
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false
+    ],
+    "kind_role": "implementation",
+    "kind_term": "user story (implementation element)",
+    "drift": [],
+    "drift_incoming": [],
+    "hierarchy_level": null,
+    "parent_number": null,
+    "level_answer": ""
+   },
+   "sort_order": 120,
+   "schedule": {
+    "baseline": {
+     "start_ms": null,
+     "finish_ms": null
+    },
+    "forecast": {
+     "start_ms": null,
+     "finish_ms": null
+    },
+    "actual": {
+     "start_ms": null,
+     "finish_ms": null
+    }
+   },
+   "relations": {
+    "depends": [],
+    "refines": [],
+    "references": [],
+    "evidences": [],
+    "implements": [],
+    "maps_to": [],
+    "follow": [],
+    "blocked_by": []
+   },
+   "assignee": null
+  },
+  {
+   "number": 13,
+   "title": "[Feature] Auto-load AGENTS.md/README in repo workspaces",
+   "status": "backlog",
+   "project_slug": "agents-harness",
+   "created_at": "2026-11-14T21:02:06Z",
+   "updated_at": "2026-11-14T21:02:06Z",
+   "_links": {
+    "self": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/13"
+    },
+    "me": {
+     "href": "https://board.lolaplex.org/me"
+    },
+    "wellKnownDid": {
+     "href": "https://board.lolaplex.org/.well-known/did.json"
+    },
+    "wellKnownFlow": {
+     "href": "https://board.lolaplex.org/.well-known/flow"
+    },
+    "connect": {
+     "href": "https://board.lolaplex.org/connect"
+    },
+    "projects": {
+     "href": "https://board.lolaplex.org/projects"
+    },
+    "issue": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/13"
+    },
+    "project": {
+     "href": "https://board.lolaplex.org/projects/agents-harness"
+    },
+    "move": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/13"
+    },
+    "assign": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/13"
+    },
+    "relate": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/13"
+    },
+    "schedule": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/13"
+    }
+   },
+   "body": "Goal: In repo workspaces, AGENTS.md and README are loaded automatically so the agent sees project instructions and context.\n\nAcceptance\n- AGENTS.md is auto-loaded in repo workspaces when present\n- README is auto-loaded in repo workspaces when present\n\nSource: Felix approved 2026-11-14 21:58 (via Klanker); implementation: .agents/\nGeneric code, no personal setup\nPhase: open (to be confirmed by Felix)\n",
+   "labels": [],
+   "github_url": "",
+   "kind": "task",
+   "jwf": {
+    "level": 0,
+    "state": "Neu",
+    "column": "backlog",
+    "derived_column": "backlog",
+    "imported_column": null,
+    "column_from_import": false,
+    "import_clears": [],
+    "chain": [
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false
+    ],
+    "kind_role": "implementation",
+    "kind_term": "user story (implementation element)",
+    "drift": [],
+    "drift_incoming": [],
+    "hierarchy_level": null,
+    "parent_number": null,
+    "level_answer": ""
+   },
+   "sort_order": 130,
+   "schedule": {
+    "baseline": {
+     "start_ms": null,
+     "finish_ms": null
+    },
+    "forecast": {
+     "start_ms": null,
+     "finish_ms": null
+    },
+    "actual": {
+     "start_ms": null,
+     "finish_ms": null
+    }
+   },
+   "relations": {
+    "depends": [],
+    "refines": [],
+    "references": [],
+    "evidences": [],
+    "implements": [],
+    "maps_to": [],
+    "follow": [],
+    "blocked_by": []
+   },
+   "assignee": null
+  },
+  {
+   "number": 14,
+   "title": "[Feature] grep/glob: report files-searched count + truncation flag",
+   "status": "backlog",
+   "project_slug": "agents-harness",
+   "created_at": "2026-11-14T21:02:07Z",
+   "updated_at": "2026-11-14T21:02:07Z",
+   "_links": {
+    "self": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/14"
+    },
+    "me": {
+     "href": "https://board.lolaplex.org/me"
+    },
+    "wellKnownDid": {
+     "href": "https://board.lolaplex.org/.well-known/did.json"
+    },
+    "wellKnownFlow": {
+     "href": "https://board.lolaplex.org/.well-known/flow"
+    },
+    "connect": {
+     "href": "https://board.lolaplex.org/connect"
+    },
+    "projects": {
+     "href": "https://board.lolaplex.org/projects"
+    },
+    "issue": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/14"
+    },
+    "project": {
+     "href": "https://board.lolaplex.org/projects/agents-harness"
+    },
+    "move": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/14"
+    },
+    "assign": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/14"
+    },
+    "relate": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/14"
+    },
+    "schedule": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/14"
+    }
+   },
+   "body": "Goal: grep and glob results report how many files were searched and whether the result was truncated.\n\nAcceptance\n- Results include a files-searched count\n- Results include a truncation flag when the result was cut off\n\nSource: Felix approved 2026-11-14 21:58 (via Klanker); implementation: .agents/\nGeneric code, no personal setup\nPhase: open (to be confirmed by Felix)\n",
+   "labels": [],
+   "github_url": "",
+   "kind": "task",
+   "jwf": {
+    "level": 0,
+    "state": "Neu",
+    "column": "backlog",
+    "derived_column": "backlog",
+    "imported_column": null,
+    "column_from_import": false,
+    "import_clears": [],
+    "chain": [
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false
+    ],
+    "kind_role": "implementation",
+    "kind_term": "user story (implementation element)",
+    "drift": [],
+    "drift_incoming": [],
+    "hierarchy_level": null,
+    "parent_number": null,
+    "level_answer": ""
+   },
+   "sort_order": 140,
+   "schedule": {
+    "baseline": {
+     "start_ms": null,
+     "finish_ms": null
+    },
+    "forecast": {
+     "start_ms": null,
+     "finish_ms": null
+    },
+    "actual": {
+     "start_ms": null,
+     "finish_ms": null
+    }
+   },
+   "relations": {
+    "depends": [],
+    "refines": [],
+    "references": [],
+    "evidences": [],
+    "implements": [],
+    "maps_to": [],
+    "follow": [],
+    "blocked_by": []
+   },
+   "assignee": null
+  },
+  {
+   "number": 15,
+   "title": "[Feature] Auto-pagination + configurable limits",
+   "status": "backlog",
+   "project_slug": "agents-harness",
+   "created_at": "2026-11-14T21:02:07Z",
+   "updated_at": "2026-11-14T21:02:07Z",
+   "_links": {
+    "self": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/15"
+    },
+    "me": {
+     "href": "https://board.lolaplex.org/me"
+    },
+    "wellKnownDid": {
+     "href": "https://board.lolaplex.org/.well-known/did.json"
+    },
+    "wellKnownFlow": {
+     "href": "https://board.lolaplex.org/.well-known/flow"
+    },
+    "connect": {
+     "href": "https://board.lolaplex.org/connect"
+    },
+    "projects": {
+     "href": "https://board.lolaplex.org/projects"
+    },
+    "issue": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/15"
+    },
+    "project": {
+     "href": "https://board.lolaplex.org/projects/agents-harness"
+    },
+    "move": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/15"
+    },
+    "assign": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/15"
+    },
+    "relate": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/15"
+    },
+    "schedule": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/15"
+    }
+   },
+   "body": "Goal: Long result sets paginate automatically, with configurable limits.\n\nAcceptance\n- Auto-pagination is in place\n- Limits are configurable\n\nSource: Felix approved 2026-11-14 21:58 (via Klanker); implementation: .agents/\nGeneric code, no personal setup\nPhase: open (to be confirmed by Felix)\n",
+   "labels": [],
+   "github_url": "",
+   "kind": "task",
+   "jwf": {
+    "level": 0,
+    "state": "Neu",
+    "column": "backlog",
+    "derived_column": "backlog",
+    "imported_column": null,
+    "column_from_import": false,
+    "import_clears": [],
+    "chain": [
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false
+    ],
+    "kind_role": "implementation",
+    "kind_term": "user story (implementation element)",
+    "drift": [],
+    "drift_incoming": [],
+    "hierarchy_level": null,
+    "parent_number": null,
+    "level_answer": ""
+   },
+   "sort_order": 150,
+   "schedule": {
+    "baseline": {
+     "start_ms": null,
+     "finish_ms": null
+    },
+    "forecast": {
+     "start_ms": null,
+     "finish_ms": null
+    },
+    "actual": {
+     "start_ms": null,
+     "finish_ms": null
+    }
+   },
+   "relations": {
+    "depends": [],
+    "refines": [],
+    "references": [],
+    "evidences": [],
+    "implements": [],
+    "maps_to": [],
+    "follow": [],
+    "blocked_by": []
+   },
+   "assignee": null
+  },
+  {
+   "number": 16,
+   "title": "[Feature] Git tool with configurable guards",
+   "status": "backlog",
+   "project_slug": "agents-harness",
+   "created_at": "2026-11-14T21:02:07Z",
+   "updated_at": "2026-11-14T21:02:07Z",
+   "_links": {
+    "self": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/16"
+    },
+    "me": {
+     "href": "https://board.lolaplex.org/me"
+    },
+    "wellKnownDid": {
+     "href": "https://board.lolaplex.org/.well-known/did.json"
+    },
+    "wellKnownFlow": {
+     "href": "https://board.lolaplex.org/.well-known/flow"
+    },
+    "connect": {
+     "href": "https://board.lolaplex.org/connect"
+    },
+    "projects": {
+     "href": "https://board.lolaplex.org/projects"
+    },
+    "issue": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/16"
+    },
+    "project": {
+     "href": "https://board.lolaplex.org/projects/agents-harness"
+    },
+    "move": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/16"
+    },
+    "assign": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/16"
+    },
+    "relate": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/16"
+    },
+    "schedule": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/16"
+    }
+   },
+   "body": "Goal: A git tool is available, with guards that can be configured.\n\nAcceptance\n- A git tool exists\n- Guards are configurable\n\nSource: Felix approved 2026-11-14 21:58 (via Klanker); implementation: .agents/\nGeneric code, no personal setup\nPhase: open (to be confirmed by Felix)\n",
+   "labels": [],
+   "github_url": "",
+   "kind": "task",
+   "jwf": {
+    "level": 0,
+    "state": "Neu",
+    "column": "backlog",
+    "derived_column": "backlog",
+    "imported_column": null,
+    "column_from_import": false,
+    "import_clears": [],
+    "chain": [
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false
+    ],
+    "kind_role": "implementation",
+    "kind_term": "user story (implementation element)",
+    "drift": [],
+    "drift_incoming": [],
+    "hierarchy_level": null,
+    "parent_number": null,
+    "level_answer": ""
+   },
+   "sort_order": 160,
+   "schedule": {
+    "baseline": {
+     "start_ms": null,
+     "finish_ms": null
+    },
+    "forecast": {
+     "start_ms": null,
+     "finish_ms": null
+    },
+    "actual": {
+     "start_ms": null,
+     "finish_ms": null
+    }
+   },
+   "relations": {
+    "depends": [],
+    "refines": [],
+    "references": [],
+    "evidences": [],
+    "implements": [],
+    "maps_to": [],
+    "follow": [],
+    "blocked_by": []
+   },
+   "assignee": null
+  },
+  {
+   "number": 17,
+   "title": "[Feature] Per-action approval rules on tiers",
+   "status": "backlog",
+   "project_slug": "agents-harness",
+   "created_at": "2026-11-14T21:02:08Z",
+   "updated_at": "2026-11-14T21:02:08Z",
+   "_links": {
+    "self": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/17"
+    },
+    "me": {
+     "href": "https://board.lolaplex.org/me"
+    },
+    "wellKnownDid": {
+     "href": "https://board.lolaplex.org/.well-known/did.json"
+    },
+    "wellKnownFlow": {
+     "href": "https://board.lolaplex.org/.well-known/flow"
+    },
+    "connect": {
+     "href": "https://board.lolaplex.org/connect"
+    },
+    "projects": {
+     "href": "https://board.lolaplex.org/projects"
+    },
+    "issue": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/17"
+    },
+    "project": {
+     "href": "https://board.lolaplex.org/projects/agents-harness"
+    },
+    "move": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/17"
+    },
+    "assign": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/17"
+    },
+    "relate": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/17"
+    },
+    "schedule": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/17"
+    }
+   },
+   "body": "Goal: Approval rules can be set per action on tiers.\n\nAcceptance\n- Per-action approval rules can be configured on tiers\n\nSource: Felix approved 2026-11-14 21:58 (via Klanker); implementation: .agents/\nGeneric code, no personal setup\nPhase: open (to be confirmed by Felix)\n",
+   "labels": [],
+   "github_url": "",
+   "kind": "task",
+   "jwf": {
+    "level": 0,
+    "state": "Neu",
+    "column": "backlog",
+    "derived_column": "backlog",
+    "imported_column": null,
+    "column_from_import": false,
+    "import_clears": [],
+    "chain": [
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false
+    ],
+    "kind_role": "implementation",
+    "kind_term": "user story (implementation element)",
+    "drift": [],
+    "drift_incoming": [],
+    "hierarchy_level": null,
+    "parent_number": null,
+    "level_answer": ""
+   },
+   "sort_order": 170,
+   "schedule": {
+    "baseline": {
+     "start_ms": null,
+     "finish_ms": null
+    },
+    "forecast": {
+     "start_ms": null,
+     "finish_ms": null
+    },
+    "actual": {
+     "start_ms": null,
+     "finish_ms": null
+    }
+   },
+   "relations": {
+    "depends": [],
+    "refines": [],
+    "references": [],
+    "evidences": [],
+    "implements": [],
+    "maps_to": [],
+    "follow": [],
+    "blocked_by": []
+   },
+   "assignee": null
+  },
+  {
+   "number": 18,
+   "title": "[Feature] Generic pre-PR check from project config",
+   "status": "backlog",
+   "project_slug": "agents-harness",
+   "created_at": "2026-11-14T21:02:08Z",
+   "updated_at": "2026-11-14T21:02:08Z",
+   "_links": {
+    "self": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/18"
+    },
+    "me": {
+     "href": "https://board.lolaplex.org/me"
+    },
+    "wellKnownDid": {
+     "href": "https://board.lolaplex.org/.well-known/did.json"
+    },
+    "wellKnownFlow": {
+     "href": "https://board.lolaplex.org/.well-known/flow"
+    },
+    "connect": {
+     "href": "https://board.lolaplex.org/connect"
+    },
+    "projects": {
+     "href": "https://board.lolaplex.org/projects"
+    },
+    "issue": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/18"
+    },
+    "project": {
+     "href": "https://board.lolaplex.org/projects/agents-harness"
+    },
+    "move": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/18"
+    },
+    "assign": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/18"
+    },
+    "relate": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/18"
+    },
+    "schedule": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/18"
+    }
+   },
+   "body": "Goal: A generic pre-PR check runs from project config.\n\nAcceptance\n- The check is generic (no personal setup)\n- It is driven by project config\n\nSource: Felix approved 2026-11-14 21:58 (via Klanker); implementation: .agents/\nGeneric code, no personal setup\nPhase: open (to be confirmed by Felix)\n",
+   "labels": [],
+   "github_url": "",
+   "kind": "task",
+   "jwf": {
+    "level": 0,
+    "state": "Neu",
+    "column": "backlog",
+    "derived_column": "backlog",
+    "imported_column": null,
+    "column_from_import": false,
+    "import_clears": [],
+    "chain": [
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false
+    ],
+    "kind_role": "implementation",
+    "kind_term": "user story (implementation element)",
+    "drift": [],
+    "drift_incoming": [],
+    "hierarchy_level": null,
+    "parent_number": null,
+    "level_answer": ""
+   },
+   "sort_order": 180,
+   "schedule": {
+    "baseline": {
+     "start_ms": null,
+     "finish_ms": null
+    },
+    "forecast": {
+     "start_ms": null,
+     "finish_ms": null
+    },
+    "actual": {
+     "start_ms": null,
+     "finish_ms": null
+    }
+   },
+   "relations": {
+    "depends": [],
+    "refines": [],
+    "references": [],
+    "evidences": [],
+    "implements": [],
+    "maps_to": [],
+    "follow": [],
+    "blocked_by": []
+   },
+   "assignee": null
+  },
+  {
+   "number": 19,
+   "title": "[Bug] a2a.peer: env-blind relay URL (hardcoded 8787, ignores RELAY_PORT) + fake ok:true stub on failure",
+   "status": "backlog",
+   "project_slug": "agents-harness",
+   "created_at": "2026-11-15T18:09:23Z",
+   "updated_at": "2026-11-15T18:13:36Z",
+   "_links": {
+    "self": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/19"
+    },
+    "me": {
+     "href": "https://board.lolaplex.org/me"
+    },
+    "wellKnownDid": {
+     "href": "https://board.lolaplex.org/.well-known/did.json"
+    },
+    "wellKnownFlow": {
+     "href": "https://board.lolaplex.org/.well-known/flow"
+    },
+    "connect": {
+     "href": "https://board.lolaplex.org/connect"
+    },
+    "projects": {
+     "href": "https://board.lolaplex.org/projects"
+    },
+    "issue": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/19"
+    },
+    "project": {
+     "href": "https://board.lolaplex.org/projects/agents-harness"
+    },
+    "move": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/19"
+    },
+    "assign": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/19"
+    },
+    "relate": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/19"
+    },
+    "schedule": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/19"
+    }
+   },
+   "body": "**Problem**\n\n1. `a2a.peer` (`runner/modules/a2a.peer.json`, `POST /v1/a2a/mail`) hardcodes `GATEWAY_URL` default `http://127.0.0.1:8787` and ignores `RELAY_URL`/`RELAY_PORT`. On-host this happens to match the relay default (`RELAY_PORT` default 8787, `agents_relay/config.py`), but inside the klanker container the image sets `RELAY_PORT=8000` (`klanker/Dockerfile`), so the module hits connection refused (`Errno 111`). Resolution must follow the same env chain as the relay (`RELAY_URL` / `RELAY_PORT`, `GATEWAY_*` only as deprecated fallback).\n2. On connection/transport failure, `a2a.peer` currently returns `{\"ok\": true, \"stub\": true}`, which causes the harness tool receipt to record success even though nothing was delivered.\n3. Contract ambiguity: `a2a.peer` is confused with intra-workspace persona communication when in reality it proxies cross-host / `agents-board` DID mail (`/v1/a2a/mail`).\n\n**Scope**\n- Resolve target URL from `RELAY_URL` (else `http://127.0.0.1:$RELAY_PORT`, else `GATEWAY_URL` fallback) so the module works on-host (8787) and in-container (8000) without hardcoding.\n- Return `{\"ok\": false, \"error\": ...}` and non-zero exit code on transport failure so tool receipts never report false delivery.\n- Clarify module description/schema that `a2a.peer` is for cross-host board DID mail, while intra-workspace persona communication uses `persona.*`.\n\n**Acceptance**\n- Calling `a2a.peer` with an unreachable URL exits non-zero with `ok: false` and no `stub: true`.\n- Unit tests cover connection error handling and explicit URL env resolution.\n",
+   "labels": [
+    "bug",
+    "a2a"
+   ],
+   "github_url": "",
+   "kind": "task",
+   "jwf": {
+    "level": 0,
+    "state": "Neu",
+    "column": "backlog",
+    "derived_column": "backlog",
+    "imported_column": null,
+    "column_from_import": false,
+    "import_clears": [],
+    "chain": [
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false
+    ],
+    "kind_role": "implementation",
+    "kind_term": "user story (implementation element)",
+    "drift": [],
+    "drift_incoming": [],
+    "hierarchy_level": null,
+    "parent_number": null,
+    "level_answer": ""
+   },
+   "sort_order": 190,
+   "schedule": {
+    "baseline": {
+     "start_ms": null,
+     "finish_ms": null
+    },
+    "forecast": {
+     "start_ms": null,
+     "finish_ms": null
+    },
+    "actual": {
+     "start_ms": null,
+     "finish_ms": null
+    }
+   },
+   "relations": {
+    "depends": [],
+    "refines": [],
+    "references": [],
+    "evidences": [],
+    "implements": [],
+    "maps_to": [],
+    "follow": [],
+    "blocked_by": []
+   },
+   "assignee": null
+  },
+  {
+   "number": 20,
+   "title": "[Feature] Cordis persona.* modules (list, inbox, ask, handoff) + unspoofable sender & loop guardrails",
+   "status": "backlog",
+   "project_slug": "agents-harness",
+   "created_at": "2026-11-15T18:09:24Z",
+   "updated_at": "2026-11-15T18:09:24Z",
+   "_links": {
+    "self": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/20"
+    },
+    "me": {
+     "href": "https://board.lolaplex.org/me"
+    },
+    "wellKnownDid": {
+     "href": "https://board.lolaplex.org/.well-known/did.json"
+    },
+    "wellKnownFlow": {
+     "href": "https://board.lolaplex.org/.well-known/flow"
+    },
+    "connect": {
+     "href": "https://board.lolaplex.org/connect"
+    },
+    "projects": {
+     "href": "https://board.lolaplex.org/projects"
+    },
+    "issue": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/20"
+    },
+    "project": {
+     "href": "https://board.lolaplex.org/projects/agents-harness"
+    },
+    "move": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/20"
+    },
+    "assign": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/20"
+    },
+    "relate": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/20"
+    },
+    "schedule": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/20"
+    }
+   },
+   "body": "**Goal**\n\nGive LLM turns native Cordis tools (`runner/modules/`) to discover sibling personas in the same workspace, inspect their inbox, ask quick 1-turn questions synchronously, and trigger async handoffs — following strict Cordis layering (CLI calls via `klanker persona ...`, no importing `klanker` or `agents_workspace` internals).\n\n**Modules (`runner/modules/`)**\n- `persona.list` (read-only): list workspace personas (`id`, `name`, `role`, `accepts_messages`) via `klanker persona list --json`.\n- `persona.inbox` (read-only): read open/recent inbox tasks for current or named persona.\n- `persona.ask` (side-effect/controlled): synchronous 1-turn consultation (`klanker persona ask <to> \"<prompt>\"`) — returns target persona's reply directly into the tool result, tagged with `thread_id`.\n- `persona.handoff` (mutating): create/transfer task in `agents_workspace.inbox` and optionally pass `--wake`.\n\n**Guardrails**\n- Unspoofable sender identity: `from_persona` comes from `AGENTS_PERSONA`, never trusted from model JSON args.\n- Loop protection: propagate `AGENTS_PERSONA_HOP`; refuse calls when `hop >= max_hops` (default `3`) or direct self-loop without explicit override.\n- `help-json` metadata: mark `persona.list` and `persona.inbox` as `read-only` so approval mode handles them cleanly.\n\n**Related**\n- Depends on workspace schema: https://board.lolaplex.org/projects/agents-workspace/issues/17\n- Coordinate `persona.json` allowlist with `agents-harness#12`.\n\n**Acceptance**\n- `python -m runner.executor --validate` passes with new `persona.*` manifests.\n- Harness unit test verifies `AGENTS_PERSONA_HOP` cap stops recursive persona ping-pong at `max_hops`.",
+   "labels": [
+    "feature",
+    "personas"
+   ],
+   "github_url": "",
+   "kind": "task",
+   "jwf": {
+    "level": 0,
+    "state": "Neu",
+    "column": "backlog",
+    "derived_column": "backlog",
+    "imported_column": null,
+    "column_from_import": false,
+    "import_clears": [],
+    "chain": [
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false
+    ],
+    "kind_role": "implementation",
+    "kind_term": "user story (implementation element)",
+    "drift": [],
+    "drift_incoming": [],
+    "hierarchy_level": null,
+    "parent_number": null,
+    "level_answer": ""
+   },
+   "sort_order": 200,
+   "schedule": {
+    "baseline": {
+     "start_ms": null,
+     "finish_ms": null
+    },
+    "forecast": {
+     "start_ms": null,
+     "finish_ms": null
+    },
+    "actual": {
+     "start_ms": null,
+     "finish_ms": null
+    }
+   },
+   "relations": {
+    "depends": [],
+    "refines": [],
+    "references": [],
+    "evidences": [],
+    "implements": [],
+    "maps_to": [],
+    "follow": [],
+    "blocked_by": []
+   },
+   "assignee": null
+  },
+  {
+   "number": 21,
+   "title": "delegate_task subagent tool",
+   "status": "backlog",
+   "project_slug": "agents-harness",
+   "created_at": "2026-11-17T19:53:42Z",
+   "updated_at": "2026-11-17T19:53:42Z",
+   "_links": {
+    "self": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/21"
+    },
+    "me": {
+     "href": "https://board.lolaplex.org/me"
+    },
+    "wellKnownDid": {
+     "href": "https://board.lolaplex.org/.well-known/did.json"
+    },
+    "wellKnownFlow": {
+     "href": "https://board.lolaplex.org/.well-known/flow"
+    },
+    "connect": {
+     "href": "https://board.lolaplex.org/connect"
+    },
+    "projects": {
+     "href": "https://board.lolaplex.org/projects"
+    },
+    "issue": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/21"
+    },
+    "project": {
+     "href": "https://board.lolaplex.org/projects/agents-harness"
+    },
+    "move": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/21"
+    },
+    "assign": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/21"
+    },
+    "relate": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/21"
+    },
+    "schedule": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/21"
+    }
+   },
+   "body": "Spawn an isolated runner.loop turn as a subagent: own workspace subdir, parallel workstreams, result returned to the parent turn. Orchestrator surface: spawn / wait / collect. Hermes parity: delegate_task.\n\nPriority: ★★★★★\nSource: hermes-agent comparison",
+   "labels": [
+    "hermes-port"
+   ],
+   "github_url": "",
+   "kind": "task",
+   "jwf": {
+    "level": 0,
+    "state": "Neu",
+    "column": "backlog",
+    "derived_column": "backlog",
+    "imported_column": null,
+    "column_from_import": false,
+    "import_clears": [],
+    "chain": [
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false
+    ],
+    "kind_role": "implementation",
+    "kind_term": "user story (implementation element)",
+    "drift": [],
+    "drift_incoming": [],
+    "hierarchy_level": null,
+    "parent_number": null,
+    "level_answer": ""
+   },
+   "sort_order": 210,
+   "schedule": {
+    "baseline": {
+     "start_ms": null,
+     "finish_ms": null
+    },
+    "forecast": {
+     "start_ms": null,
+     "finish_ms": null
+    },
+    "actual": {
+     "start_ms": null,
+     "finish_ms": null
+    }
+   },
+   "relations": {
+    "depends": [],
+    "refines": [],
+    "references": [],
+    "evidences": [],
+    "implements": [],
+    "maps_to": [],
+    "follow": [],
+    "blocked_by": []
+   },
+   "assignee": null
+  },
+  {
+   "number": 22,
+   "title": "Toolsets: named tool groups",
+   "status": "backlog",
+   "project_slug": "agents-harness",
+   "created_at": "2026-11-17T19:53:43Z",
+   "updated_at": "2026-11-17T19:53:43Z",
+   "_links": {
+    "self": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/22"
+    },
+    "me": {
+     "href": "https://board.lolaplex.org/me"
+    },
+    "wellKnownDid": {
+     "href": "https://board.lolaplex.org/.well-known/did.json"
+    },
+    "wellKnownFlow": {
+     "href": "https://board.lolaplex.org/.well-known/flow"
+    },
+    "connect": {
+     "href": "https://board.lolaplex.org/connect"
+    },
+    "projects": {
+     "href": "https://board.lolaplex.org/projects"
+    },
+    "issue": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/22"
+    },
+    "project": {
+     "href": "https://board.lolaplex.org/projects/agents-harness"
+    },
+    "move": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/22"
+    },
+    "assign": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/22"
+    },
+    "relate": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/22"
+    },
+    "schedule": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/22"
+    }
+   },
+   "body": "Group tools into sets (web, terminal, browser, safe...). Enable/disable per channel or CLI flag, e.g. Telegram turns get a reduced set. Cuts context + risk as MCP tools pile up.\n\nPriority: ★★★★\nSource: hermes-agent comparison",
+   "labels": [
+    "hermes-port"
+   ],
+   "github_url": "",
+   "kind": "task",
+   "jwf": {
+    "level": 0,
+    "state": "Neu",
+    "column": "backlog",
+    "derived_column": "backlog",
+    "imported_column": null,
+    "column_from_import": false,
+    "import_clears": [],
+    "chain": [
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false
+    ],
+    "kind_role": "implementation",
+    "kind_term": "user story (implementation element)",
+    "drift": [],
+    "drift_incoming": [],
+    "hierarchy_level": null,
+    "parent_number": null,
+    "level_answer": ""
+   },
+   "sort_order": 220,
+   "schedule": {
+    "baseline": {
+     "start_ms": null,
+     "finish_ms": null
+    },
+    "forecast": {
+     "start_ms": null,
+     "finish_ms": null
+    },
+    "actual": {
+     "start_ms": null,
+     "finish_ms": null
+    }
+   },
+   "relations": {
+    "depends": [],
+    "refines": [],
+    "references": [],
+    "evidences": [],
+    "implements": [],
+    "maps_to": [],
+    "follow": [],
+    "blocked_by": []
+   },
+   "assignee": null
+  },
+  {
+   "number": 23,
+   "title": "Approval pattern allowlist",
+   "status": "backlog",
+   "project_slug": "agents-harness",
+   "created_at": "2026-11-17T19:53:44Z",
+   "updated_at": "2026-11-17T19:53:44Z",
+   "_links": {
+    "self": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/23"
+    },
+    "me": {
+     "href": "https://board.lolaplex.org/me"
+    },
+    "wellKnownDid": {
+     "href": "https://board.lolaplex.org/.well-known/did.json"
+    },
+    "wellKnownFlow": {
+     "href": "https://board.lolaplex.org/.well-known/flow"
+    },
+    "connect": {
+     "href": "https://board.lolaplex.org/connect"
+    },
+    "projects": {
+     "href": "https://board.lolaplex.org/projects"
+    },
+    "issue": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/23"
+    },
+    "project": {
+     "href": "https://board.lolaplex.org/projects/agents-harness"
+    },
+    "move": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/23"
+    },
+    "assign": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/23"
+    },
+    "relate": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/23"
+    },
+    "schedule": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/23"
+    }
+   },
+   "body": "Persist approved command patterns; matching commands auto-approve afterwards. Kills approval fatigue on repetitive safe commands.\n\nPriority: ★★★★\nSource: hermes-agent comparison",
+   "labels": [
+    "hermes-port"
+   ],
+   "github_url": "",
+   "kind": "task",
+   "jwf": {
+    "level": 0,
+    "state": "Neu",
+    "column": "backlog",
+    "derived_column": "backlog",
+    "imported_column": null,
+    "column_from_import": false,
+    "import_clears": [],
+    "chain": [
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false
+    ],
+    "kind_role": "implementation",
+    "kind_term": "user story (implementation element)",
+    "drift": [],
+    "drift_incoming": [],
+    "hierarchy_level": null,
+    "parent_number": null,
+    "level_answer": ""
+   },
+   "sort_order": 230,
+   "schedule": {
+    "baseline": {
+     "start_ms": null,
+     "finish_ms": null
+    },
+    "forecast": {
+     "start_ms": null,
+     "finish_ms": null
+    },
+    "actual": {
+     "start_ms": null,
+     "finish_ms": null
+    }
+   },
+   "relations": {
+    "depends": [],
+    "refines": [],
+    "references": [],
+    "evidences": [],
+    "implements": [],
+    "maps_to": [],
+    "follow": [],
+    "blocked_by": []
+   },
+   "assignee": null
+  },
+  {
+   "number": 24,
+   "title": "/compress: history compression",
+   "status": "backlog",
+   "project_slug": "agents-harness",
+   "created_at": "2026-11-17T19:53:44Z",
+   "updated_at": "2026-11-17T19:53:44Z",
+   "_links": {
+    "self": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/24"
+    },
+    "me": {
+     "href": "https://board.lolaplex.org/me"
+    },
+    "wellKnownDid": {
+     "href": "https://board.lolaplex.org/.well-known/did.json"
+    },
+    "wellKnownFlow": {
+     "href": "https://board.lolaplex.org/.well-known/flow"
+    },
+    "connect": {
+     "href": "https://board.lolaplex.org/connect"
+    },
+    "projects": {
+     "href": "https://board.lolaplex.org/projects"
+    },
+    "issue": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/24"
+    },
+    "project": {
+     "href": "https://board.lolaplex.org/projects/agents-harness"
+    },
+    "move": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/24"
+    },
+    "assign": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/24"
+    },
+    "relate": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/24"
+    },
+    "schedule": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/24"
+    }
+   },
+   "body": "Summarize long session history into a compact context and continue in the same thread. Uses traces as source.\n\nPriority: ★★★★\nSource: hermes-agent comparison",
+   "labels": [
+    "hermes-port"
+   ],
+   "github_url": "",
+   "kind": "task",
+   "jwf": {
+    "level": 0,
+    "state": "Neu",
+    "column": "backlog",
+    "derived_column": "backlog",
+    "imported_column": null,
+    "column_from_import": false,
+    "import_clears": [],
+    "chain": [
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false
+    ],
+    "kind_role": "implementation",
+    "kind_term": "user story (implementation element)",
+    "drift": [],
+    "drift_incoming": [],
+    "hierarchy_level": null,
+    "parent_number": null,
+    "level_answer": ""
+   },
+   "sort_order": 240,
+   "schedule": {
+    "baseline": {
+     "start_ms": null,
+     "finish_ms": null
+    },
+    "forecast": {
+     "start_ms": null,
+     "finish_ms": null
+    },
+    "actual": {
+     "start_ms": null,
+     "finish_ms": null
+    }
+   },
+   "relations": {
+    "depends": [],
+    "refines": [],
+    "references": [],
+    "evidences": [],
+    "implements": [],
+    "maps_to": [],
+    "follow": [],
+    "blocked_by": []
+   },
+   "assignee": null
+  },
+  {
+   "number": 25,
+   "title": "Model switcher (runtime, all surfaces)",
+   "status": "backlog",
+   "project_slug": "agents-harness",
+   "created_at": "2026-11-17T19:53:45Z",
+   "updated_at": "2026-11-17T19:53:45Z",
+   "_links": {
+    "self": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/25"
+    },
+    "me": {
+     "href": "https://board.lolaplex.org/me"
+    },
+    "wellKnownDid": {
+     "href": "https://board.lolaplex.org/.well-known/did.json"
+    },
+    "wellKnownFlow": {
+     "href": "https://board.lolaplex.org/.well-known/flow"
+    },
+    "connect": {
+     "href": "https://board.lolaplex.org/connect"
+    },
+    "projects": {
+     "href": "https://board.lolaplex.org/projects"
+    },
+    "issue": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/25"
+    },
+    "project": {
+     "href": "https://board.lolaplex.org/projects/agents-harness"
+    },
+    "move": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/25"
+    },
+    "assign": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/25"
+    },
+    "relate": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/25"
+    },
+    "schedule": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/25"
+    }
+   },
+   "body": "Real provider/model switch at runtime, persistent per workspace/channel: /model command, relay endpoint, PWA + desktop picker, provider registry listing available models. --provider flag exists per turn only. Cross-repo: harness core + relay + klanker web.\n\nPriority: ★★★★★\nSource: hermes-agent comparison",
+   "labels": [
+    "hermes-port"
+   ],
+   "github_url": "",
+   "kind": "task",
+   "jwf": {
+    "level": 0,
+    "state": "Neu",
+    "column": "backlog",
+    "derived_column": "backlog",
+    "imported_column": null,
+    "column_from_import": false,
+    "import_clears": [],
+    "chain": [
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false
+    ],
+    "kind_role": "implementation",
+    "kind_term": "user story (implementation element)",
+    "drift": [],
+    "drift_incoming": [],
+    "hierarchy_level": null,
+    "parent_number": null,
+    "level_answer": ""
+   },
+   "sort_order": 250,
+   "schedule": {
+    "baseline": {
+     "start_ms": null,
+     "finish_ms": null
+    },
+    "forecast": {
+     "start_ms": null,
+     "finish_ms": null
+    },
+    "actual": {
+     "start_ms": null,
+     "finish_ms": null
+    }
+   },
+   "relations": {
+    "depends": [],
+    "refines": [],
+    "references": [],
+    "evidences": [],
+    "implements": [],
+    "maps_to": [],
+    "follow": [],
+    "blocked_by": []
+   },
+   "assignee": null
+  },
+  {
+   "number": 26,
+   "title": "/undo and /retry",
+   "status": "backlog",
+   "project_slug": "agents-harness",
+   "created_at": "2026-11-17T19:53:46Z",
+   "updated_at": "2026-11-17T19:53:46Z",
+   "_links": {
+    "self": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/26"
+    },
+    "me": {
+     "href": "https://board.lolaplex.org/me"
+    },
+    "wellKnownDid": {
+     "href": "https://board.lolaplex.org/.well-known/did.json"
+    },
+    "wellKnownFlow": {
+     "href": "https://board.lolaplex.org/.well-known/flow"
+    },
+    "connect": {
+     "href": "https://board.lolaplex.org/connect"
+    },
+    "projects": {
+     "href": "https://board.lolaplex.org/projects"
+    },
+    "issue": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/26"
+    },
+    "project": {
+     "href": "https://board.lolaplex.org/projects/agents-harness"
+    },
+    "move": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/26"
+    },
+    "assign": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/26"
+    },
+    "relate": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/26"
+    },
+    "schedule": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/26"
+    }
+   },
+   "body": "Roll back or re-run the last turn (session snapshot/revert).\n\nPriority: ★★★\nSource: hermes-agent comparison",
+   "labels": [
+    "hermes-port"
+   ],
+   "github_url": "",
+   "kind": "task",
+   "jwf": {
+    "level": 0,
+    "state": "Neu",
+    "column": "backlog",
+    "derived_column": "backlog",
+    "imported_column": null,
+    "column_from_import": false,
+    "import_clears": [],
+    "chain": [
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false
+    ],
+    "kind_role": "implementation",
+    "kind_term": "user story (implementation element)",
+    "drift": [],
+    "drift_incoming": [],
+    "hierarchy_level": null,
+    "parent_number": null,
+    "level_answer": ""
+   },
+   "sort_order": 260,
+   "schedule": {
+    "baseline": {
+     "start_ms": null,
+     "finish_ms": null
+    },
+    "forecast": {
+     "start_ms": null,
+     "finish_ms": null
+    },
+    "actual": {
+     "start_ms": null,
+     "finish_ms": null
+    }
+   },
+   "relations": {
+    "depends": [],
+    "refines": [],
+    "references": [],
+    "evidences": [],
+    "implements": [],
+    "maps_to": [],
+    "follow": [],
+    "blocked_by": []
+   },
+   "assignee": null
+  },
+  {
+   "number": 27,
+   "title": "Interrupt-and-redirect",
+   "status": "backlog",
+   "project_slug": "agents-harness",
+   "created_at": "2026-11-17T19:53:46Z",
+   "updated_at": "2026-11-17T19:53:46Z",
+   "_links": {
+    "self": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/27"
+    },
+    "me": {
+     "href": "https://board.lolaplex.org/me"
+    },
+    "wellKnownDid": {
+     "href": "https://board.lolaplex.org/.well-known/did.json"
+    },
+    "wellKnownFlow": {
+     "href": "https://board.lolaplex.org/.well-known/flow"
+    },
+    "connect": {
+     "href": "https://board.lolaplex.org/connect"
+    },
+    "projects": {
+     "href": "https://board.lolaplex.org/projects"
+    },
+    "issue": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/27"
+    },
+    "project": {
+     "href": "https://board.lolaplex.org/projects/agents-harness"
+    },
+    "move": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/27"
+    },
+    "assign": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/27"
+    },
+    "relate": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/27"
+    },
+    "schedule": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/27"
+    }
+   },
+   "body": "A new message mid-turn cancels the running loop and redirects. Needs loop cancellation in harness plus relay/klanker wiring.\n\nPriority: ★★★\nSource: hermes-agent comparison",
+   "labels": [
+    "hermes-port"
+   ],
+   "github_url": "",
+   "kind": "task",
+   "jwf": {
+    "level": 0,
+    "state": "Neu",
+    "column": "backlog",
+    "derived_column": "backlog",
+    "imported_column": null,
+    "column_from_import": false,
+    "import_clears": [],
+    "chain": [
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false
+    ],
+    "kind_role": "implementation",
+    "kind_term": "user story (implementation element)",
+    "drift": [],
+    "drift_incoming": [],
+    "hierarchy_level": null,
+    "parent_number": null,
+    "level_answer": ""
+   },
+   "sort_order": 270,
+   "schedule": {
+    "baseline": {
+     "start_ms": null,
+     "finish_ms": null
+    },
+    "forecast": {
+     "start_ms": null,
+     "finish_ms": null
+    },
+    "actual": {
+     "start_ms": null,
+     "finish_ms": null
+    }
+   },
+   "relations": {
+    "depends": [],
+    "refines": [],
+    "references": [],
+    "evidences": [],
+    "implements": [],
+    "maps_to": [],
+    "follow": [],
+    "blocked_by": []
+   },
+   "assignee": null
+  },
+  {
+   "number": 28,
+   "title": "Finalize vision_analyze tool",
+   "status": "backlog",
+   "project_slug": "agents-harness",
+   "created_at": "2026-11-17T19:53:47Z",
+   "updated_at": "2026-11-17T19:53:47Z",
+   "_links": {
+    "self": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/28"
+    },
+    "me": {
+     "href": "https://board.lolaplex.org/me"
+    },
+    "wellKnownDid": {
+     "href": "https://board.lolaplex.org/.well-known/did.json"
+    },
+    "wellKnownFlow": {
+     "href": "https://board.lolaplex.org/.well-known/flow"
+    },
+    "connect": {
+     "href": "https://board.lolaplex.org/connect"
+    },
+    "projects": {
+     "href": "https://board.lolaplex.org/projects"
+    },
+    "issue": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/28"
+    },
+    "project": {
+     "href": "https://board.lolaplex.org/projects/agents-harness"
+    },
+    "move": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/28"
+    },
+    "assign": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/28"
+    },
+    "relate": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/28"
+    },
+    "schedule": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/28"
+    }
+   },
+   "body": "AGENTS_VISION=1 plumbing exists; complete the vision analyze tool surface for image attachments.\n\nPriority: ★★★\nSource: hermes-agent comparison",
+   "labels": [
+    "hermes-port"
+   ],
+   "github_url": "",
+   "kind": "task",
+   "jwf": {
+    "level": 0,
+    "state": "Neu",
+    "column": "backlog",
+    "derived_column": "backlog",
+    "imported_column": null,
+    "column_from_import": false,
+    "import_clears": [],
+    "chain": [
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false
+    ],
+    "kind_role": "implementation",
+    "kind_term": "user story (implementation element)",
+    "drift": [],
+    "drift_incoming": [],
+    "hierarchy_level": null,
+    "parent_number": null,
+    "level_answer": ""
+   },
+   "sort_order": 280,
+   "schedule": {
+    "baseline": {
+     "start_ms": null,
+     "finish_ms": null
+    },
+    "forecast": {
+     "start_ms": null,
+     "finish_ms": null
+    },
+    "actual": {
+     "start_ms": null,
+     "finish_ms": null
+    }
+   },
+   "relations": {
+    "depends": [],
+    "refines": [],
+    "references": [],
+    "evidences": [],
+    "implements": [],
+    "maps_to": [],
+    "follow": [],
+    "blocked_by": []
+   },
+   "assignee": null
+  },
+  {
+   "number": 29,
+   "title": "clarify tool",
+   "status": "backlog",
+   "project_slug": "agents-harness",
+   "created_at": "2026-11-17T19:53:47Z",
+   "updated_at": "2026-11-17T19:53:47Z",
+   "_links": {
+    "self": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/29"
+    },
+    "me": {
+     "href": "https://board.lolaplex.org/me"
+    },
+    "wellKnownDid": {
+     "href": "https://board.lolaplex.org/.well-known/did.json"
+    },
+    "wellKnownFlow": {
+     "href": "https://board.lolaplex.org/.well-known/flow"
+    },
+    "connect": {
+     "href": "https://board.lolaplex.org/connect"
+    },
+    "projects": {
+     "href": "https://board.lolaplex.org/projects"
+    },
+    "issue": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/29"
+    },
+    "project": {
+     "href": "https://board.lolaplex.org/projects/agents-harness"
+    },
+    "move": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/29"
+    },
+    "assign": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/29"
+    },
+    "relate": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/29"
+    },
+    "schedule": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/29"
+    }
+   },
+   "body": "Agent pauses turn with a structured question back to the user (options rendered as buttons where the channel allows).\n\nPriority: ★★\nSource: hermes-agent comparison",
+   "labels": [
+    "hermes-port"
+   ],
+   "github_url": "",
+   "kind": "task",
+   "jwf": {
+    "level": 0,
+    "state": "Neu",
+    "column": "backlog",
+    "derived_column": "backlog",
+    "imported_column": null,
+    "column_from_import": false,
+    "import_clears": [],
+    "chain": [
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false
+    ],
+    "kind_role": "implementation",
+    "kind_term": "user story (implementation element)",
+    "drift": [],
+    "drift_incoming": [],
+    "hierarchy_level": null,
+    "parent_number": null,
+    "level_answer": ""
+   },
+   "sort_order": 290,
+   "schedule": {
+    "baseline": {
+     "start_ms": null,
+     "finish_ms": null
+    },
+    "forecast": {
+     "start_ms": null,
+     "finish_ms": null
+    },
+    "actual": {
+     "start_ms": null,
+     "finish_ms": null
+    }
+   },
+   "relations": {
+    "depends": [],
+    "refines": [],
+    "references": [],
+    "evidences": [],
+    "implements": [],
+    "maps_to": [],
+    "follow": [],
+    "blocked_by": []
+   },
+   "assignee": null
+  },
+  {
+   "number": 30,
+   "title": "Cron NL polish",
+   "status": "backlog",
+   "project_slug": "agents-harness",
+   "created_at": "2026-11-17T19:53:48Z",
+   "updated_at": "2026-11-17T19:53:48Z",
+   "_links": {
+    "self": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/30"
+    },
+    "me": {
+     "href": "https://board.lolaplex.org/me"
+    },
+    "wellKnownDid": {
+     "href": "https://board.lolaplex.org/.well-known/did.json"
+    },
+    "wellKnownFlow": {
+     "href": "https://board.lolaplex.org/.well-known/flow"
+    },
+    "connect": {
+     "href": "https://board.lolaplex.org/connect"
+    },
+    "projects": {
+     "href": "https://board.lolaplex.org/projects"
+    },
+    "issue": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/30"
+    },
+    "project": {
+     "href": "https://board.lolaplex.org/projects/agents-harness"
+    },
+    "move": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/30"
+    },
+    "assign": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/30"
+    },
+    "relate": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/30"
+    },
+    "schedule": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/30"
+    }
+   },
+   "body": "Natural-language scheduling from chat ('every morning 8') -> routine creation edge cases on top of mcp.schedule.add.\n\nPriority: ★★\nSource: hermes-agent comparison",
+   "labels": [
+    "hermes-port"
+   ],
+   "github_url": "",
+   "kind": "task",
+   "jwf": {
+    "level": 0,
+    "state": "Neu",
+    "column": "backlog",
+    "derived_column": "backlog",
+    "imported_column": null,
+    "column_from_import": false,
+    "import_clears": [],
+    "chain": [
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false
+    ],
+    "kind_role": "implementation",
+    "kind_term": "user story (implementation element)",
+    "drift": [],
+    "drift_incoming": [],
+    "hierarchy_level": null,
+    "parent_number": null,
+    "level_answer": ""
+   },
+   "sort_order": 300,
+   "schedule": {
+    "baseline": {
+     "start_ms": null,
+     "finish_ms": null
+    },
+    "forecast": {
+     "start_ms": null,
+     "finish_ms": null
+    },
+    "actual": {
+     "start_ms": null,
+     "finish_ms": null
+    }
+   },
+   "relations": {
+    "depends": [],
+    "refines": [],
+    "references": [],
+    "evidences": [],
+    "implements": [],
+    "maps_to": [],
+    "follow": [],
+    "blocked_by": []
+   },
+   "assignee": null
+  },
+  {
+   "number": 31,
+   "title": "Design spike: persona teams",
+   "status": "backlog",
+   "project_slug": "agents-harness",
+   "created_at": "2026-11-17T19:53:49Z",
+   "updated_at": "2026-11-17T19:53:49Z",
+   "_links": {
+    "self": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/31"
+    },
+    "me": {
+     "href": "https://board.lolaplex.org/me"
+    },
+    "wellKnownDid": {
+     "href": "https://board.lolaplex.org/.well-known/did.json"
+    },
+    "wellKnownFlow": {
+     "href": "https://board.lolaplex.org/.well-known/flow"
+    },
+    "connect": {
+     "href": "https://board.lolaplex.org/connect"
+    },
+    "projects": {
+     "href": "https://board.lolaplex.org/projects"
+    },
+    "issue": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/31"
+    },
+    "project": {
+     "href": "https://board.lolaplex.org/projects/agents-harness"
+    },
+    "move": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/31"
+    },
+    "assign": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/31"
+    },
+    "relate": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/31"
+    },
+    "schedule": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/31"
+    }
+   },
+   "body": "Architecture for teams of personas collaborating inside one workspace. Primitives exist (persona add/task/inbox/handoff, runner/personas.py). Open: who delegates when, shared vs isolated context, supervisor loop. Design doc first, no code.\n\nPriority: design\nSource: hermes-agent comparison",
+   "labels": [
+    "hermes-port"
+   ],
+   "github_url": "",
+   "kind": "task",
+   "jwf": {
+    "level": 0,
+    "state": "Neu",
+    "column": "backlog",
+    "derived_column": "backlog",
+    "imported_column": null,
+    "column_from_import": false,
+    "import_clears": [],
+    "chain": [
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false
+    ],
+    "kind_role": "implementation",
+    "kind_term": "user story (implementation element)",
+    "drift": [],
+    "drift_incoming": [],
+    "hierarchy_level": null,
+    "parent_number": null,
+    "level_answer": ""
+   },
+   "sort_order": 310,
+   "schedule": {
+    "baseline": {
+     "start_ms": null,
+     "finish_ms": null
+    },
+    "forecast": {
+     "start_ms": null,
+     "finish_ms": null
+    },
+    "actual": {
+     "start_ms": null,
+     "finish_ms": null
+    }
+   },
+   "relations": {
+    "depends": [],
+    "refines": [],
+    "references": [],
+    "evidences": [],
+    "implements": [],
+    "maps_to": [],
+    "follow": [],
+    "blocked_by": []
+   },
+   "assignee": null
+  },
+  {
+   "number": 32,
+   "title": "cordis: one module per suite package via help-json",
+   "status": "backlog",
+   "project_slug": "agents-harness",
+   "created_at": "2026-11-18T07:17:17Z",
+   "updated_at": "2026-11-18T07:17:17Z",
+   "_links": {
+    "self": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/32"
+    },
+    "me": {
+     "href": "https://board.lolaplex.org/me"
+    },
+    "wellKnownDid": {
+     "href": "https://board.lolaplex.org/.well-known/did.json"
+    },
+    "wellKnownFlow": {
+     "href": "https://board.lolaplex.org/.well-known/flow"
+    },
+    "connect": {
+     "href": "https://board.lolaplex.org/connect"
+    },
+    "projects": {
+     "href": "https://board.lolaplex.org/projects"
+    },
+    "issue": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/32"
+    },
+    "project": {
+     "href": "https://board.lolaplex.org/projects/agents-harness"
+    },
+    "move": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/32"
+    },
+    "assign": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/32"
+    },
+    "relate": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/32"
+    },
+    "schedule": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/32"
+    }
+   },
+   "body": "Cordis discovery phase 1 — replace hand-written subcommand manifests with live help-json discovery.\n\nToday `mcp.memory`, `mcp.traces`, `mcp.browser` are presence probes only; real tools are per-subcommand manifests (`mcp.memory.add`, `mcp.memory.read`, `mcp.memory.search`, `mcp.memory.projects`, `mcp.traces.audit`, `mcp.traces.seal`, `mcp.calendar.*`) plus arg-mapping shims in `runner/cordis_tools.py`. The CLIs already emit full help-json (agents-memory ~40 commands).\n\nPlan:\n- `commands_from: \"help-json\"` + `as_tool` on the package modules; commands/params/side-effects come live from the CLI.\n- Deprecate subcommand manifests and their cordis_tools shim cases once discovery covers them.\n- Optional `\"expose_commands\": [...]` manifest key to split selected commands into their own tools (better tool choice + toolset granularity) — same help-json source.\n\nDone with mcp.model + mcp.delegate on feat/model-switch and feat/delegate-task (declared commands, shims removed) — use as reference.\n\nBlocked: mcp.memory until the agents-memory rework (cypoe) lands.",
+   "labels": [
+    "cordis",
+    "architecture"
+   ],
+   "github_url": "",
+   "kind": "task",
+   "jwf": {
+    "level": 0,
+    "state": "Neu",
+    "column": "backlog",
+    "derived_column": "backlog",
+    "imported_column": null,
+    "column_from_import": false,
+    "import_clears": [],
+    "chain": [
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false
+    ],
+    "kind_role": "implementation",
+    "kind_term": "user story (implementation element)",
+    "drift": [],
+    "drift_incoming": [],
+    "hierarchy_level": null,
+    "parent_number": null,
+    "level_answer": ""
+   },
+   "sort_order": 320,
+   "schedule": {
+    "baseline": {
+     "start_ms": null,
+     "finish_ms": null
+    },
+    "forecast": {
+     "start_ms": null,
+     "finish_ms": null
+    },
+    "actual": {
+     "start_ms": null,
+     "finish_ms": null
+    }
+   },
+   "relations": {
+    "depends": [],
+    "refines": [],
+    "references": [],
+    "evidences": [],
+    "implements": [],
+    "maps_to": [],
+    "follow": [],
+    "blocked_by": []
+   },
+   "assignee": null
+  },
+  {
+   "number": 33,
+   "title": "cordis: subcommand-level side-effect classes in help-json",
+   "status": "backlog",
+   "project_slug": "agents-harness",
+   "created_at": "2026-11-18T07:17:18Z",
+   "updated_at": "2026-11-18T07:17:18Z",
+   "_links": {
+    "self": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/33"
+    },
+    "me": {
+     "href": "https://board.lolaplex.org/me"
+    },
+    "wellKnownDid": {
+     "href": "https://board.lolaplex.org/.well-known/did.json"
+    },
+    "wellKnownFlow": {
+     "href": "https://board.lolaplex.org/.well-known/flow"
+    },
+    "connect": {
+     "href": "https://board.lolaplex.org/connect"
+    },
+    "projects": {
+     "href": "https://board.lolaplex.org/projects"
+    },
+    "issue": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/33"
+    },
+    "project": {
+     "href": "https://board.lolaplex.org/projects/agents-harness"
+    },
+    "move": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/33"
+    },
+    "assign": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/33"
+    },
+    "relate": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/33"
+    },
+    "schedule": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/33"
+    }
+   },
+   "body": "Cordis discovery phase 2 — one more level of command depth in help-json classification.\n\nToday `select_command`/`call_effects` classify on argv[0] only: `proc` is one mutating command even though `proc list|poll|log` are read-only and `proc write|kill` are mutating. Same for any `verb action` CLI (schedule, delegate, memory).\n\nPlan:\n- Extend the help-json command spec with a `subcommands` object (one level) carrying usage/parameters/side_effects per action.\n- Resolve two levels in `runner/helpjson.py` (`argv[0]`+`argv[1]`, or an `action` argument key) for `select_command`, `declared_argv`, `call_effects`, and pinned rendering.\n- Emitters: agents-terminal `proc`, runner.delegate, runner.model, agents-calendar — emit nested specs.\n\nResult: approval classes per action (`proc poll` ungated, `proc kill` gated) without new modules.",
+   "labels": [
+    "cordis",
+    "architecture"
+   ],
+   "github_url": "",
+   "kind": "task",
+   "jwf": {
+    "level": 0,
+    "state": "Neu",
+    "column": "backlog",
+    "derived_column": "backlog",
+    "imported_column": null,
+    "column_from_import": false,
+    "import_clears": [],
+    "chain": [
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false
+    ],
+    "kind_role": "implementation",
+    "kind_term": "user story (implementation element)",
+    "drift": [],
+    "drift_incoming": [],
+    "hierarchy_level": null,
+    "parent_number": null,
+    "level_answer": ""
+   },
+   "sort_order": 330,
+   "schedule": {
+    "baseline": {
+     "start_ms": null,
+     "finish_ms": null
+    },
+    "forecast": {
+     "start_ms": null,
+     "finish_ms": null
+    },
+    "actual": {
+     "start_ms": null,
+     "finish_ms": null
+    }
+   },
+   "relations": {
+    "depends": [],
+    "refines": [],
+    "references": [],
+    "evidences": [],
+    "implements": [],
+    "maps_to": [],
+    "follow": [],
+    "blocked_by": []
+   },
+   "assignee": null
+  },
+  {
+   "number": 34,
+   "title": "cordis: auto-mount suite packages (cordis_expose) + toolset mapping",
+   "status": "backlog",
+   "project_slug": "agents-harness",
+   "created_at": "2026-11-18T07:17:19Z",
+   "updated_at": "2026-11-18T07:17:19Z",
+   "_links": {
+    "self": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/34"
+    },
+    "me": {
+     "href": "https://board.lolaplex.org/me"
+    },
+    "wellKnownDid": {
+     "href": "https://board.lolaplex.org/.well-known/did.json"
+    },
+    "wellKnownFlow": {
+     "href": "https://board.lolaplex.org/.well-known/flow"
+    },
+    "connect": {
+     "href": "https://board.lolaplex.org/connect"
+    },
+    "projects": {
+     "href": "https://board.lolaplex.org/projects"
+    },
+    "issue": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/34"
+    },
+    "project": {
+     "href": "https://board.lolaplex.org/projects/agents-harness"
+    },
+    "move": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/34"
+    },
+    "assign": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/34"
+    },
+    "relate": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/34"
+    },
+    "schedule": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/34"
+    }
+   },
+   "body": "Cordis discovery phase 3 — install-time tool discovery instead of checked-in manifests.\n\nDream-state: installing an agents-* package exposes its commands as Cordis tools without a module JSON in this repo.\n\nPlan:\n- `cordis_expose: true` convention in a package's `--help-json` output (plus optional `group` tags per command).\n- `runner.modules` scans installed suite packages and synthesizes module manifests at runtime (same shape as files; overlays still win).\n- `klanker sense` shows discovered-but-unmounted capabilities with an enable flow.\n- Toolsets (#22 follow-up) get a natural mapping: toolset name = package name, groups from command metadata.\n\nKeep Cordis rules: executor still only runs CLIs and reads exit codes; fail-closed classification stays (missing side_effects = mutating).",
+   "labels": [
+    "cordis",
+    "architecture"
+   ],
+   "github_url": "",
+   "kind": "task",
+   "jwf": {
+    "level": 0,
+    "state": "Neu",
+    "column": "backlog",
+    "derived_column": "backlog",
+    "imported_column": null,
+    "column_from_import": false,
+    "import_clears": [],
+    "chain": [
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false
+    ],
+    "kind_role": "implementation",
+    "kind_term": "user story (implementation element)",
+    "drift": [],
+    "drift_incoming": [],
+    "hierarchy_level": null,
+    "parent_number": null,
+    "level_answer": ""
+   },
+   "sort_order": 340,
+   "schedule": {
+    "baseline": {
+     "start_ms": null,
+     "finish_ms": null
+    },
+    "forecast": {
+     "start_ms": null,
+     "finish_ms": null
+    },
+    "actual": {
+     "start_ms": null,
+     "finish_ms": null
+    }
+   },
+   "relations": {
+    "depends": [],
+    "refines": [],
+    "references": [],
+    "evidences": [],
+    "implements": [],
+    "maps_to": [],
+    "follow": [],
+    "blocked_by": []
+   },
+   "assignee": null
+  },
+  {
+   "number": 35,
+   "title": "Persona memory split: private|shared flag in persona.json",
+   "status": "backlog",
+   "project_slug": "agents-harness",
+   "created_at": "2026-11-18T13:22:08Z",
+   "updated_at": "2026-11-18T13:22:08Z",
+   "_links": {
+    "self": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/35"
+    },
+    "me": {
+     "href": "https://board.lolaplex.org/me"
+    },
+    "wellKnownDid": {
+     "href": "https://board.lolaplex.org/.well-known/did.json"
+    },
+    "wellKnownFlow": {
+     "href": "https://board.lolaplex.org/.well-known/flow"
+    },
+    "connect": {
+     "href": "https://board.lolaplex.org/connect"
+    },
+    "projects": {
+     "href": "https://board.lolaplex.org/projects"
+    },
+    "issue": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/35"
+    },
+    "project": {
+     "href": "https://board.lolaplex.org/projects/agents-harness"
+    },
+    "move": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/35"
+    },
+    "assign": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/35"
+    },
+    "relate": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/35"
+    },
+    "schedule": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/35"
+    }
+   },
+   "body": "Today: sessions are per-persona (<ws>/personas/<id>/sessions/) but memory is fully ws-shared; only notes.md is persona-private. Grokbot-style model needs per-persona memory + shared ws memory. Minimal path: persona.json flag \"memory\": \"private\" resolves memory root to <ws>/personas/<id>/memory/ instead of ws.memory for that persona's turns; \"shared\" (default) keeps current behaviour. Retrieval surfaces shared memory + persona memory (private only for that persona). Depends on nothing; complements agents-memory#15 (retrieval at scale).",
+   "labels": [],
+   "github_url": "",
+   "kind": "task",
+   "jwf": {
+    "level": 0,
+    "state": "Neu",
+    "column": "backlog",
+    "derived_column": "backlog",
+    "imported_column": null,
+    "column_from_import": false,
+    "import_clears": [],
+    "chain": [
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false
+    ],
+    "kind_role": "implementation",
+    "kind_term": "user story (implementation element)",
+    "drift": [],
+    "drift_incoming": [],
+    "hierarchy_level": null,
+    "parent_number": null,
+    "level_answer": ""
+   },
+   "sort_order": 350,
+   "schedule": {
+    "baseline": {
+     "start_ms": null,
+     "finish_ms": null
+    },
+    "forecast": {
+     "start_ms": null,
+     "finish_ms": null
+    },
+    "actual": {
+     "start_ms": null,
+     "finish_ms": null
+    }
+   },
+   "relations": {
+    "depends": [],
+    "refines": [],
+    "references": [],
+    "evidences": [],
+    "implements": [],
+    "maps_to": [],
+    "follow": [],
+    "blocked_by": []
+   },
+   "assignee": null
+  },
+  {
+   "number": 36,
+   "title": "Delegate depth ledger: replace env-only counter",
+   "status": "backlog",
+   "project_slug": "agents-harness",
+   "created_at": "2026-11-18T13:22:08Z",
+   "updated_at": "2026-11-18T13:22:08Z",
+   "_links": {
+    "self": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/36"
+    },
+    "me": {
+     "href": "https://board.lolaplex.org/me"
+    },
+    "wellKnownDid": {
+     "href": "https://board.lolaplex.org/.well-known/did.json"
+    },
+    "wellKnownFlow": {
+     "href": "https://board.lolaplex.org/.well-known/flow"
+    },
+    "connect": {
+     "href": "https://board.lolaplex.org/connect"
+    },
+    "projects": {
+     "href": "https://board.lolaplex.org/projects"
+    },
+    "issue": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/36"
+    },
+    "project": {
+     "href": "https://board.lolaplex.org/projects/agents-harness"
+    },
+    "move": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/36"
+    },
+    "assign": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/36"
+    },
+    "relate": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/36"
+    },
+    "schedule": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/36"
+    }
+   },
+   "body": "feat/delegate-task hardened recursion with AGENTS_DELEGATE_DEPTH env counter - strippable via env -u by a delegate that spawns its own delegate. Best-effort fix without kernel boundary: depth ledger file <ws>/run/delegate.depth written by parent before spawn (host-side, not env-inherited), child reads and increments; refuse beyond MAX. Still same-uid advisory but kills the trivial env-strip path. Real isolation stays the container card (agents-workspace). Lands as follow-up after delegate-task merges.",
+   "labels": [],
+   "github_url": "",
+   "kind": "task",
+   "jwf": {
+    "level": 0,
+    "state": "Neu",
+    "column": "backlog",
+    "derived_column": "backlog",
+    "imported_column": null,
+    "column_from_import": false,
+    "import_clears": [],
+    "chain": [
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false
+    ],
+    "kind_role": "implementation",
+    "kind_term": "user story (implementation element)",
+    "drift": [],
+    "drift_incoming": [],
+    "hierarchy_level": null,
+    "parent_number": null,
+    "level_answer": ""
+   },
+   "sort_order": 360,
+   "schedule": {
+    "baseline": {
+     "start_ms": null,
+     "finish_ms": null
+    },
+    "forecast": {
+     "start_ms": null,
+     "finish_ms": null
+    },
+    "actual": {
+     "start_ms": null,
+     "finish_ms": null
+    }
+   },
+   "relations": {
+    "depends": [],
+    "refines": [],
+    "references": [],
+    "evidences": [],
+    "implements": [],
+    "maps_to": [],
+    "follow": [],
+    "blocked_by": []
+   },
+   "assignee": null
+  },
+  {
+   "number": 2,
+   "title": "[P1] Harness loop: explicit --workspace <id>; modules from ws.modules",
+   "status": "done",
+   "project_slug": "agents-harness",
+   "created_at": "2026-11-10T17:28:47Z",
+   "updated_at": "2026-11-10T23:51:43Z",
+   "_links": {
+    "self": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/2"
+    },
+    "me": {
+     "href": "https://board.lolaplex.org/me"
+    },
+    "wellKnownDid": {
+     "href": "https://board.lolaplex.org/.well-known/did.json"
+    },
+    "wellKnownFlow": {
+     "href": "https://board.lolaplex.org/.well-known/flow"
+    },
+    "connect": {
+     "href": "https://board.lolaplex.org/connect"
+    },
+    "projects": {
+     "href": "https://board.lolaplex.org/projects"
+    },
+    "issue": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/2"
+    },
+    "project": {
+     "href": "https://board.lolaplex.org/projects/agents-harness"
+    },
+    "move": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/2"
+    },
+    "assign": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/2"
+    },
+    "relate": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/2"
+    },
+    "schedule": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/2"
+    }
+   },
+   "body": "**Problem**\n\n`runner/loop.py:628-638` session flags (`--session --detached-session --channel --user --user-id --new-session --project`) have no `--workspace`; workspace only via env. `runner/modules.py:21-35` reads `AGENTS_MODULES_DIR` (globally set by klanker). Manifest field `workspace` (`executor.py:358-371`) already passes `ws.env()` to subprocesses (keep).\n\n**Target state**\n\n`loop --workspace <id>` (default `AGENTS_WORKSPACE`) builds one `Workspace` object passed to modules, skills, schedule, memory rules, traces; modules from `ws.modules` + package defaults.\n\n**Steps**\n\n- Add `--workspace`; resolve once at entry.\n- Thread the Workspace object through loop -> executor -> modules/skills.\n- Test: two loops in one process with different workspace args resolve different module dirs.\n\n**Acceptance**\n\n- [ ] `python -m unittest discover -s tests` green.\n- [ ] `python -m runner.loop --help` lists `--workspace`.\n\nDepends on: https://board.lolaplex.org/projects/agents-workspace/issues/10, https://board.lolaplex.org/projects/agents-workspace/issues/1\n\n**Depends on**\n\n- C12 ([agents-workspace#10](https://board.lolaplex.org/projects/agents-workspace/issues/10))\n- Naming & hierarchy spec: C01 ([agents-workspace#1](https://board.lolaplex.org/projects/agents-workspace/issues/1))\n\n**Repos (PR to `dev`, one PR per repo):** agents-harness\n\n*Covers:* H6 loop has no --workspace\n\n---\nAgent rules (apply to every card):\n- Author AND committer only `Klix927 <275704466+Klix927@users.noreply.github.com>`. No Co-authored-by, no Cursor/agent trailers.\n- Branch from `dev`, open a PR to `dev` only. Never push to `main`, never force-push, never push directly to `dev`.\n- Do not change CI workflows (`.github/workflows/*`). Do not bump versions. Changelog entries only under `[Unreleased]`.\n- Stack stays generic and decoupled: no Felix/NAS/VPS-specific values (hosts, users, volumes, `~/Coding`) in repos.\n- Never print, log or commit secrets, tokens, cookies or key material.\n- Line refs are hints at the pinned SHAs (see the Naming & hierarchy spec card); re-locate by symbol if lines moved.\n- Done = PR merged to dev + acceptance commands pasted in the PR + card evidence comment. No evidence, no done.\n",
+   "labels": [],
+   "github_url": "",
+   "kind": "task",
+   "jwf": {
+    "level": 0,
+    "state": "Neu",
+    "column": "backlog",
+    "derived_column": "backlog",
+    "imported_column": null,
+    "column_from_import": false,
+    "import_clears": [],
+    "chain": [
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false
+    ],
+    "kind_role": "implementation",
+    "kind_term": "user story (implementation element)",
+    "drift": [],
+    "drift_incoming": [],
+    "hierarchy_level": null,
+    "parent_number": null,
+    "level_answer": ""
+   },
+   "sort_order": 20,
+   "schedule": {
+    "baseline": {
+     "start_ms": null,
+     "finish_ms": null
+    },
+    "forecast": {
+     "start_ms": null,
+     "finish_ms": null
+    },
+    "actual": {
+     "start_ms": null,
+     "finish_ms": 1794354703111
+    }
+   },
+   "relations": {
+    "depends": [],
+    "refines": [],
+    "references": [],
+    "evidences": [],
+    "implements": [],
+    "maps_to": [],
+    "follow": [],
+    "blocked_by": []
+   },
+   "assignee": null
+  },
+  {
+   "number": 3,
+   "title": "[P1] Harness: all paths via resolver (skills, mcp.json, mcp cache, content, timezone config, internal roots); drop docs modules",
+   "status": "done",
+   "project_slug": "agents-harness",
+   "created_at": "2026-11-10T17:28:48Z",
+   "updated_at": "2026-11-11T00:31:12Z",
+   "_links": {
+    "self": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/3"
+    },
+    "me": {
+     "href": "https://board.lolaplex.org/me"
+    },
+    "wellKnownDid": {
+     "href": "https://board.lolaplex.org/.well-known/did.json"
+    },
+    "wellKnownFlow": {
+     "href": "https://board.lolaplex.org/.well-known/flow"
+    },
+    "connect": {
+     "href": "https://board.lolaplex.org/connect"
+    },
+    "projects": {
+     "href": "https://board.lolaplex.org/projects"
+    },
+    "issue": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/3"
+    },
+    "project": {
+     "href": "https://board.lolaplex.org/projects/agents-harness"
+    },
+    "move": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/3"
+    },
+    "assign": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/3"
+    },
+    "relate": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/3"
+    },
+    "schedule": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/3"
+    }
+   },
+   "body": "decided (Felix 10.11. 19:31): D-host-layer — Host = infra only (keys, secrets, run, cache, logs). No host-wide memory/skills. Later: read-only cross-workspace search with explicit grant, not a storage level.\ndecided (Klanker, technical, 10.11.): D-mcp-level — <host>/mcp.json + optional <ws>/mcp.json overlay\ndecided (Klanker, technical, 10.11.): D-config — <host>/agents.json\ndecided (Klanker, technical, 10.11.): D-file-suffix — AGENTS_IDENTITY_PATH->AGENTS_USERS_FILE (points to <host>/users.json), AGENTS_KNOWN_DIDS->AGENTS_KNOWN_DIDS_FILE, AGENTS_MCP_CONFIG->AGENTS_MCP_CONFIG_FILE, AGENTS_MCP_CACHE->AGENTS_MCP_CACHE_FILE, AGENTS_SYNC_CONFIG->AGENTS_SYNC_CONFIG_FILE (alias 1 release each)\n\n**Problem**\n\nHardcoded `~/.agents` (grep-verified at dev 267cd48d): `executor.py:284` in internal roots (276-312) allowing `~/.agents/{skills,modules,memory,traces,schedules}` under lock; `skills.py:17` `~/.agents/skills`; `mcp_client.py:50,57` `~/.agents/mcp.json`, `~/.agents/mcp-tools-cache.json` (46-57; `AGENTS_MCP_CONFIG`, `AGENTS_MCP_CACHE`); `retrieve.py:81` `~/.agents/harness-content` (77-81; `AGENTS_CONTENT_DIR`); `schedule.py:60` legacy `~/.agents/config.json` timezone fallback (50-72). `runner/modules/mcp.docs*.json` + `schedules/docs_catalog.json` belong to archived agents-docs (inventory: seen in tree only, unverified). `AGENTS_PROVIDERS_DIR` (`providers.py:19-34`) stays host-level, unchanged.\n\n**Target state**\n\nskills: `ws.skills` only — **no** host-wide skills (D-host-layer, decided Felix 10.11. 19:31; rescope). mcp.json: `<host>/mcp.json` + optional `<ws>/mcp.json` overlay, one resolution shared with klanker (decided (Klanker, technical, 10.11.) D-mcp-level), env `AGENTS_MCP_CONFIG_FILE` (alias `AGENTS_MCP_CONFIG`, 1 release); MCP cache `<host>/cache/mcp-tools-cache.json`, env `AGENTS_MCP_CACHE_FILE` (alias `AGENTS_MCP_CACHE`, 1 release) (decided (Klanker, technical, 10.11.) D-file-suffix); content `<ws>/content`; timezone from `<host>/agents.json` (decided (Klanker, technical, 10.11.) D-config); internal roots = active workspace + host infra parts (keys, cache, logs, `agents.json`, host mcp.json); docs modules removed.\n\n**Steps**\n\n- Use resolver helpers; delete hardcoded paths.\n- Env vars remain overrides (test-only) with new defaults.\n- Delete docs modules/catalog after confirming they exist on dev.\n- Tests for each default under a temp host.\n\n**Acceptance**\n\n- [ ] `python -m unittest discover -s tests` green.\n- [ ] `rg -n 'Path.home\\(\\) / \"\\.agents\"' runner` -> none.\n- [ ] `ls runner/modules | grep -i docs` -> empty.\n\nDepends on: https://board.lolaplex.org/projects/agents-workspace/issues/10, https://board.lolaplex.org/projects/agents-workspace/issues/1\n\n**Depends on**\n\n- C12 ([agents-workspace#10](https://board.lolaplex.org/projects/agents-workspace/issues/10))\n- Naming & hierarchy spec: C01 ([agents-workspace#1](https://board.lolaplex.org/projects/agents-workspace/issues/1))\n\n**Repos (PR to `dev`, one PR per repo):** agents-harness\n\n*Covers:* H4 resolver bypassed (harness); H5 one file two resolutions (mcp.json, skills, timezone); M1 (harness); N1 agents-docs referenced (harness)\n\n---\nAgent rules (apply to every card):\n- Author AND committer only `Klix927 <275704466+Klix927@users.noreply.github.com>`. No Co-authored-by, no Cursor/agent trailers.\n- Branch from `dev`, open a PR to `dev` only. Never push to `main`, never force-push, never push directly to `dev`.\n- Do not change CI workflows (`.github/workflows/*`). Do not bump versions. Changelog entries only under `[Unreleased]`.\n- Stack stays generic and decoupled: no Felix/NAS/VPS-specific values (hosts, users, volumes, `~/Coding`) in repos.\n- Never print, log or commit secrets, tokens, cookies or key material.\n- Line refs are hints at the pinned SHAs (see the Naming & hierarchy spec card); re-locate by symbol if lines moved.\n- Done = PR merged to dev + acceptance commands pasted in the PR + card evidence comment. No evidence, no done.\n",
+   "labels": [],
+   "github_url": "",
+   "kind": "task",
+   "jwf": {
+    "level": 0,
+    "state": "Neu",
+    "column": "backlog",
+    "derived_column": "backlog",
+    "imported_column": null,
+    "column_from_import": false,
+    "import_clears": [],
+    "chain": [
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false
+    ],
+    "kind_role": "implementation",
+    "kind_term": "user story (implementation element)",
+    "drift": [],
+    "drift_incoming": [],
+    "hierarchy_level": null,
+    "parent_number": null,
+    "level_answer": ""
+   },
+   "sort_order": 30,
+   "schedule": {
+    "baseline": {
+     "start_ms": null,
+     "finish_ms": null
+    },
+    "forecast": {
+     "start_ms": null,
+     "finish_ms": null
+    },
+    "actual": {
+     "start_ms": null,
+     "finish_ms": 1794357072878
+    }
+   },
+   "relations": {
+    "depends": [],
+    "refines": [],
+    "references": [],
+    "evidences": [],
+    "implements": [],
+    "maps_to": [],
+    "follow": [],
+    "blocked_by": [
+     {
+      "number": 6,
+      "title": "[P1] Docs match code + naming spec (agents-harness, spec C101)",
+      "status": "done"
+     }
+    ]
+   },
+   "assignee": null
+  },
+  {
+   "number": 4,
+   "title": "[P1] Update-check cache under <host>/cache (agents-harness, spec C68)",
+   "status": "done",
+   "project_slug": "agents-harness",
+   "created_at": "2026-11-10T17:28:50Z",
+   "updated_at": "2026-11-11T00:31:13Z",
+   "_links": {
+    "self": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/4"
+    },
+    "me": {
+     "href": "https://board.lolaplex.org/me"
+    },
+    "wellKnownDid": {
+     "href": "https://board.lolaplex.org/.well-known/did.json"
+    },
+    "wellKnownFlow": {
+     "href": "https://board.lolaplex.org/.well-known/flow"
+    },
+    "connect": {
+     "href": "https://board.lolaplex.org/connect"
+    },
+    "projects": {
+     "href": "https://board.lolaplex.org/projects"
+    },
+    "issue": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/4"
+    },
+    "project": {
+     "href": "https://board.lolaplex.org/projects/agents-harness"
+    },
+    "move": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/4"
+    },
+    "assign": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/4"
+    },
+    "relate": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/4"
+    },
+    "schedule": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/4"
+    }
+   },
+   "body": "**Problem**\n\n`klanker/src/klanker/updates.py:47-58`: cache at `<root>/cache` when explicit_root else `~/.cache/agents`; the same file is assumed identical in 7 repos (inventory, by blob SHA, unverified per repo; repo list here is a guess, confirm with grep). Terminal sandbox dirs `AGENTS_OPENSHELL_DIR`, `OPENSHELL_STATE_DIR`, `AGENTS_SANDBOX_CACHE` (`openshell_driver.py:42-64`) use XDG (keep; optional bundling).\n\nThis is the **agents-harness** slice of spec C68. Confirm `updates.py` in this repo (`rg --files -g updates.py`) before editing. One PR in this repo only.\n\n**Target state**\n\nUpdate cache at `<host>/cache/updates/`. Optional only if trivial: terminal sandbox cache defaults under `<host>/cache`.\n\n**Steps**\n\n- Confirm repos: `rg --files -g updates.py` in each checkout.\n- One PR per repo, same change.\n- No change to `AGENTS_NO_UPDATE_CHECK`.\n\n**Acceptance**\n\n- [ ] Per repo tests green.\n- [ ] With `AGENTS_HOST_DIR=t`: cache path under `t/cache/updates/`.\n\nDepends on: https://board.lolaplex.org/projects/agents-workspace/issues/2, https://board.lolaplex.org/projects/agents-workspace/issues/1\n\n**Depends on**\n\n- C10 ([agents-workspace#2](https://board.lolaplex.org/projects/agents-workspace/issues/2))\n- Naming & hierarchy spec: C01 ([agents-workspace#1](https://board.lolaplex.org/projects/agents-workspace/issues/1))\n\n**Repos (this slice):** agents-harness\n\n**Repos (full spec C68):** klanker, agents-memory, agents-harness, agents-relay, agents-traces, agents-terminal, agents-calendar\n\n**Sibling slices (spec C68):** [klanker#9](https://board.lolaplex.org/projects/klanker/issues/9), [agents-memory#12](https://board.lolaplex.org/projects/agents-memory/issues/12), [agents-harness#4](https://board.lolaplex.org/projects/agents-harness/issues/4), [agents-relay#4](https://board.lolaplex.org/projects/agents-relay/issues/4), [agents-traces#2](https://board.lolaplex.org/projects/agents-traces/issues/2), [agents-terminal#2](https://board.lolaplex.org/projects/agents-terminal/issues/2), [agents-calendar#2](https://board.lolaplex.org/projects/agents-calendar/issues/2)\n\n\n**Notes:** Multi-repo; Board bot may split per project.\n\n*Covers:* H2 host artifacts (~/.cache/agents)\n\n---\nAgent rules (apply to every card):\n- Author AND committer only `Klix927 <275704466+Klix927@users.noreply.github.com>`. No Co-authored-by, no Cursor/agent trailers.\n- Branch from `dev`, open a PR to `dev` only. Never push to `main`, never force-push, never push directly to `dev`.\n- Do not change CI workflows (`.github/workflows/*`). Do not bump versions. Changelog entries only under `[Unreleased]`.\n- Stack stays generic and decoupled: no Felix/NAS/VPS-specific values (hosts, users, volumes, `~/Coding`) in repos.\n- Never print, log or commit secrets, tokens, cookies or key material.\n- Line refs are hints at the pinned SHAs (see the Naming & hierarchy spec card); re-locate by symbol if lines moved.\n- Done = PR merged to dev + acceptance commands pasted in the PR + card evidence comment. No evidence, no done.\n",
+   "labels": [],
+   "github_url": "",
+   "kind": "task",
+   "jwf": {
+    "level": 0,
+    "state": "Neu",
+    "column": "backlog",
+    "derived_column": "backlog",
+    "imported_column": null,
+    "column_from_import": false,
+    "import_clears": [],
+    "chain": [
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false
+    ],
+    "kind_role": "implementation",
+    "kind_term": "user story (implementation element)",
+    "drift": [],
+    "drift_incoming": [],
+    "hierarchy_level": null,
+    "parent_number": null,
+    "level_answer": ""
+   },
+   "sort_order": 40,
+   "schedule": {
+    "baseline": {
+     "start_ms": null,
+     "finish_ms": null
+    },
+    "forecast": {
+     "start_ms": null,
+     "finish_ms": null
+    },
+    "actual": {
+     "start_ms": null,
+     "finish_ms": 1794357073065
+    }
+   },
+   "relations": {
+    "depends": [],
+    "refines": [],
+    "references": [],
+    "evidences": [],
+    "implements": [],
+    "maps_to": [],
+    "follow": [],
+    "blocked_by": []
+   },
+   "assignee": null
+  },
+  {
+   "number": 5,
+   "title": "[P1] Harness renames: workdir_root(), AGENTS_WORKDIR_ALLOW, AGENTS_WORKDIR_LOCK",
+   "status": "done",
+   "project_slug": "agents-harness",
+   "created_at": "2026-11-10T17:28:51Z",
+   "updated_at": "2026-11-11T00:52:10Z",
+   "_links": {
+    "self": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/5"
+    },
+    "me": {
+     "href": "https://board.lolaplex.org/me"
+    },
+    "wellKnownDid": {
+     "href": "https://board.lolaplex.org/.well-known/did.json"
+    },
+    "wellKnownFlow": {
+     "href": "https://board.lolaplex.org/.well-known/flow"
+    },
+    "connect": {
+     "href": "https://board.lolaplex.org/connect"
+    },
+    "projects": {
+     "href": "https://board.lolaplex.org/projects"
+    },
+    "issue": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/5"
+    },
+    "project": {
+     "href": "https://board.lolaplex.org/projects/agents-harness"
+    },
+    "move": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/5"
+    },
+    "assign": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/5"
+    },
+    "relate": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/5"
+    },
+    "schedule": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/5"
+    }
+   },
+   "body": "**Problem**\n\n`executor.py:233-246` `workspace_root()` returns `ws.workdir` when `AGENTS_WORKSPACE_LOCK` is set (name says workspace, means workdir); `executor.py:310-311` `AGENTS_WORKSPACE_ALLOW` (+ `AGENTS_SKILLS_EXTRA`).\n\n**Target state**\n\n`workdir_root()`; `AGENTS_WORKDIR_ALLOW` (alias `AGENTS_WORKSPACE_ALLOW`); `AGENTS_WORKDIR_LOCK` (alias `AGENTS_WORKSPACE_LOCK`, same as terminal C73); `AGENTS_SKILLS_EXTRA` unchanged.\n\n**Steps**\n\n- Rename + aliases.\n- README 184 fixed in C101.\n\n**Acceptance**\n\n- [ ] Harness tests green; aliases warn.\n\nDepends on: https://board.lolaplex.org/projects/agents-workspace/issues/6, https://board.lolaplex.org/projects/agents-workspace/issues/1\n\n**Depends on**\n\n- C70 ([agents-workspace#6](https://board.lolaplex.org/projects/agents-workspace/issues/6))\n- Naming & hierarchy spec: C01 ([agents-workspace#1](https://board.lolaplex.org/projects/agents-workspace/issues/1))\n\n**Repos (PR to `dev`, one PR per repo):** agents-harness\n\n*Covers:* H1 (harness); M2\n\n---\nAgent rules (apply to every card):\n- Author AND committer only `Klix927 <275704466+Klix927@users.noreply.github.com>`. No Co-authored-by, no Cursor/agent trailers.\n- Branch from `dev`, open a PR to `dev` only. Never push to `main`, never force-push, never push directly to `dev`.\n- Do not change CI workflows (`.github/workflows/*`). Do not bump versions. Changelog entries only under `[Unreleased]`.\n- Stack stays generic and decoupled: no Felix/NAS/VPS-specific values (hosts, users, volumes, `~/Coding`) in repos.\n- Never print, log or commit secrets, tokens, cookies or key material.\n- Line refs are hints at the pinned SHAs (see the Naming & hierarchy spec card); re-locate by symbol if lines moved.\n- Done = PR merged to dev + acceptance commands pasted in the PR + card evidence comment. No evidence, no done.\n",
+   "labels": [],
+   "github_url": "",
+   "kind": "task",
+   "jwf": {
+    "level": 0,
+    "state": "Neu",
+    "column": "backlog",
+    "derived_column": "backlog",
+    "imported_column": null,
+    "column_from_import": false,
+    "import_clears": [],
+    "chain": [
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false
+    ],
+    "kind_role": "implementation",
+    "kind_term": "user story (implementation element)",
+    "drift": [],
+    "drift_incoming": [],
+    "hierarchy_level": null,
+    "parent_number": null,
+    "level_answer": ""
+   },
+   "sort_order": 50,
+   "schedule": {
+    "baseline": {
+     "start_ms": null,
+     "finish_ms": null
+    },
+    "forecast": {
+     "start_ms": null,
+     "finish_ms": null
+    },
+    "actual": {
+     "start_ms": null,
+     "finish_ms": 1794358330831
+    }
+   },
+   "relations": {
+    "depends": [],
+    "refines": [],
+    "references": [],
+    "evidences": [],
+    "implements": [],
+    "maps_to": [],
+    "follow": [],
+    "blocked_by": [
+     {
+      "number": 6,
+      "title": "[P1] Docs match code + naming spec (agents-harness, spec C101)",
+      "status": "done"
+     }
+    ]
+   },
+   "assignee": null
+  },
+  {
+   "number": 6,
+   "title": "[P1] Docs match code + naming spec (agents-harness, spec C101)",
+   "status": "done",
+   "project_slug": "agents-harness",
+   "created_at": "2026-11-10T17:28:54Z",
+   "updated_at": "2026-11-11T01:16:26Z",
+   "_links": {
+    "self": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/6"
+    },
+    "me": {
+     "href": "https://board.lolaplex.org/me"
+    },
+    "wellKnownDid": {
+     "href": "https://board.lolaplex.org/.well-known/did.json"
+    },
+    "wellKnownFlow": {
+     "href": "https://board.lolaplex.org/.well-known/flow"
+    },
+    "connect": {
+     "href": "https://board.lolaplex.org/connect"
+    },
+    "projects": {
+     "href": "https://board.lolaplex.org/projects"
+    },
+    "issue": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/6"
+    },
+    "project": {
+     "href": "https://board.lolaplex.org/projects/agents-harness"
+    },
+    "move": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/6"
+    },
+    "assign": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/6"
+    },
+    "relate": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/6"
+    },
+    "schedule": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/6"
+    }
+   },
+   "body": "**Problem**\n\nInventory 'Doku-Widersprüche' (15 rows): (1) klanker README 33-35, 99-103 `--workspace` = repo vs README 112-131 workspace = data boundary; (2) klanker README 173-177 RELAY_WEB_USER felix vs `web`; (3) klanker AGENTS.md 24 `--workspace` sets AGENTS_WORKSPACE_DIR; (4) klanker prompt.py 81 `~/.agents/mcp.json` vs config_sense; (5) klanker routine.py 3 `~/.agents/schedules` vs ws.schedules; (6) relay README 13, 105, AGENTS.md 17 default `~/.agents-relay`; (7) relay README 218 clients follows AGENTS_HOME; (8) agents-workspace cli.py + README 5-46; (9) calendar abi/LAYOUT.md 8-9 + cli.py 58-59; (10) terminal abi/CLI.md 14, README 37, 58; (11) harness README 184; (12) memory abi/LAYOUT.md 3-7, README 40; (13) traces abi/LAYOUT.md 7-14, README 34; (14) sync README 20-34; (15) CHANGELOGs (klanker 11-101, memory 85, relay 42, terminal 11, 48, harness 11) historic -> migration note only. Also klanker `.env.example:58-59` (`~/.agents/mcp.json`, `~/.agents/skills`) and `scripts/nas-seed.py:31-33` names.\n\nThis is the **agents-harness** slice of spec C101. Row (11) README 184; CHANGELOG historic note. One PR in this repo after its code cards merge.\n\n**Target state**\n\nEvery doc describes the C01 model with new names; historic CHANGELOG entries untouched; one [Unreleased] migration note per repo.\n\n**Steps**\n\n- One PR per repo after that repo's code cards merged.\n- PR body ticks the relevant rows.\n\n**Acceptance**\n\n- [ ] Per repo: `rg -n 'AGENTS_HOME|AGENTS_WORKSPACE_ROOT|AGENTS_WORKSPACES_DIR|AGENTS_DIR\\b|agents-relay|agents-workspaces|AGENTS_WORKSPACE_DIR' README.md AGENTS.md abi docs .env.example` -> only deprecation/migration notes.\n\nDepends on: https://board.lolaplex.org/projects/agents-workspace/issues/4, https://board.lolaplex.org/projects/klanker/issues/4, https://board.lolaplex.org/projects/agents-relay/issues/2, https://board.lolaplex.org/projects/agents-harness/issues/3, https://board.lolaplex.org/projects/agents-memory/issues/11, https://board.lolaplex.org/projects/agents-browser/issues/1, https://board.lolaplex.org/projects/agents-sync/issues/4, https://board.lolaplex.org/projects/agents-calendar/issues/1, https://board.lolaplex.org/projects/agents-relay/issues/5, https://board.lolaplex.org/projects/agents-workspace/issues/6, https://board.lolaplex.org/projects/agents-relay/issues/6, https://board.lolaplex.org/projects/agents-harness/issues/5, https://board.lolaplex.org/projects/agents-terminal/issues/3, https://board.lolaplex.org/projects/agents-workspace/issues/1\n\n**Depends on**\n\n- C13 ([agents-workspace#4](https://board.lolaplex.org/projects/agents-workspace/issues/4))\n- C24 ([klanker#4](https://board.lolaplex.org/projects/klanker/issues/4))\n- C40 ([agents-relay#2](https://board.lolaplex.org/projects/agents-relay/issues/2))\n- C61 ([agents-harness#3](https://board.lolaplex.org/projects/agents-harness/issues/3))\n- C62 ([agents-memory#11](https://board.lolaplex.org/projects/agents-memory/issues/11))\n- C63 ([agents-browser#1](https://board.lolaplex.org/projects/agents-browser/issues/1))\n- C65 ([agents-workspace#5](https://board.lolaplex.org/projects/agents-sync/issues/4))\n- C66 ([agents-calendar#1](https://board.lolaplex.org/projects/agents-calendar/issues/1))\n- C69 ([agents-relay#5](https://board.lolaplex.org/projects/agents-relay/issues/5))\n- C70 ([agents-workspace#6](https://board.lolaplex.org/projects/agents-workspace/issues/6))\n- C71 ([agents-relay#6](https://board.lolaplex.org/projects/agents-relay/issues/6))\n- C72 ([agents-harness#5](https://board.lolaplex.org/projects/agents-harness/issues/5))\n- C73 ([agents-terminal#3](https://board.lolaplex.org/projects/agents-terminal/issues/3))\n- Naming & hierarchy spec: C01 ([agents-workspace#1](https://board.lolaplex.org/projects/agents-workspace/issues/1))\n\n**Repos (this slice):** agents-harness\n\n**Repos (full spec C101):** klanker, agents-relay, agents-workspace, agents-calendar, agents-terminal, agents-harness, agents-memory, agents-traces, agents-sync\n\n**Sibling slices (spec C101):** [klanker#13](https://board.lolaplex.org/projects/klanker/issues/13), [agents-relay#8](https://board.lolaplex.org/projects/agents-relay/issues/8), [agents-workspace#8](https://board.lolaplex.org/projects/agents-sync/issues/2), [agents-calendar#4](https://board.lolaplex.org/projects/agents-calendar/issues/4), [agents-terminal#4](https://board.lolaplex.org/projects/agents-terminal/issues/4), [agents-harness#6](https://board.lolaplex.org/projects/agents-harness/issues/6), [agents-memory#14](https://board.lolaplex.org/projects/agents-memory/issues/14), [agents-traces#4](https://board.lolaplex.org/projects/agents-traces/issues/4), [agents-workspace#9](https://board.lolaplex.org/projects/agents-sync/issues/3)\n\n\n**Notes:** Multi-repo; Board bot may split per project.\n\n*Covers:* QA hygiene 15 doc contradictions; N2\n\n---\nAgent rules (apply to every card):\n- Author AND committer only `Klix927 <275704466+Klix927@users.noreply.github.com>`. No Co-authored-by, no Cursor/agent trailers.\n- Branch from `dev`, open a PR to `dev` only. Never push to `main`, never force-push, never push directly to `dev`.\n- Do not change CI workflows (`.github/workflows/*`). Do not bump versions. Changelog entries only under `[Unreleased]`.\n- Stack stays generic and decoupled: no Felix/NAS/VPS-specific values (hosts, users, volumes, `~/Coding`) in repos.\n- Never print, log or commit secrets, tokens, cookies or key material.\n- Line refs are hints at the pinned SHAs (see the Naming & hierarchy spec card); re-locate by symbol if lines moved.\n- Done = PR merged to dev + acceptance commands pasted in the PR + card evidence comment. No evidence, no done.\n",
+   "labels": [],
+   "github_url": "",
+   "kind": "task",
+   "jwf": {
+    "level": 0,
+    "state": "Neu",
+    "column": "backlog",
+    "derived_column": "backlog",
+    "imported_column": null,
+    "column_from_import": false,
+    "import_clears": [],
+    "chain": [
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false
+    ],
+    "kind_role": "implementation",
+    "kind_term": "user story (implementation element)",
+    "drift": [],
+    "drift_incoming": [],
+    "hierarchy_level": null,
+    "parent_number": null,
+    "level_answer": ""
+   },
+   "sort_order": 60,
+   "schedule": {
+    "baseline": {
+     "start_ms": null,
+     "finish_ms": null
+    },
+    "forecast": {
+     "start_ms": null,
+     "finish_ms": null
+    },
+    "actual": {
+     "start_ms": null,
+     "finish_ms": 1794359786840
+    }
+   },
+   "relations": {
+    "depends": [
+     {
+      "number": 3,
+      "title": "[P1] Harness: all paths via resolver (skills, mcp.json, mcp cache, content, timezone config, internal roots); drop docs modules",
+      "status": "done",
+      "preserves": []
+     },
+     {
+      "number": 5,
+      "title": "[P1] Harness renames: workdir_root(), AGENTS_WORKDIR_ALLOW, AGENTS_WORKDIR_LOCK",
+      "status": "done",
+      "preserves": []
+     }
+    ],
+    "refines": [],
+    "references": [],
+    "evidences": [],
+    "implements": [],
+    "maps_to": [],
+    "follow": [],
+    "blocked_by": []
+   },
+   "assignee": null
+  },
+  {
+   "number": 7,
+   "title": "[P2] Load personas from <ws>/personas/<id> (package personas as fallback); AGENTS_PERSONA id",
+   "status": "done",
+   "project_slug": "agents-harness",
+   "created_at": "2026-11-10T17:28:56Z",
+   "updated_at": "2026-11-11T06:50:45Z",
+   "_links": {
+    "self": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/7"
+    },
+    "me": {
+     "href": "https://board.lolaplex.org/me"
+    },
+    "wellKnownDid": {
+     "href": "https://board.lolaplex.org/.well-known/did.json"
+    },
+    "wellKnownFlow": {
+     "href": "https://board.lolaplex.org/.well-known/flow"
+    },
+    "connect": {
+     "href": "https://board.lolaplex.org/connect"
+    },
+    "projects": {
+     "href": "https://board.lolaplex.org/projects"
+    },
+    "issue": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/7"
+    },
+    "project": {
+     "href": "https://board.lolaplex.org/projects/agents-harness"
+    },
+    "move": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/7"
+    },
+    "assign": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/7"
+    },
+    "relate": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/7"
+    },
+    "schedule": {
+     "href": "https://board.lolaplex.org/projects/agents-harness/issues/7"
+    }
+   },
+   "body": "decided (Felix 10.11. 19:31): D-persona-default (P2) — Personas are equal, no hierarchy; a role (e.g. CoS) is a persona with a role description. First persona 'default' is created with the workspace. Explicit handoffs: inbox per persona + clear task ownership.\ndecided (Felix 10.11. 19:31): Workspace memory is shared by all its personas; a persona may have optional private notes.\n\n**Problem**\n\nQA Phase 2: `personas/` is only a path; `workspace.json` stores `default_persona` (`workspace.py:89, 277-284`); `env()` exports `AGENTS_PERSONAS_DIR` and no persona id. Inventory: `runner/personas.py:8` `PERSONAS_DIR` = package dir only (`AGENTS_PERSONAS_DIR` set, never read); `loop.py:650` `--persona` from the package.\n\n**Target state**\n\n`<ws>/personas/<id>/persona.json` first, package personas as fallback; `--persona <id>` / `AGENTS_PERSONA`. Personas are equal (no hierarchy); a role (e.g. CoS) is a persona with a role description, not a higher layer. First persona `default` is created with the workspace (renamable, no special role) — do not treat `workspace.json default_persona` as a hidden default-persona hierarchy (D-persona-default, decided Felix 10.11. 19:31). Workspace memory is shared; a persona may have optional private notes. Explicit handoffs live on the inbox/ownership card ([klanker#18 [P2] Persona inbox and explicit task ownership for handoffs](https://board.lolaplex.org/projects/klanker/issues/18)).\n\n**Steps**\n\n- Loader; env() exports AGENTS_PERSONA.\n- Tests: two personas in one workspace.\n\n**Acceptance**\n\n- [ ] Harness tests green; workspace persona overrides the package one.\n- [ ] Creating a workspace creates first persona `default`; two personas in one workspace are equal (no hierarchy).\n\n**Depends on**\n\n- C00 ([klanker#5](https://board.lolaplex.org/projects/klanker/issues/5), P1 umbrella). P1 gate passed (Felix, 11.11.)\n\n**Repos (PR to `dev`, one PR per repo):** agents-harness, agents-workspace\n\n*Covers:* QA Phase 2 personas only a path; H6 (personas)\n\n**P2 agent brief (Felix, 11.11.)**\n\n**Goal**\n\nLoad personas from the workspace (`<ws>/personas/<id>/` first, package personas as fallback), export the persona id, and create first persona `default` with the workspace. Personas are equal.\n\n**Constraints / interfaces**\n\n- P1 workspace structure (fixed; P1 gate passed (Felix, 11.11.)): Host > Workspace > Persona > Session, stored as `<host>/workspaces/<ws>/personas/<p>/sessions/<s>`.\n- Identity split (fixed): agents-keys owns identity.json; traces only reads it, and without keys uses its own local ID.\n- Network/secrets off by default.\n- Universal: nothing Felix-specific; values only via env/args, no personal defaults.\n- Author and committer only Klix927.\n- Equal personas (no hierarchy). A role (e.g. CoS) is a persona with a role description. First persona `default` is created with the workspace.\n\n**Acceptance**\n\n- [ ] Harness tests green; a workspace persona overrides the package one.\n- [ ] Creating a workspace creates first persona `default`.\n- [ ] Two personas in one workspace are equal (no hierarchy).\n\n**Dependencies**\n\n- P1 gate passed (Felix, 11.11.): [klanker#11](https://board.lolaplex.org/projects/klanker/issues/11) — [P1] Gate test: two workspaces in one serve (in-process + HTTP + container) (done); umbrella [klanker#5](https://board.lolaplex.org/projects/klanker/issues/5) — [P1] Workspace rebuild (umbrella): order, gate, card map (done)\n- [klanker#18](https://board.lolaplex.org/projects/klanker/issues/18) — [P2] Persona inbox… (handoffs are not this card)\n- [agents-docs#1](https://board.lolaplex.org/projects/agents-docs/issues/1) — [P2] Docs: personas…\n- [klanker#25](https://board.lolaplex.org/projects/klanker/issues/25) — [P2] Gate: two personas…\n\n**OPEN**\n\n- Exact persona config file format (which file under `<ws>/personas/<id>/`, which fields) — ask Felix before coding\n\n---\nAgent rules (apply to every card):\n- Author AND committer only `Klix927 <275704466+Klix927@users.noreply.github.com>`. No Co-authored-by, no Cursor/agent trailers.\n- Branch from `dev`, open a PR to `dev` only. Never push to `main`, never force-push, never push directly to `dev`.\n- Do not change CI workflows (`.github/workflows/*`). Do not bump versions. Changelog entries only under `[Unreleased]`.\n- Stack stays generic and decoupled: no Felix/NAS/VPS-specific values (hosts, users, volumes, `~/Coding`) in repos.\n- Never print, log or commit secrets, tokens, cookies or key material.\n- Line refs are hints at the pinned SHAs (see the Naming & hierarchy spec card); re-locate by symbol if lines moved.\n- Done = PR merged to dev + acceptance commands pasted in the PR + card evidence comment. No evidence, no done.",
+   "labels": [],
+   "github_url": "",
+   "kind": "task",
+   "jwf": {
+    "level": 0,
+    "state": "Neu",
+    "column": "backlog",
+    "derived_column": "backlog",
+    "imported_column": null,
+    "column_from_import": false,
+    "import_clears": [],
+    "chain": [
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false
+    ],
+    "kind_role": "implementation",
+    "kind_term": "user story (implementation element)",
+    "drift": [],
+    "drift_incoming": [],
+    "hierarchy_level": null,
+    "parent_number": null,
+    "level_answer": ""
+   },
+   "sort_order": 70,
+   "schedule": {
+    "baseline": {
+     "start_ms": null,
+     "finish_ms": null
+    },
+    "forecast": {
+     "start_ms": null,
+     "finish_ms": null
+    },
+    "actual": {
+     "start_ms": null,
+     "finish_ms": 1794379845262
+    }
+   },
+   "relations": {
+    "depends": [],
+    "refines": [],
+    "references": [],
+    "evidences": [],
+    "implements": [],
+    "maps_to": [],
+    "follow": [],
+    "blocked_by": []
+   },
+   "assignee": null
+  }
+ ],
+ "view": "kanban",
+ "rollup": false,
+ "_links": {
+  "self": {
+   "href": "https://board.lolaplex.org/projects/agents-harness"
+  },
+  "me": {
+   "href": "https://board.lolaplex.org/me"
+  },
+  "wellKnownDid": {
+   "href": "https://board.lolaplex.org/.well-known/did.json"
+  },
+  "wellKnownFlow": {
+   "href": "https://board.lolaplex.org/.well-known/flow"
+  },
+  "connect": {
+   "href": "https://board.lolaplex.org/connect"
+  },
+  "projects": {
+   "href": "https://board.lolaplex.org/projects"
+  }
+ }
+}

@@ -1,6 +1,6 @@
 """a2a.peer: POST to the relay ``/v1/a2a/mail`` proxy (cross-host board DID mail).
 
-This is for *cross-host* lolaplex-board mailbox traffic, not intra-workspace
+This is for *cross-host* agents-board mailbox traffic, not intra-workspace
 persona chat — those use ``persona.*`` modules.
 
 URL resolution follows the relay env chain: ``RELAY_URL``, else

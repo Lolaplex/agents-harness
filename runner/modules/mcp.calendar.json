@@ -1,0 +1,29 @@
+{
+  "name": "mcp.calendar",
+  "kind": "mcp",
+  "when": "on_request",
+  "cadence": "on_request",
+  "verb": "python -m agents_calendar",
+  "rests_on": "agents-calendar CalDAV CLI; commands discovered via --help-json (side_effects + parameters live), exit 0 = action ok",
+  "expected_exit": 0,
+  "mutates": true,
+  "timeout_sec": 30,
+  "as_tool": true,
+  "commands_from": "help-json",
+  "expose_commands": ["calendars", "list", "get", "add", "update", "delete"],
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "command": {
+        "type": "string",
+        "description": "Declared command: calendars | list | get | add | update | delete | ..."
+      },
+      "argv": {
+        "type": "array",
+        "items": {"type": "string"},
+        "description": "Full argv including the command"
+      }
+    },
+    "required": []
+  }
+}

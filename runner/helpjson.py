@@ -266,7 +266,16 @@ def declared_argv(mod: Any, arguments: Any) -> list[str] | None:
 
     The invoked token is preserved, including aliases. A ``run``-style usage
     that contains `` -- `` inserts that separator in front of an argv array.
+    A manifest ``command_pin`` (synthesized ``expose_commands`` rows) injects
+    the command so bare argument dicts still resolve the pinned spec.
     """
+    pin = str(mod.get("command_pin") or "") if isinstance(mod, dict) else ""
+    if pin:
+        inner = unwrap_arguments(arguments)
+        if isinstance(inner, dict):
+            arguments = {**inner, "command": inner.get("command") or pin}
+        elif not inner:
+            arguments = {"command": pin}
     selected = select_command(mod, arguments)
     if selected is None:
         return None

@@ -3,9 +3,27 @@
   "kind": "mcp",
   "when": "on_request",
   "cadence": "on_request",
-  "verb": "python -m agents_traces --help-json",
-  "rests_on": "agents-traces assemble/record, conversation is the agent, exit 0 = module present",
+  "verb": "python -m agents_traces",
+  "rests_on": "agents-traces JSONL CLI; commands discovered via --help-json (side_effects + parameters live), exit 0 = action ok",
   "expected_exit": 0,
-  "mutates": false,
-  "timeout_sec": 30
+  "mutates": true,
+  "timeout_sec": 60,
+  "as_tool": true,
+  "commands_from": "help-json",
+  "expose_commands": ["audit", "seal", "verify", "stats", "sessions", "inspect"],
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "command": {
+        "type": "string",
+        "description": "Declared command: audit | seal | verify | stats | sessions | inspect | tail | assemble | export | read-content | compact | record | ..."
+      },
+      "argv": {
+        "type": "array",
+        "items": {"type": "string"},
+        "description": "Full argv including the command"
+      }
+    },
+    "required": []
+  }
 }

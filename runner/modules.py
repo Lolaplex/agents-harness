@@ -79,7 +79,57 @@ def list_modules(
             seen[str(row["name"])] = row
     if modules_dir is None:
         _merge_remote_modules(seen)
+        _expand_exposed(seen)
     return list(seen.values())
+
+
+def _expand_exposed(seen: dict[str, Dict[str, Any]]) -> None:
+    """``expose_commands: ["add", ...]`` splits discovered commands into
+    their own module rows (``<pkg>.<command>``) for tool choice and toolset
+    granularity. Hand-written manifests with the same name win."""
+    from .helpjson import with_discovered_commands
+
+    for name, row in list(seen.items()):
+        exposed = row.get("expose_commands")
+        if not isinstance(exposed, list) or not exposed:
+            continue
+        commands = with_discovered_commands(row).get("commands")
+        if not isinstance(commands, dict):
+            continue
+        for cmd in exposed:
+            token = str(cmd).strip()
+            spec = commands.get(token)
+            if not token or not isinstance(spec, dict):
+                continue
+            child = dict(row)
+            child["name"] = f"{name}.{token}"
+            child["commands"] = {token: spec}
+            child["command_pin"] = token
+            child["exposed_from"] = name
+            spec_params = spec.get("parameters")
+            props = (
+                dict(spec_params["properties"])
+                if isinstance(spec_params, dict) and isinstance(spec_params.get("properties"), dict)
+                else {}
+            )
+            props.setdefault(
+                "argv",
+                {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Full argv including the command (overrides named args)",
+                },
+            )
+            child["parameters"] = {
+                "type": "object",
+                "properties": props,
+                "required": list(spec_params.get("required") or [])
+                if isinstance(spec_params, dict)
+                else [],
+            }
+            child["mutates"] = True  # per-call classification decides via the spec
+            child.pop("expose_commands", None)
+            seen.setdefault(child["name"], child)
 
 
 def _merge_remote_modules(seen: dict[str, Dict[str, Any]]) -> None:

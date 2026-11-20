@@ -3,9 +3,26 @@
   "kind": "mcp",
   "when": "on_request",
   "cadence": "on_request",
-  "verb": "python -m agents_browser --help-json",
-  "rests_on": "agents-browser CDP MCP server; invoke via FastMCP tools when serve is running",
+  "verb": "python -m agents_browser",
+  "rests_on": "agents-browser CDP CLI (open/snapshot/click/type/...); commands discovered via --help-json, exit 0 = action ok",
   "expected_exit": 0,
-  "mutates": false,
-  "timeout_sec": 30
+  "mutates": true,
+  "timeout_sec": 60,
+  "as_tool": true,
+  "commands_from": "help-json",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "command": {
+        "type": "string",
+        "description": "Declared command: open | snapshot | click | type | fill | select | scroll | tabs | find | wait | back | reload | close | headless | ..."
+      },
+      "argv": {
+        "type": "array",
+        "items": {"type": "string"},
+        "description": "Full argv including the command (e.g. [\"open\", \"https://...\"]); wins over command when present"
+      }
+    },
+    "required": []
+  }
 }
