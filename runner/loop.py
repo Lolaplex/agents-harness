@@ -823,6 +823,37 @@ def _main_impl(argv: list[str] | None = None) -> int:
     identity_tz = getattr(resolved.user, "timezone", "") or ""
     timezone_name = (identity_tz or profile.get("timezone") or "").strip()
 
+    # Chat commands on session traces. They are ops, not user turns — the
+    # command text is not recorded as a message.
+    retry_turn = False
+    slash, _, slash_arg = user_text.strip().partition(" ")
+    slash = slash.lower()
+    if slash in ("/undo", "/compress", "/retry"):
+        from .session_ops import rewind_after_last_user, undo_last_turn
+
+        mode, on_status, on_delta, emit = bind_delivery(args.channel, override=args.deliver)
+        if slash == "/undo":
+            res = undo_last_turn(session)
+            text = (
+                f"Undone last turn ({res['undone_events']} events)."
+                if res.get("ok")
+                else f"Nothing to undo: {res.get('error')}."
+            )
+            emit(text)
+            _emit_trailer(emit, session=session, user_id=resolved.user.id, alias=resolved.alias, mode=mode)
+            return 0 if res.get("ok") else 1
+        if slash == "/compress":
+            emit("Error: /compress is not enabled on this build.")
+            _emit_trailer(emit, session=session, user_id=resolved.user.id, alias=resolved.alias, mode=mode)
+            return 1
+        res = rewind_after_last_user(session)
+        if not res.get("ok"):
+            emit(f"Nothing to retry: {res.get('error')}.")
+            _emit_trailer(emit, session=session, user_id=resolved.user.id, alias=resolved.alias, mode=mode)
+            return 1
+        retry_turn = True
+        user_text = ""
+
     attachments = [str(item) for item in (args.attach or []) if str(item).strip()]
     provider_name = args.provider
     if not provider_name:
@@ -885,7 +916,7 @@ def _main_impl(argv: list[str] | None = None) -> int:
         if not args.complete:
             return 0
 
-    if not user_text and not attachments and not args.assemble_only:
+    if not user_text and not attachments and not args.assemble_only and not retry_turn:
         print("Error: --message is required unless --assemble-only with existing history", file=sys.stderr)
         return 1
 
