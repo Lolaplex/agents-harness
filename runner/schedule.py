@@ -369,11 +369,162 @@ def is_cron_due(cron_expr: str, now: datetime) -> bool:
     return True
 
 
+_NL_DOW = {
+    "monday": 1, "mon": 1,
+    "tuesday": 2, "tue": 2,
+    "wednesday": 3, "wed": 3,
+    "thursday": 4, "thu": 4,
+    "friday": 5, "fri": 5,
+    "saturday": 6, "sat": 6,
+    "sunday": 0, "sun": 0,
+}
+
+_NL_DAYTIME = {
+    "morning": 8,
+    "noon": 12,
+    "afternoon": 15,
+    "evening": 19,
+    "night": 21,
+    "midnight": 0,
+}
+
+
+def _nl_time_token(token: str) -> tuple[int, int] | None:
+    """'8', '8:30', '8am', '8:30pm' → (hour, minute)."""
+    m = re.match(r"^(\d{1,2})(?::(\d{2}))?\s*(am|pm|a\.m\.|p\.m\.)?$", token)
+    if not m:
+        return None
+    hour, minute = int(m.group(1)), int(m.group(2) or 0)
+    meridiem = (m.group(3) or "").replace(".", "")
+    if meridiem:
+        if not 1 <= hour <= 12:
+            return None
+        if meridiem == "am":
+            hour = 0 if hour == 12 else hour
+        else:
+            hour = 12 if hour == 12 else hour + 12
+    if hour > 23 or minute > 59:
+        return None
+    return hour, minute
+
+
+def parse_natural_schedule(
+    text: str,
+    base_time: Optional[datetime] = None,
+    timezone_name: str = "",
+) -> Dict[str, Any]:
+    """Chat phrasing → ``{"cron": ...}`` or ``{"at": ...}``.
+
+    Supported: 'every morning 8', 'every day at 8', 'daily 20:30', 'every
+    monday 9', 'weekdays 9', 'weekends 10', 'every hour', 'every 30 minutes',
+    'every 2 hours', 'every minute', 'in 10 minutes|2 hours|3 days',
+    'tomorrow 9', 'tomorrow at 9:30', 'at 8', '8:30pm' (next occurrence).
+    Unknown phrasing raises ValueError — the caller must not guess.
+    """
+    t = " ".join((text or "").strip().lower().split())
+    if not t:
+        raise ValueError("empty schedule phrase")
+    now = base_time or datetime.now(timezone.utc)
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=timezone.utc)
+
+    m = re.match(r"^in\s+(\d+)\s+(minutes?|hours?|days?)$", t)
+    if m:
+        unit = {"m": "m", "h": "h", "d": "d"}[m.group(2)[0]]
+        return {"at": f"+{m.group(1)}{unit}"}
+
+    m = re.match(r"^every\s+(\d+)\s+minutes?$", t)
+    if m:
+        n = int(m.group(1))
+        if not 1 <= n <= 59:
+            raise ValueError(f"unsupported minute step {n}")
+        return {"cron": f"*/{n} * * * *"}
+    m = re.match(r"^every\s+(\d+)\s+hours?$", t)
+    if m:
+        n = int(m.group(1))
+        if not 1 <= n <= 23:
+            raise ValueError(f"unsupported hour step {n}")
+        return {"cron": f"0 */{n} * * *"}
+    m = re.match(r"^every\s+(\d+)\s+days?$", t)
+    if m:
+        n = int(m.group(1))
+        if not 1 <= n <= 31:
+            raise ValueError(f"unsupported day step {n}")
+        return {"cron": f"{now.minute} {now.hour} */{n} * *"}
+
+    if t in ("every minute", "minutely"):
+        return {"cron": "* * * * *"}
+    if t in ("every hour", "hourly"):
+        return {"cron": "0 * * * *"}
+
+    def _time_tail(body: str) -> tuple[int, int] | None:
+        mt = re.match(r"^(?:at\s+)?(.+)$", body.strip())
+        if not mt:
+            return None
+        return _nl_time_token(mt.group(1).strip())
+
+    m = re.match(r"^weekdays?(?:\s+(?:at\s+)?(.+))?$", t)
+    if m:
+        hm = _nl_time_token(m.group(1) or "9") or (9, 0)
+        return {"cron": f"{hm[1]} {hm[0]} * * 1-5"}
+    m = re.match(r"^weekends?(?:\s+(?:at\s+)?(.+))?$", t)
+    if m:
+        hm = _nl_time_token(m.group(1) or "10") or (10, 0)
+        return {"cron": f"{hm[1]} {hm[0]} * * 0,6"}
+
+    m = re.match(r"^(?:every\s+)?([a-z]+)(?:\s+(?:at\s+)?(.+))?$", t)
+    if m and m.group(1) in _NL_DOW:
+        hm = _nl_time_token(m.group(2)) if m.group(2) else (9, 0)
+        if hm is None:
+            raise ValueError(f"bad time in '{text}'")
+        return {"cron": f"{hm[1]} {hm[0]} * * {_NL_DOW[m.group(1)]}"}
+
+    m = re.match(r"^(?:every\s+)?(morning|noon|afternoon|evening|night|midnight)(?:\s+(?:at\s+)?(.+))?$", t)
+    if m:
+        default_h = _NL_DAYTIME[m.group(1)]
+        hm = _nl_time_token(m.group(2)) if m.group(2) else (default_h, 0)
+        if hm is None:
+            raise ValueError(f"bad time in '{text}'")
+        return {"cron": f"{hm[1]} {hm[0]} * * *"}
+
+    m = re.match(r"^(?:every\s+day|daily)(?:\s+(?:at\s+)?(.+))?$", t)
+    if m:
+        hm = _nl_time_token(m.group(1)) if m.group(1) else (9, 0)
+        if hm is None:
+            raise ValueError(f"bad time in '{text}'")
+        return {"cron": f"{hm[1]} {hm[0]} * * *"}
+
+    m = re.match(r"^tomorrow(?:\s+(?:at\s+)?(.+))?$", t)
+    if m:
+        hm = _nl_time_token(m.group(1)) if m.group(1) else (9, 0)
+        if hm is None:
+            raise ValueError(f"bad time in '{text}'")
+        day = (now + timedelta(days=1)).astimezone(_iana_zone(timezone_name))
+        due = day.replace(hour=hm[0], minute=hm[1], second=0, microsecond=0)
+        return {"at": due.astimezone(timezone.utc).isoformat()}
+
+    m = re.match(r"^(?:at\s+)?(.+)$", t)
+    if m:
+        hm = _nl_time_token(m.group(1))
+        if hm is not None:
+            local = now.astimezone(_iana_zone(timezone_name))
+            due = local.replace(hour=hm[0], minute=hm[1], second=0, microsecond=0)
+            if due <= local:
+                due += timedelta(days=1)
+            return {"at": due.astimezone(timezone.utc).isoformat()}
+
+    raise ValueError(
+        f"cannot parse schedule phrase '{text}'. Try 'every morning 8', "
+        "'every monday 9', 'weekdays 9', 'in 30 minutes', 'tomorrow 9'."
+    )
+
+
 def add_schedule(
     *,
     name: Optional[str] = None,
     at: Optional[str] = None,
     cron: Optional[str] = None,
+    natural: Optional[str] = None,
     cadence: Optional[str] = None,
     verb: Optional[str] = None,
     text: Optional[str] = None,
@@ -418,6 +569,11 @@ def add_schedule(
         verb = " ".join(parts)
 
     stored_tz = timezone_name or configured_timezone(ws)
+    if natural and not (at or cron or cadence):
+        parsed_nl = parse_natural_schedule(natural, timezone_name=stored_tz)
+        at = at or parsed_nl.get("at")
+        cron = cron or parsed_nl.get("cron")
+        cadence = cadence or parsed_nl.get("cadence")
     draft: Dict[str, Any] = {"kind": "routine" if is_routine else "", "verb": verb or "", "prompt": prompt}
     if timeout_sec not in (None, ""):
         timeout_val = max(1, int(timeout_sec))
@@ -819,6 +975,10 @@ def main(argv: Optional[List[str]] = None) -> int:
     add_p.add_argument("--name", help="Unique name/slug for the schedule")
     add_p.add_argument("--at", help="Due time: ISO-8601 (2026-09-05T20:00:00Z) or relative (+10m, +1h, +2d)")
     add_p.add_argument("--cron", help="Cron expression (e.g. '0 8 * * *')")
+    add_p.add_argument(
+        "--natural",
+        help="Natural-language schedule ('every morning 8', 'every monday 9', 'in 30 minutes'). Translates to at/cron; explicit --at/--cron/--cadence win.",
+    )
     add_p.add_argument("--cadence", help="Cadence name (e.g. hourly, daily)")
     add_p.add_argument("--verb", help="Direct command to execute")
     add_p.add_argument("--text", help="Reminder text message")
@@ -852,6 +1012,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                 name=args.name,
                 at=args.at,
                 cron=args.cron,
+                natural=args.natural,
                 cadence=args.cadence,
                 verb=args.verb,
                 text=args.text,

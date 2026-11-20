@@ -29,6 +29,10 @@
         "type": "string",
         "description": "Optional standard 5-part cron expression (e.g. '0 8 * * *')"
       },
+      "natural": {
+        "type": "string",
+        "description": "Natural-language schedule ('every morning 8', 'every monday 9', 'weekdays 9', 'in 30 minutes', 'tomorrow 9', 'at 8:30pm'). Translates to at/cron; explicit at/cron/cadence win. Prefer this for chat phrasing instead of hand-building cron."
+      },
       "channel": {
         "type": "string",
         "description": "Target channel. Inherited from the current turn when omitted. Required with text unless verb is set."

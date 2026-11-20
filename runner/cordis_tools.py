@@ -226,6 +226,7 @@ def _arguments_to_argv(mod: dict[str, Any], arguments: Any) -> list[str]:
             "text",
             "name",
             "cron",
+            "natural",
             "cadence",
             "channel",
             "user",
