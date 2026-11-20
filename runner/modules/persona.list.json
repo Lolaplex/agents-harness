@@ -1,0 +1,17 @@
+{
+  "name": "persona.list",
+  "kind": "mcp",
+  "when": "on_request",
+  "cadence": "on_request",
+  "verb": "python -m runner.persona_tool list",
+  "rests_on": "agents_workspace personas dir + persona.json peer policy; exit 0 = listed",
+  "expected_exit": 0,
+  "mutates": false,
+  "timeout_sec": 15,
+  "as_tool": true,
+  "parameters": {
+    "type": "object",
+    "properties": {},
+    "required": []
+  }
+}

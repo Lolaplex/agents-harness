@@ -1,0 +1,26 @@
+{
+  "name": "persona.inbox",
+  "kind": "mcp",
+  "when": "on_request",
+  "cadence": "on_request",
+  "verb": "python -m runner.persona_tool inbox",
+  "rests_on": "agents_workspace.inbox task files; exit 0 = listed",
+  "expected_exit": 0,
+  "mutates": false,
+  "timeout_sec": 15,
+  "as_tool": true,
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "persona": {
+        "type": "string",
+        "description": "Persona id whose inbox to read (default: AGENTS_PERSONA)"
+      },
+      "status": {
+        "type": "string",
+        "description": "Filter: open|running|done|failed"
+      }
+    },
+    "required": []
+  }
+}

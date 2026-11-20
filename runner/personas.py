@@ -34,7 +34,9 @@ def _workspace_personas_dir(workspace) -> Path | None:
 
 # Fields a workspace persona manifest may set. Package manifests may carry
 # privileged keys (allowed_kinds, caps_ref); a ws manifest cannot claim them.
-WS_PERSONA_FIELDS = frozenset({"id", "name", "system_append", "notes"})
+WS_PERSONA_FIELDS = frozenset(
+    {"id", "name", "system_append", "notes", "role", "accepts_messages", "allow_peers", "memory"}
+)
 
 
 def _load_file(path: Path, name: str, *, allowlist: bool = False) -> dict | None:

@@ -1,0 +1,38 @@
+{
+  "name": "persona.handoff",
+  "kind": "mcp",
+  "when": "on_request",
+  "cadence": "on_request",
+  "verb": "python -m runner.persona_tool handoff",
+  "rests_on": "agents_workspace.inbox task create/handoff (+ optional wake turn); exit 0 = transferred",
+  "expected_exit": 0,
+  "mutates": true,
+  "timeout_sec": 60,
+  "as_tool": true,
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "to": {
+        "type": "string",
+        "description": "Target persona id. The sender is AGENTS_PERSONA and cannot be set."
+      },
+      "task_id": {
+        "type": "string",
+        "description": "Existing tsk_<id> to move (handoff). Omit to create a new task owned by --to."
+      },
+      "title": {
+        "type": "string",
+        "description": "New-task title (when task_id is absent)"
+      },
+      "note": {
+        "type": "string",
+        "description": "Free-form note / context for the receiver"
+      },
+      "wake": {
+        "type": "boolean",
+        "description": "Also start a delegate turn as the target persona so it picks the task up now"
+      }
+    },
+    "required": ["to"]
+  }
+}

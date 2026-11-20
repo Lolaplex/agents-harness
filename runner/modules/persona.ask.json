@@ -1,0 +1,30 @@
+{
+  "name": "persona.ask",
+  "kind": "mcp",
+  "when": "on_request",
+  "cadence": "on_request",
+  "verb": "python -m runner.persona_tool ask",
+  "rests_on": "agents_workspace.inbox ask task + synchronous delegate turn; exit 0 = answered",
+  "expected_exit": 0,
+  "mutates": true,
+  "timeout_sec": 660,
+  "as_tool": true,
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "to": {
+        "type": "string",
+        "description": "Target persona id. The sender is AGENTS_PERSONA and cannot be set."
+      },
+      "prompt": {
+        "type": "string",
+        "description": "Question or task for the target persona's one-turn consult"
+      },
+      "timeout": {
+        "type": "number",
+        "description": "Max seconds to wait for the reply (default 300)"
+      }
+    },
+    "required": ["to", "prompt"]
+  }
+}
