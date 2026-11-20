@@ -829,7 +829,7 @@ def _main_impl(argv: list[str] | None = None) -> int:
     slash, _, slash_arg = user_text.strip().partition(" ")
     slash = slash.lower()
     if slash in ("/undo", "/compress", "/retry"):
-        from .session_ops import rewind_after_last_user, undo_last_turn
+        from .session_ops import compress_session, rewind_after_last_user, undo_last_turn
 
         mode, on_status, on_delta, emit = bind_delivery(args.channel, override=args.deliver)
         if slash == "/undo":
@@ -843,9 +843,19 @@ def _main_impl(argv: list[str] | None = None) -> int:
             _emit_trailer(emit, session=session, user_id=resolved.user.id, alias=resolved.alias, mode=mode)
             return 0 if res.get("ok") else 1
         if slash == "/compress":
-            emit("Error: /compress is not enabled on this build.")
+            try:
+                keep = int(slash_arg) if slash_arg.strip() else 6
+            except ValueError:
+                keep = 6
+            res = compress_session(session, keep_last=max(1, keep))
+            text = (
+                f"Compressed {res['covered_events']} earlier events into a context frame."
+                if res.get("ok")
+                else f"Nothing to compress: {res.get('error')}."
+            )
+            emit(text)
             _emit_trailer(emit, session=session, user_id=resolved.user.id, alias=resolved.alias, mode=mode)
-            return 1
+            return 0 if res.get("ok") else 1
         res = rewind_after_last_user(session)
         if not res.get("ok"):
             emit(f"Nothing to retry: {res.get('error')}.")
