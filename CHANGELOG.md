@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- `a2a.peer` resolves the relay via `RELAY_URL`, then `http://127.0.0.1:$RELAY_PORT`, then `GATEWAY_URL` (deprecated) instead of hardcoding 8787 — works on-host and in-container. Transport failure exits non-zero with `{"ok": false}` (no fake `stub: true` receipt). Module text clarifies it is cross-host board DID mail; intra-workspace persona chat uses `persona.*`. Verb moved to `python -m runner.a2a_peer`.
+
 ### Changed
 - `runner.loop --limit` (history turns rebuilt from traces) honors `AGENTS_HISTORY_LIMIT` as its default, matching the `AGENTS_MAX_TOOL_ROUNDS` pattern — hosts can widen the window without a wrapper command.
 - `redact` drops the `AGENTS_HOME` source-env fallback (alias removed from agents-workspace); `AGENTS_WORKSPACE_ROOT` remains the escape hatch.

@@ -1,9 +1,23 @@
 import json
+import os
+import threading
 import unittest
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
 from runner.iterm import ParseError, desugar, parse
 from runner.kernel import CheckError, alphabet, check, reduce_term, specialize
+
+
+class _MailSink(BaseHTTPRequestHandler):
+    def do_POST(self) -> None:
+        self.rfile.read(int(self.headers.get("Content-Length") or 0))
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b'{"ok":true,"mail":[]}')
+
+    def log_message(self, *_a) -> None:
+        pass
 
 
 def _cat(*names: str) -> dict:
@@ -57,7 +71,21 @@ class TestJobKernel(unittest.TestCase):
     def test_live_seq_skill_then_a2a(self):
         path = Path(__file__).resolve().parents[1] / "runner" / "terms" / "skill-then-a2a.json"
         term = parse(json.loads(path.read_text(encoding="utf-8")))
-        result = reduce_term(term)
+        http = HTTPServer(("127.0.0.1", 0), _MailSink)
+        threading.Thread(target=http.serve_forever, daemon=True).start()
+        self.addCleanup(lambda: (http.shutdown(), http.server_close()))
+        saved = {k: os.environ.get(k) for k in ("RELAY_URL", "RELAY_PORT", "GATEWAY_URL")}
+        os.environ["RELAY_URL"] = f"http://127.0.0.1:{http.server_port}"
+        os.environ.pop("RELAY_PORT", None)
+        os.environ.pop("GATEWAY_URL", None)
+        try:
+            result = reduce_term(term)
+        finally:
+            for k, v in saved.items():
+                if v is None:
+                    os.environ.pop(k, None)
+                else:
+                    os.environ[k] = v
         self.assertEqual(result.status, "SUCCESS")
         self.assertEqual(result.jobs, ["skill.catalog", "a2a.peer"])
 
