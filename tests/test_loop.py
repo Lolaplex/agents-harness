@@ -163,6 +163,42 @@ class TestModulesAndLoop(unittest.TestCase):
         self.assertTrue(meta.get("user_id"))
         self.assertEqual(meta.get("alias"), "telegram:looptest")
 
+    def test_interrupt_file_aborts_before_completion(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            traces = Path(tmp) / "traces"
+            traces.mkdir()
+            ident = Path(tmp) / "identity.json"
+            marker = Path(tmp) / "interrupt"
+            marker.write_text("1", encoding="utf-8")
+            out, err = io.StringIO(), io.StringIO()
+            with patch.dict(
+                os.environ,
+                {
+                    "AGENTS_IDENTITY_PATH": str(ident),
+                    "AGENTS_TRACES_DIR": str(traces),
+                    "AGENTS_INTERRUPT_FILE": str(marker),
+                },
+            ):
+                with redirect_stdout(out), redirect_stderr(err):
+                    rc = loop_main(
+                        [
+                            "--channel", "telegram",
+                            "--user", "looptest",
+                            "--new-session",
+                            "--message", "ping",
+                            "--complete",
+                            "--provider", "echo",
+                            "--deliver", "buffered",
+                        ]
+                    )
+            self.assertEqual(rc, 0)
+            self.assertIn("interrupted", err.getvalue() if hasattr(err, "getvalue") else err)
+            meta = json.loads(
+                out.getvalue().split(LOOP_TRAILER_MARKER, 1)[1].strip().splitlines()[-1]
+            )
+            self.assertTrue(meta.get("interrupted"))
+            self.assertNotIn("ping", out.getvalue())
+
 
     @unittest.skipUnless(importlib.util.find_spec("agents_memory"), "agents-memory not installed")
     def test_scripted_tool_turn_searches_memory(self):

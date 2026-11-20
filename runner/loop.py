@@ -87,6 +87,12 @@ def _record(
 LOOP_TRAILER_MARKER = "---agents-loop-trailer---"
 
 
+def _interrupted() -> bool:
+    """Relay dropped an interrupt marker at AGENTS_INTERRUPT_FILE."""
+    path = os.environ.get("AGENTS_INTERRUPT_FILE", "")
+    return bool(path) and os.path.exists(path)
+
+
 def _emit_trailer(
     emit: Any,
     *,
@@ -98,10 +104,13 @@ def _emit_trailer(
     seal_error: str = "",
     response_flags: list[str] | None = None,
     clarify: dict[str, Any] | None = None,
+    interrupted: bool = False,
 ) -> None:
     # Stream delivery used to return here, so /v1/stream never received session.
     _ = mode
     data = {"session": session, "user_id": user_id, "alias": alias}
+    if interrupted:
+        data["interrupted"] = True
     if seal_digest:
         data["seal"] = seal_digest
     elif seal_error:
@@ -970,6 +979,17 @@ def _main_impl(argv: list[str] | None = None) -> int:
     )
     max_rounds = max(1, getattr(args, "max_tool_rounds", 12))
     last_scratch = ""
+    if _interrupted():
+        print("[!] interrupted", file=sys.stderr)
+        _emit_trailer(
+            emit,
+            session=session,
+            user_id=resolved.user.id,
+            alias=resolved.alias,
+            mode=mode,
+            interrupted=True,
+        )
+        return 0
     try:
         result = _complete_once(provider, req)
     except Exception as e:
@@ -993,6 +1013,17 @@ def _main_impl(argv: list[str] | None = None) -> int:
     turn_clarifies: list[dict[str, Any]] = []
 
     for _round in range(max_rounds):
+        if _interrupted():
+            print("[!] interrupted", file=sys.stderr)
+            _emit_trailer(
+                emit,
+                session=session,
+                user_id=resolved.user.id,
+                alias=resolved.alias,
+                mode=mode,
+                interrupted=True,
+            )
+            return 0
         if not result.tool_calls:
             break
         tool_msgs = _run_tool_calls(
@@ -1015,6 +1046,17 @@ def _main_impl(argv: list[str] | None = None) -> int:
             }
         )
         messages.extend(tool_msgs)
+        if _interrupted():
+            print("[!] interrupted", file=sys.stderr)
+            _emit_trailer(
+                emit,
+                session=session,
+                user_id=resolved.user.id,
+                alias=resolved.alias,
+                mode=mode,
+                interrupted=True,
+            )
+            return 0
         if turn_clarifies:
             break
         is_last = _round >= max_rounds - 1
