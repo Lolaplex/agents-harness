@@ -61,7 +61,38 @@ def module_allowed(name: str, *, channel: str = "", workspace: Any = None) -> bo
     if patterns is None:
         return True
     needle = (name or "").strip()
-    return any(fnmatch.fnmatchcase(needle, p) for p in patterns)
+    return any(fnmatch.fnmatchcase(needle, p.partition(":")[0]) for p in patterns)
+
+
+def command_allowed(mod: dict[str, Any], arguments: Any, *, channel: str = "", workspace: Any = None) -> bool:
+    """Group filter inside an allowed module. A member ``<glob>:<group>``
+    admits only commands whose spec ``groups`` (or implicit ``side_effects``
+    class) contains ``<group>`` — ``mcp.browser:read`` exposes just the
+    read-only verbs of the browser package. Unresolvable commands fail closed."""
+    patterns = allowed_patterns(channel, workspace)
+    if patterns is None:
+        return True
+    name = str(mod.get("name") or "")
+    matched: list[str] = []
+    for member in patterns:
+        base, sep, group = member.partition(":")
+        if fnmatch.fnmatchcase(name, base):
+            matched.append(group if sep else "")
+    if not matched:
+        return False
+    if "" in matched:
+        return True  # full-module membership wins over group-limited entries
+    from .helpjson import classify_spec, select_command
+
+    selected = select_command(mod, arguments)
+    if selected is None:
+        return False
+    spec = selected[1]
+    groups = spec.get("groups")
+    if not isinstance(groups, list):
+        groups = [classify_spec(spec, default="mutating") or "mutating"]
+    groups = {str(g) for g in groups}
+    return any(g in groups for g in matched)
 
 
 def filter_modules(rows: list[dict[str, Any]], *, channel: str = "", workspace: Any = None) -> list[dict[str, Any]]:

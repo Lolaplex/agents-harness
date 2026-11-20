@@ -11,7 +11,7 @@ from .fence import HarnessError, HarnessMessage
 from .executor import execute_job
 from .helpjson import declared_argv, with_discovered_commands
 from .modules import find_module, find_module_for_tool, list_modules, openai_tool_name
-from .toolsets import filter_modules, module_allowed
+from .toolsets import command_allowed, filter_modules, module_allowed
 from .receipts import harness_failure, make_receipt, subprocess_succeeded
 from .redact import redact_tool_output
 from .pre_pr import pre_pr_report
@@ -598,6 +598,14 @@ def run_cordis_tool(
         job_args = args.get("arguments")
         if job_args is None:
             job_args = {k: v for k, v in args.items() if k != "name"}
+        if not command_allowed(
+            mod, job_args, channel=default_channel, workspace=workspace
+        ):
+            return _outcome(
+                HarnessError(f"refused: command not in active toolset"),
+                success=False,
+                tool=mod_name or "call_job",
+            )
         if str(mod.get("name") or mod_name) == _PRE_PR and isinstance(job_args, dict):
             running = _cli_flag_set(job_args.get("run"))
             mod = dict(mod)

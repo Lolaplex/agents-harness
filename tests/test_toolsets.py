@@ -92,6 +92,85 @@ class TestToolsets(unittest.TestCase):
         self.assertTrue(all(ln.split("\t")[0].startswith("skill.") for ln in lines))
         self.assertTrue(lines)
 
+    def test_group_member_filters_commands(self):
+        # mcp.calendar:read-only admits read-only commands, refuses mutating ones
+        self._config({"toolsets": {"safe": ["mcp.calendar:read-only"]}})
+        os.environ["AGENTS_TOOLSET"] = "safe"
+        self.assertTrue(toolsets.module_allowed("mcp.calendar", workspace=self.ws))
+        self.assertFalse(toolsets.module_allowed("mcp.browser", workspace=self.ws))
+        mod = {"name": "mcp.calendar", "commands": {
+            "list": {"side_effects": "read-only"},
+            "add": {"side_effects": "mutating"},
+        }}
+        self.assertTrue(toolsets.command_allowed(mod, {"command": "list"}, workspace=self.ws))
+        self.assertFalse(toolsets.command_allowed(mod, {"command": "add"}, workspace=self.ws))
+        self.assertFalse(toolsets.command_allowed(mod, {}, workspace=self.ws))
+
+    def test_explicit_groups_beat_side_effects(self):
+        self._config({"toolsets": {"g": ["mcp.browser:nav"]}})
+        os.environ["AGENTS_TOOLSET"] = "g"
+        mod = {"name": "mcp.browser", "commands": {
+            "open": {"side_effects": "mutating", "groups": ["nav"]},
+            "snapshot": {"side_effects": "read-only"},
+        }}
+        self.assertTrue(toolsets.command_allowed(mod, {"command": "open"}, workspace=self.ws))
+        # read-only is its implicit group, not "nav"
+        self.assertFalse(toolsets.command_allowed(mod, {"command": "snapshot"}, workspace=self.ws))
+
+    def test_plain_member_allows_all_commands(self):
+        self._config({"toolsets": {"g": ["mcp.calendar"]}})
+        os.environ["AGENTS_TOOLSET"] = "g"
+        mod = {"name": "mcp.calendar", "commands": {"add": {"side_effects": "mutating"}}}
+        self.assertTrue(toolsets.command_allowed(mod, {"command": "add"}, workspace=self.ws))
+
+
+class TestAutoMount(unittest.TestCase):
+    def test_cordis_expose_synthesizes_module(self):
+        from unittest.mock import patch
+        from runner import modules, helpjson
+
+        doc = {
+            "name": "agents-widget",
+            "cordis_expose": True,
+            "commands": {
+                "ping": {"side_effects": "read-only"},
+                "poke": {"side_effects": "mutating"},
+            },
+        }
+        seen = {}
+        with patch.dict(os.environ, {"AGENTS_CORDIS_PKGS": "agents_widget"}):
+            with patch.object(modules, "_AUTO_PKGS", ()):
+                with patch.object(helpjson, "load_help_json", return_value=doc):
+                    with patch("importlib.util.find_spec", return_value=True):
+                        modules._auto_mount(seen)
+        self.assertIn("mcp.widget", seen)
+        self.assertEqual(seen["mcp.widget"]["verb"], "python -m agents_widget")
+        self.assertTrue(seen["mcp.widget"]["as_tool"])
+
+    def test_existing_manifest_wins(self):
+        from unittest.mock import patch
+        from runner import modules, helpjson
+
+        doc = {"cordis_expose": True, "commands": {"x": {}}}
+        seen = {"mcp.keys": {"name": "mcp.keys", "verb": "custom"}}
+        with patch.object(helpjson, "load_help_json", return_value=doc):
+            with patch("importlib.util.find_spec", return_value=True):
+                modules._auto_mount(seen)
+        self.assertEqual(seen["mcp.keys"]["verb"], "custom")
+        # the mounted package name is derived from the import, not the doc
+        self.assertIn("mcp.keys", seen)
+
+    def test_no_flag_no_mount(self):
+        from unittest.mock import patch
+        from runner import modules, helpjson
+
+        seen = {}
+        with patch.object(helpjson, "load_help_json", return_value={"commands": {"x": {}}}):
+            with patch("importlib.util.find_spec", return_value=True):
+                modules._auto_mount(seen)
+        self.assertEqual(seen, {})
+
 
 if __name__ == "__main__":
+
     unittest.main()

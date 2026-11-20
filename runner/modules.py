@@ -79,8 +79,84 @@ def list_modules(
             seen[str(row["name"])] = row
     if modules_dir is None:
         _merge_remote_modules(seen)
+        _auto_mount(seen)
         _expand_exposed(seen)
     return list(seen.values())
+
+
+# Suite packages probed for cordis_expose auto-mount. Checked-in manifests and
+# overlays always win; this only fills gaps (install a package -> its commands
+# appear as Cordis tools without a module JSON in this repo).
+_AUTO_PKGS = (
+    "agents_browser",
+    "agents_calendar",
+    "agents_docs",
+    "agents_keys",
+    "agents_memory",
+    "agents_terminal",
+    "agents_traces",
+)
+
+
+def _auto_mount(seen: dict[str, Dict[str, Any]]) -> None:
+    """Synthesize manifests for installed suite packages whose ``--help-json``
+    doc sets ``cordis_expose: true``. ``AGENTS_CORDIS_PKGS`` (comma list) adds
+    packages; ``AGENTS_CORDIS_EXPOSE=0`` disables the probe."""
+    if os.environ.get("AGENTS_CORDIS_EXPOSE", "").strip().lower() in ("0", "false", "no", "off"):
+        return
+    import importlib.util
+
+    from .helpjson import load_help_json
+
+    pkgs = list(_AUTO_PKGS)
+    extra = os.environ.get("AGENTS_CORDIS_PKGS", "").strip()
+    if extra:
+        pkgs.extend(p.strip() for p in extra.split(",") if p.strip())
+    for pkg in pkgs:
+        if importlib.util.find_spec(pkg) is None:
+            continue
+        doc = load_help_json(f"python -m {pkg}")
+        if not isinstance(doc, dict) or not doc.get("cordis_expose"):
+            continue
+        commands = doc.get("commands")
+        if not isinstance(commands, dict) or not commands:
+            continue
+        short = str(doc.get("cordis_name") or pkg).strip()
+        for prefix in ("agents_", "agents-", "agents."):
+            if short.startswith(prefix):
+                short = short[len(prefix):]
+        short = short.replace("-", "_")
+        name = str(doc.get("cordis_name") or f"mcp.{short}")
+        if name in seen:
+            continue
+        seen[name] = {
+            "name": name,
+            "kind": "mcp",
+            "when": "on_request",
+            "cadence": "on_request",
+            "verb": f"python -m {pkg}",
+            "rests_on": f"auto-mounted via cordis_expose from {pkg} --help-json; exit 0 = action ok",
+            "expected_exit": 0,
+            "mutates": True,
+            "as_tool": True,
+            "commands": commands,
+            "auto_mounted": pkg,
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "command": {
+                        "type": "string",
+                        "description": f"Declared command: {' | '.join(list(commands)[:12])}",
+                    },
+                    "argv": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Full argv including the command",
+                    },
+                },
+                "required": [],
+            },
+        }
 
 
 def _expand_exposed(seen: dict[str, Dict[str, Any]]) -> None:
