@@ -17,6 +17,11 @@ Per-action rules (``runner.approval_policy``) sit on top of these tiers.
 when the tier is ``off``. ``allow`` does not remove a prompt the tier already
 requires. With no rules, behavior is unchanged.
 
+The approval command may print ``{"note": "...", "remember": true}`` or
+``{"allow_pattern": "<fnmatch>"}`` on stdout: an approved call then persists a
+pattern in the allowlist file (``runner.approval_allowlist``) and matching
+calls skip the prompt afterwards. ``deny`` rules always still win.
+
 Denied results are harness instructions. They are not untrusted tool data, and
 they tell the model not to retry the same call.
 """
@@ -138,17 +143,19 @@ def _timeout_sec(argv: list[str]) -> float:
     return 330.0
 
 
-def _note_from_stdout(text: str) -> str:
+def _stdout_options(text: str) -> dict[str, Any]:
     raw = (text or "").strip()
     if not raw:
-        return ""
+        return {}
     try:
         data = json.loads(raw)
     except json.JSONDecodeError:
-        return ""
-    if isinstance(data, dict) and data.get("note"):
-        return str(data["note"]).strip()
-    return ""
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _note_from_stdout(text: str) -> str:
+    return str(_stdout_options(text).get("note") or "").strip()
 
 
 def _jsonable(args: Any) -> Any:
@@ -172,8 +179,8 @@ def request_approval(
     user: str = "",
     summary: str = "",
     actions: list[str] | None = None,
-) -> tuple[bool, str]:
-    """Run the approval command. ``(True, "")`` means proceed."""
+) -> tuple[bool, str, dict[str, Any]]:
+    """Run the approval command. ``(True, "", opts)`` means proceed."""
     req_id = str(uuid.uuid4())
     payload = {
         "id": req_id,
@@ -187,7 +194,7 @@ def request_approval(
         payload["actions"] = list(actions)
     argv = _command_argv(user or "")
     if not argv:
-        return False, _denied(req_id, tool, "approval command is empty")
+        return False, _denied(req_id, tool, "approval command is empty"), {}
     try:
         proc = subprocess.run(
             argv,
@@ -198,19 +205,20 @@ def request_approval(
             shell=False,
         )
     except subprocess.TimeoutExpired:
-        return False, _denied(req_id, tool, "approval timed out or was unavailable")
+        return False, _denied(req_id, tool, "approval timed out or was unavailable"), {}
     except OSError as exc:
         return False, _denied(
             req_id, tool, "approval timed out or was unavailable", note=str(exc)
-        )
-    note = _note_from_stdout(proc.stdout or "")
+        ), {}
+    opts = _stdout_options(proc.stdout or "")
+    note = str(opts.get("note") or "").strip()
     if proc.returncode == 0:
-        return True, ""
+        return True, "", opts
     if proc.returncode == 2:
         why = "approval timed out or was unavailable"
     else:
         why = "the user declined this tool call"
-    return False, _denied(req_id, tool, why, note)
+    return False, _denied(req_id, tool, why, note), opts
 
 
 def gate_module(
@@ -244,10 +252,14 @@ def gate_module(
     if not tier_ask and not rule_ask:
         return True, ""
     payload = args if isinstance(args, dict) else {"arguments": args}
+    from .approval_allowlist import is_allowed, remember
+
+    if is_allowed(tool, payload, workspace=workspace):
+        return True, ""
     summary = summarize(tool, args)
     if keys:
         summary = f"{summary} actions={','.join(keys[:6])}"[:240]
-    return request_approval(
+    allowed, denial, opts = request_approval(
         tool=tool,
         args=payload,
         session=session,
@@ -255,3 +267,11 @@ def gate_module(
         summary=summary,
         actions=keys,
     )
+    if allowed and (opts.get("remember") or opts.get("allow_pattern")):
+        remember(
+            tool,
+            payload,
+            pattern=str(opts.get("allow_pattern") or ""),
+            workspace=workspace,
+        )
+    return allowed, denial
