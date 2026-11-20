@@ -127,6 +127,8 @@ def _expand_exposed(seen: dict[str, Dict[str, Any]]) -> None:
                 if isinstance(spec_params, dict)
                 else [],
             }
+            if isinstance(spec_params, dict) and spec_params.get("description"):
+                child["parameters"]["description"] = spec_params["description"]
             child["mutates"] = True  # per-call classification decides via the spec
             child.pop("expose_commands", None)
             seen.setdefault(child["name"], child)

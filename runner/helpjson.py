@@ -176,8 +176,22 @@ def select_command(manifest: Any, arguments: Any) -> tuple[str, dict[str, Any]] 
     named ``git``. ``argv[0]`` matches when that token is declared. When the
     spec has ``subcommands``, ``argv[1]`` or an ``action``/``subcommand``
     argument resolves one level deeper; the returned name is then
-    ``"<canonical> <sub>"``.
+    ``"<canonical> <sub>"``. A manifest ``command_pin`` (synthesized
+    ``expose_commands`` rows) supplies the command when arguments name none.
     """
+    pin = str(manifest.get("command_pin") or "") if isinstance(manifest, dict) else ""
+    if pin:
+        inner = unwrap_arguments(arguments)
+        if isinstance(inner, dict):
+            selector = any(
+                isinstance(inner.get(k), str) and inner[k].strip()
+                for k in ("command", "command_name", "cmd", "name", "action", "subcommand")
+            )
+            argv = inner.get("argv")
+            if not selector and not (isinstance(argv, list) and argv):
+                arguments = {**inner, "command": pin}
+        elif not inner:
+            arguments = {"command": pin}
     selected = _select_level1(manifest, arguments)
     if selected is None:
         return None
@@ -269,13 +283,6 @@ def declared_argv(mod: Any, arguments: Any) -> list[str] | None:
     A manifest ``command_pin`` (synthesized ``expose_commands`` rows) injects
     the command so bare argument dicts still resolve the pinned spec.
     """
-    pin = str(mod.get("command_pin") or "") if isinstance(mod, dict) else ""
-    if pin:
-        inner = unwrap_arguments(arguments)
-        if isinstance(inner, dict):
-            arguments = {**inner, "command": inner.get("command") or pin}
-        elif not inner:
-            arguments = {"command": pin}
     selected = select_command(mod, arguments)
     if selected is None:
         return None
