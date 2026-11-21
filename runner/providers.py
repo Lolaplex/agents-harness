@@ -10,6 +10,7 @@ import json
 import os
 import urllib.error
 import urllib.request
+import warnings
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Iterable, Protocol
@@ -73,11 +74,29 @@ class Provider(Protocol):
         ...
 
 
+def _warn_plaintext_api_key(
+    manifest: dict[str, Any], *, path: Path | None = None, stacklevel: int = 3
+) -> None:
+    raw = str(manifest.get("api_key") or "").strip()
+    if not raw:
+        return
+    name = str(manifest.get("name") or (path.stem if path is not None else "unknown"))
+    loc = f"{name!r} ({path})" if path is not None else f"{name!r}"
+    warnings.warn(
+        f"Provider manifest {loc} contains plaintext 'api_key'; "
+        "migrate to 'key_env' and store the secret in the host secret vault "
+        "(plaintext 'api_key' is deprecated and will be removed after one release).",
+        UserWarning,
+        stacklevel=stacklevel,
+    )
+
+
 def load_provider(path: Path) -> dict[str, Any]:
     data = load_manifest(path)
     data.setdefault("kind", "openai_compat")
     data.setdefault("when", "on_request")
     data.setdefault("cadence", "on_request")
+    _warn_plaintext_api_key(data, path=path)
     return data
 
 
@@ -294,9 +313,11 @@ def _iter_sse_lines(resp: Any, idle_sec: float):
 class OpenAICompatProvider:
     kind = "openai_compat"
 
-    def __init__(self, manifest: dict[str, Any]):
+    def __init__(self, manifest: dict[str, Any], *, _warn_plaintext: bool = True):
         self.name = str(manifest.get("name") or "openai.default")
         self.manifest = manifest
+        if _warn_plaintext:
+            _warn_plaintext_api_key(manifest, stacklevel=3)
 
     def complete(self, req: CompletionRequest) -> CompletionResult:
         url = (
@@ -445,17 +466,28 @@ def get_provider(name: str = "", providers_dir: Path | None = None) -> Provider:
             wanted = ""
     rows = list_providers(providers_dir)
     manifest = None
+    from_disk = False
     if wanted:
-        manifest = find_provider(wanted, providers_dir)
+        needle = wanted.lower()
+        manifest = next(
+            (r for r in rows if str(r.get("name", "")).lower() == needle),
+            None,
+        )
         if manifest is None:
             raise KeyError(f"no provider named '{wanted}'")
+        from_disk = True
     else:
-        manifest = find_provider("openai.default", providers_dir)
+        manifest = next(
+            (r for r in rows if str(r.get("name", "")).lower() == "openai.default"),
+            None,
+        )
         if manifest is None:
             manifest = next((r for r in rows if r.get("kind") == "openai_compat"), None)
         if manifest is None and rows:
             manifest = rows[0]
-        if manifest is None:
+        if manifest is not None:
+            from_disk = True
+        else:
             manifest = {
                 "name": "openai.default",
                 "kind": "openai_compat",
@@ -467,4 +499,6 @@ def get_provider(name: str = "", providers_dir: Path | None = None) -> Provider:
     factory = _KINDS.get(kind)
     if factory is None:
         raise KeyError(f"unknown provider kind '{kind}'")
+    if factory is OpenAICompatProvider and from_disk:
+        return OpenAICompatProvider(manifest, _warn_plaintext=False)
     return factory(manifest)
