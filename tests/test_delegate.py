@@ -123,6 +123,101 @@ class TestDelegate(unittest.TestCase):
         self.assertEqual(out["state"], "exited")
         self.assertEqual(out["exit_code"], 0)
 
+    def test_default_dir_uses_ws_delegates_and_run_ledger(self) -> None:
+        from pathlib import Path
+        from unittest.mock import patch
+        from agents_workspace import Host
+
+        with tempfile.TemporaryDirectory() as tmp:
+            host = Host(dir=Path(tmp) / "host")
+            ws = host.create("demo")
+            self.assertFalse(ws.run.exists())
+            self.assertFalse((ws.dir / "delegates").exists())
+            env = {
+                k: v
+                for k, v in os.environ.items()
+                if k not in ("AGENTS_DELEGATES_DIR", "AGENTS_DELEGATE_DEPTH", "AGENTS_WORKSPACE_ROOT")
+            }
+            env["AGENTS_HOST_DIR"] = str(host.dir)
+            env["AGENTS_WORKSPACE"] = "demo"
+            with patch.dict(os.environ, env, clear=True):
+                self.assertEqual(delegate._root(), ws.delegates)
+                self.assertEqual(delegate._ledger_path(), ws.run / "delegate.depth")
+                spawned = delegate.spawn("ws-run-delegates", provider="echo")
+                dlg_id = spawned["id"]
+                self.assertTrue((ws.delegates / dlg_id / "meta.json").is_file())
+                self.assertFalse((ws.dir / "delegates").exists())
+                self.assertEqual(
+                    (ws.run / "delegate.depth").read_text(encoding="utf-8").strip(),
+                    "1",
+                )
+                self.assertFalse((ws.run / "run" / "delegate.depth").exists())
+                out = delegate.result(dlg_id, timeout_sec=120)
+                self.assertEqual(out["state"], "exited")
+                self.assertEqual(out["exit_code"], 0)
+                self.assertIn("ws-run-delegates", out["stdout"])
+
+    def test_legacy_delegates_dir_read_fallback(self) -> None:
+        import json
+        from pathlib import Path
+        from unittest.mock import patch
+        from agents_workspace import Host
+
+        with tempfile.TemporaryDirectory() as tmp:
+            host = Host(dir=Path(tmp) / "host")
+            ws = host.create("demo")
+            legacy_id = "dlg_legacy01"
+            legacy_dir = ws.dir / "delegates" / legacy_id
+            legacy_dir.mkdir(parents=True, exist_ok=True)
+            (legacy_dir / "meta.json").write_text(
+                json.dumps({"id": legacy_id, "task": "legacy-task", "session": "ses_dlg_legacy01", "pid": 0}),
+                encoding="utf-8",
+            )
+            (legacy_dir / "out.log").write_text("legacy stdout\n", encoding="utf-8")
+            (legacy_dir / "err.log").write_text("", encoding="utf-8")
+            (legacy_dir / "exit.json").write_text(
+                json.dumps({"code": 0, "finished": "2026-11-21T00:00:00+00:00"}),
+                encoding="utf-8",
+            )
+            new_id = "dlg_current01"
+            new_dir = ws.delegates / new_id
+            new_dir.mkdir(parents=True, exist_ok=True)
+            (new_dir / "meta.json").write_text(
+                json.dumps({"id": new_id, "task": "new-task", "session": "ses_dlg_current01", "pid": 0}),
+                encoding="utf-8",
+            )
+            (new_dir / "exit.json").write_text(
+                json.dumps({"code": 0, "finished": "2026-11-21T00:00:00+00:00"}),
+                encoding="utf-8",
+            )
+
+            env = {
+                k: v
+                for k, v in os.environ.items()
+                if k not in ("AGENTS_DELEGATES_DIR", "AGENTS_WORKSPACE_ROOT")
+            }
+            env["AGENTS_HOST_DIR"] = str(host.dir)
+            env["AGENTS_WORKSPACE"] = "demo"
+            with patch.dict(os.environ, env, clear=True):
+                st = delegate.status(legacy_id)
+                self.assertEqual(st["state"], "exited")
+                self.assertEqual(st["exit_code"], 0)
+                res = delegate.result(legacy_id, timeout_sec=5)
+                self.assertIn("legacy stdout", res["stdout"])
+                self.assertEqual(delegate.cancel(legacy_id)["exit_code"], 0)
+                ids = [row["id"] for row in delegate.list_runs()["delegates"]]
+                self.assertEqual(ids, [new_id, legacy_id])
+
+            # With explicit AGENTS_DELEGATES_DIR override, legacy <ws>/delegates is not read.
+            with patch.dict(
+                os.environ,
+                {**env, "AGENTS_DELEGATES_DIR": str(Path(tmp) / "custom-dlg")},
+                clear=True,
+            ):
+                with self.assertRaises(delegate.DelegateError):
+                    delegate.status(legacy_id)
+                self.assertEqual(delegate.list_runs()["delegates"], [])
+
 
 class TestDelegateDeclaredCommands(unittest.TestCase):
     """commands_from: help-json wires the module without a cordis_tools shim."""

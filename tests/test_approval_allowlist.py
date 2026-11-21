@@ -87,6 +87,8 @@ class TestAllowlist(unittest.TestCase):
         self.assertEqual(al.load_patterns(), [])
 
     def test_default_path_under_host(self) -> None:
+        from unittest.mock import patch
+
         os.environ.pop("AGENTS_APPROVAL_ALLOWLIST", None)
         try:
             from agents_workspace import Host
@@ -96,7 +98,92 @@ class TestAllowlist(unittest.TestCase):
             self.skipTest("no host")
         path = al.store_path()
         self.assertIsNotNone(path)
+        self.assertEqual(path, host.approval_allowlist)
         self.assertEqual(path.parent, Path(host.agents_json).parent)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            isolated = Host(dir=Path(tmp) / "host")
+            ws = isolated.create("demo")
+            with patch.dict(os.environ, {"AGENTS_HOST_DIR": str(isolated.dir)}, clear=False):
+                os.environ.pop("AGENTS_APPROVAL_ALLOWLIST", None)
+                self.assertEqual(al.store_path(), isolated.approval_allowlist)
+                self.assertEqual(al.store_path(ws), isolated.approval_allowlist)
+
+    def test_workspace_inside_override_paths_rejected(self) -> None:
+        from unittest.mock import patch
+        from agents_workspace import Host
+
+        with tempfile.TemporaryDirectory() as tmp:
+            host = Host(dir=Path(tmp) / "host")
+            ws = host.create("demo")
+            external_workdir = Path(tmp) / "ext-work"
+            external_workdir.mkdir()
+            ad_hoc_root = Path(tmp) / "ad-hoc-ws"
+            ad_hoc_root.mkdir()
+
+            bad_cases = [
+                (ws.dir / "approval-allowlist.json", {}),
+                (ws.run / "approval-allowlist.json", {}),
+                (host.workspaces_dir / "other" / "allowlist.json", {}),
+                (ws.workdir / "allowlist.json", {}),
+                (external_workdir / "allowlist.json", {"AGENTS_WORKDIR": str(external_workdir)}),
+                (ad_hoc_root / "allowlist.json", {"AGENTS_WORKSPACE_ROOT": str(ad_hoc_root)}),
+            ]
+            for bad_path, extra_env in bad_cases:
+                bad_path.parent.mkdir(parents=True, exist_ok=True)
+                bad_path.write_text(json.dumps({"patterns": ["*"]}), encoding="utf-8")
+                env = {
+                    "AGENTS_HOST_DIR": str(host.dir),
+                    "AGENTS_APPROVAL_ALLOWLIST": str(bad_path),
+                    **extra_env,
+                }
+                with patch.dict(os.environ, env, clear=False):
+                    self.assertIsNone(al.store_path(), msg=str(bad_path))
+                    self.assertIsNone(al.store_path(ws), msg=str(bad_path))
+                    self.assertEqual(al.load_patterns(ws), [], msg=str(bad_path))
+                    self.assertFalse(
+                        al.is_allowed("mcp.terminal", {"argv": ["git", "status"]}, workspace=ws),
+                        msg=str(bad_path),
+                    )
+                    self.assertIsNone(
+                        al.remember("mcp.terminal", {"argv": ["git", "push"]}, workspace=ws),
+                        msg=str(bad_path),
+                    )
+                # Ensure gate_module still prompts and does not trust poisoned ws allowlist.
+                with patch.dict(os.environ, env, clear=False):
+                    allowed, _ = gate_module(
+                        {"name": "mcp.terminal", "mutates": True},
+                        {"argv": ["git", "status"]},
+                        workspace=ws,
+                    )
+                    self.assertTrue(allowed)
+                    self.assertEqual(self._hits(), 1)
+                    # Reset marker hits for next iteration
+                    self.marker.write_text("", encoding="utf-8")
+
+            # A path under host (outside workspaces/) remains accepted.
+            host_custom = host.dir / "custom-allowlist.json"
+            with patch.dict(
+                os.environ,
+                {"AGENTS_HOST_DIR": str(host.dir), "AGENTS_APPROVAL_ALLOWLIST": str(host_custom)},
+                clear=False,
+            ):
+                self.assertEqual(al.store_path(ws), host_custom)
+
+    def test_import_error_fallback(self) -> None:
+        from unittest.mock import patch
+
+        with tempfile.TemporaryDirectory() as tmp:
+            host_dir = Path(tmp) / "host"
+            env = {k: v for k, v in os.environ.items() if k != "AGENTS_APPROVAL_ALLOWLIST"}
+            env["AGENTS_HOST_DIR"] = str(host_dir)
+            with patch.dict(os.environ, env, clear=True):
+                with patch.dict(sys.modules, {"agents_workspace": None}):
+                    self.assertEqual(al.store_path(), host_dir / "approval-allowlist.json")
+                    os.environ["AGENTS_APPROVAL_ALLOWLIST"] = str(
+                        host_dir / "workspaces" / "demo" / "allowlist.json"
+                    )
+                    self.assertIsNone(al.store_path())
 
     def test_deny_rule_still_wins(self) -> None:
         al.remember("mcp.terminal", {"argv": ["git", "status"]})

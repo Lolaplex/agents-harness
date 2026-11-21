@@ -4,7 +4,8 @@
 ``runner.loop --detached-session`` turn and returns ``dlg_<id>``. The subagent
 inherits the workspace environment but its own session, so it can run tools
 while the parent turn continues. State lives under
-``AGENTS_DELEGATES_DIR`` (default ``<workspace>/delegates``):
+``AGENTS_DELEGATES_DIR`` (default ``<workspace>/run/delegates``, with a
+1-release fallback read for legacy ``<workspace>/delegates``):
 
     delegates/<id>/meta.json   id, task, session, supervisor pid, provider, model
     delegates/<id>/out.log     turn stdout
@@ -37,20 +38,37 @@ from pathlib import Path
 from typing import Any
 
 
-def _root() -> Path:
+def _override_dir() -> Path | None:
     raw = os.environ.get("AGENTS_DELEGATES_DIR", "").strip()
-    if raw:
-        return Path(raw).expanduser().resolve()
+    return Path(raw).expanduser().resolve() if raw else None
+
+
+def _roots() -> tuple[Path, Path | None]:
+    """Return ``(primary_delegates_dir, legacy_delegates_dir_or_none)``."""
+    override = _override_dir()
+    if override is not None:
+        return override, None
     from agents_workspace import Workspace
 
-    return Workspace.from_env().dir / "delegates"
+    ws = Workspace.from_env()
+    primary = getattr(ws, "delegates", None) or (ws.dir / "run" / "delegates")
+    legacy = ws.dir / "delegates"
+    return primary, (legacy if legacy != primary else None)
 
 
-def _dir(dlg_id: str) -> Path:
+def _root() -> Path:
+    return _roots()[0]
+
+
+def _safe_id(dlg_id: str) -> str:
     safe = "".join(ch for ch in dlg_id if ch.isalnum() or ch in ("-", "_"))
     if not safe or safe != dlg_id:
         raise DelegateError("invalid delegate id", code=2)
-    return _root() / safe
+    return safe
+
+
+def _dir(dlg_id: str) -> Path:
+    return _root() / _safe_id(dlg_id)
 
 
 class DelegateError(Exception):
@@ -123,10 +141,16 @@ def _state(ddir: Path) -> dict[str, Any]:
 
 
 def _ledger_path() -> Path:
-    # <ws>/run/delegate.depth for the default <ws>/delegates root; scoped inside
+    # <ws>/run/delegate.depth for the default ws.delegates root; scoped inside
     # the delegates dir when AGENTS_DELEGATES_DIR overrides (tests, overlays).
-    base = _root() if os.environ.get("AGENTS_DELEGATES_DIR", "").strip() else _root().parent
-    return base / "run" / "delegate.depth"
+    override = _override_dir()
+    if override is not None:
+        return override / "run" / "delegate.depth"
+    from agents_workspace import Workspace
+
+    ws = Workspace.from_env()
+    run_dir = getattr(ws, "run", None) or (ws.dir / "run")
+    return run_dir / "delegate.depth"
 
 
 def _ledger_depth() -> int:
@@ -303,10 +327,16 @@ def _run_supervisor(dlg_id: str) -> int:
 
 
 def _load(dlg_id: str) -> Path:
-    ddir = _dir(dlg_id)
-    if not (ddir / "meta.json").is_file():
-        raise DelegateError("unknown delegate id", code=2)
-    return ddir
+    safe = _safe_id(dlg_id)
+    primary, legacy = _roots()
+    ddir = primary / safe
+    if (ddir / "meta.json").is_file():
+        return ddir
+    if legacy is not None:
+        legacy_dir = legacy / safe
+        if (legacy_dir / "meta.json").is_file():
+            return legacy_dir
+    raise DelegateError("unknown delegate id", code=2)
 
 
 def status(dlg_id: str) -> dict[str, Any]:
@@ -314,12 +344,19 @@ def status(dlg_id: str) -> dict[str, Any]:
 
 
 def list_runs() -> dict[str, Any]:
-    root = _root()
+    primary, legacy = _roots()
     rows = []
-    if root.is_dir():
+    seen: set[str] = set()
+    for root in (primary, legacy):
+        if root is None or not root.is_dir():
+            continue
         for child in sorted(root.iterdir()):
+            if child.name in seen:
+                continue
             if child.is_dir() and (child / "meta.json").is_file():
+                seen.add(child.name)
                 rows.append(_state(child))
+    rows.sort(key=lambda r: r["id"])
     return {"delegates": rows}
 
 
