@@ -49,7 +49,7 @@ Calendar tools (`mcp.calendar.add`, `mcp.calendar.update`, `mcp.calendar.list`) 
 | **Job Kernel** | Declarative Cordis catalog & deterministic execution | `runner.kernel`, `runner.cordis_tools` |
 | **Schedules** | Manifest-defined care flows & dynamic reminders | `runner.executor`, `runner.schedule` |
 | **Providers** | Streaming completions & OpenAI-compatible tools | `runner.providers` |
-| **Identity** | Decoupled alias, user, and session directory | `~/.agents/identity.json` |
+| **Identity** | Decoupled alias, user, and session directory | `<host>/users.json` |
 
 - **Per-request loop (`runner.loop`)**: Reconstructs conversation traces on demand. Cordis modules (`runner/modules/*.json`) map as tools into OpenAI-compatible tool calling rounds.
 - **Strict Layering (Cordis Principle)**: The executor owns no domain state or complex semantics. It strictly executes declared CLI verbs and inspects exit codes (`0 = healthy`).
@@ -69,8 +69,8 @@ Calendar tools (`mcp.calendar.add`, `mcp.calendar.update`, `mcp.calendar.list`) 
 - [x] **Dynamic Reminders (`runner.schedule`)**: Dynamic one-shot, cron, and routine jobs. `tick()` is in-process safe (file lock, timezone, grace window) and still callable from host cron.
 - [x] **Approval gate**: `AGENTS_APPROVAL_CMD` / `AGENTS_APPROVAL_MODE` before mutating `call_job` tools.
 - [x] **Untrusted tool fence**: tool results are wrapped for the model; redaction stays.
-- [x] **External MCP client**: `~/.agents/mcp.json` tools show up as `mcp.<server>.<tool>`.
-- [x] **Skills**: `skill.list` / `skill.load` read `~/.agents/skills/*/SKILL.md`.
+- [x] **External MCP client**: `<host>/mcp.json` tools show up as `mcp.<server>.<tool>`.
+- [x] **Skills**: `skill.list` / `skill.load` read `<ws>/skills/*/SKILL.md`.
 - [x] **Attachments**: `--attach` sends images as vision parts when vision is enabled.
 - [x] **Provider Streaming**: Streaming completions with prefill (`first_byte_sec`) and stall (`idle_sec`) hang detection.
 - [x] **Decoupled Identity**: Decoupled alias (`telegram:123`), user (`u_...`), and session (`ses_...`) directory.
@@ -149,7 +149,7 @@ Side effects on a help-json command, or on any manifest that carries the same fi
 
 Every tool result the model sees is wrapped in `<untrusted_data source="...">...</untrusted_data>` after redaction. Only messages the harness builds itself (approval denials, loop notices) stay outside that fence; tool text that merely starts with `Denied:` is still fenced.
 
-Tool stdout and stderr shown to the model use `AGENTS_TOOL_OUTPUT_MAX` characters (default 32768) for the first page. Shorter output is unchanged. Longer output keeps that prefix. One `<page offset="..." next_offset="..." total="..." truncated="1" digest="..." sha256="..."/>` line is then appended, so the shown string can be longer than the cap by that single line. The same shape applies to schedule tick results and to `call_job` on the harness MCP server. Trace records (`logs/runner.jsonl` and `~/.agents/traces/runner.jsonl`) still store only a 1000-character tail. The full strings are on the in-process `execute_job` result (`stdout`, `stderr`).
+Tool stdout and stderr shown to the model use `AGENTS_TOOL_OUTPUT_MAX` characters (default 32768) for the first page. Shorter output is unchanged. Longer output keeps that prefix. One `<page offset="..." next_offset="..." total="..." truncated="1" digest="..." sha256="..."/>` line is then appended, so the shown string can be longer than the cap by that single line. The same shape applies to schedule tick results and to `call_job` on the harness MCP server. Trace records (`logs/runner.jsonl` and `<ws>/traces/runner.jsonl`) still store only a 1000-character tail. The full strings are on the in-process `execute_job` result (`stdout`, `stderr`).
 
 `call_job` name `read_content` continues that page. Pass `next` true, or `offset` set to `next_offset`. `digest` is optional for the latest page in this process; pass it for an older `<page>` or `<ref digest="..."/>`. `limit` defaults to `AGENTS_PAGE_CHARS` (32768). A negative limit reads through the end. The result is `text`, `digest` (SHA-256 of the full body), `total_chars`, `truncated`, and `next_offset` when more remains. The same names in `<ws>/config.json` or `<host>/agents.json` apply when the env var is unset (`tool_output_max`, `page_chars`). Register a backend in-process or point `AGENTS_CONTENT_READ_CMD` at a program that reads a JSON object on stdin and writes one on stdout:
 
@@ -171,7 +171,7 @@ def check(text, receipts):
 register_final_check(check)
 ```
 
-No backend and no stored body: the tool says the content is unavailable and the model is told not to invent it. The harness does not import agents-traces or agents-memory to do this. Bytes the harness clipped are stored under `AGENTS_CONTENT_DIR` (default `~/.agents/harness-content`) and are readable without a host backend.
+No backend and no stored body: the tool says the content is unavailable and the model is told not to invent it. The harness does not import agents-traces or agents-memory to do this. Bytes the harness clipped are stored under `AGENTS_CONTENT_DIR` (default `<ws>/content`) and are readable without a host backend.
 
 Recent tool context includes up to `AGENTS_HISTORY_TOOL_EVENTS` calls (default 12). Each preview is at most `AGENTS_HISTORY_TOOL_PREVIEW` characters (default 4096) plus a page tag when the body is longer.
 
@@ -183,9 +183,9 @@ When the workdir is a git repo, or has `AGENTS.md`, that file is added to the sy
 
 A successful mutating call appends `agents_harness.tool_receipt.v1` (`tool`, `args_digest`, `success`, and the tool's own receipt object when the output contains JSON with a `schema`). For a CLI job, success is a zero exit code. `FAILED`, `TIMEOUT`, `ERROR`, and a non-zero `exit_code` are not success, even when stdout contains a receipt object or the text `error:`. The harness does not decide success by scanning tool output. Text the harness itself writes as a failure (`Denied:`, `error: timeout`, `error: non-zero exit`, `refused:`) is also not a receipt. The system prompt says to claim a side effect only when such a receipt exists. `register_final_check` may flag a draft; the loop asks for one revision and puts any remaining findings in the buffered trailer as `response_flags`. Nothing in the harness treats the word "saved" as special.
 
-Skills live in `~/.agents/skills/<name>/SKILL.md` (`AGENTS_SKILLS_DIR`, plus `AGENTS_SKILLS_EXTRA`). The system prompt lists name and description. `skill.load` returns the file. `skill.catalog` is a compatibility alias of `skill.list`.
+Skills live in `<ws>/skills/<name>/SKILL.md` (`AGENTS_SKILLS_DIR`, plus `AGENTS_SKILLS_EXTRA`). The system prompt lists name and description. `skill.load` returns the file. `skill.catalog` is a compatibility alias of `skill.list`.
 
-Cron uses the job's `timezone` (else `AGENTS_TIMEZONE`, `TZ`, or `timezone` in `~/.agents/config.json`). The last fired minute is stored next to the manifests so a double tick does not double-fire, and a miss inside `grace_min` (default 5) still runs once. LLM reminders and routines default to `timeout_sec` 300. `tick()` holds its file lock only while claiming or finalizing, then runs jobs outside the lock. `tick(wait=False)` returns after the claim; `python -m runner.schedule tick` waits. A failed or timed-out one-shot is removed and not retried. The failure is logged, and `last_result` stays in `tick-state.json`. Routine jobs (`--prompt`) are not executed here: register `runner.schedule.register_routine_handler`. With no handler, a routine that has a verb runs that verb; a routine with only a prompt is skipped and its slot or one-shot file is left in place. `mcp.schedule.add` copies the turn's `channel` and `user` onto the job when the call omits them.
+Cron uses the job's `timezone` (else `AGENTS_TIMEZONE`, `TZ`, or `timezone` in `<ws>/config.json`). The last fired minute is stored next to the manifests so a double tick does not double-fire, and a miss inside `grace_min` (default 5) still runs once. LLM reminders and routines default to `timeout_sec` 300. `tick()` holds its file lock only while claiming or finalizing, then runs jobs outside the lock. `tick(wait=False)` returns after the claim; `python -m runner.schedule tick` waits. A failed or timed-out one-shot is removed and not retried. The failure is logged, and `last_result` stays in `tick-state.json`. Routine jobs (`--prompt`) are not executed here: register `runner.schedule.register_routine_handler`. With no handler, a routine that has a verb runs that verb; a routine with only a prompt is skipped and its slot or one-shot file is left in place. `mcp.schedule.add` copies the turn's `channel` and `user` onto the job when the call omits them.
 
 `python -m runner.loop --detached-session --session ses_…` runs that turn in `ses_…` and restores the previous active session afterward. A session id that starts with `routine:` is detached the same way without the flag. A host cron or a platform scheduler can call `python -m runner.schedule tick` when it runs as the same user as the service. That process does not inherit environment set only on the long-running service (for example `AGENTS_APPROVAL_CMD`).
 
@@ -228,11 +228,11 @@ Configuration rule: one variable carries one decision. A value never implies enf
 
 ## External MCP client
 
-`~/.agents/mcp.json` (override `AGENTS_MCP_CONFIG`) uses the Claude/Cursor `mcpServers` shape, plus optional `allow` / `deny` globs. `${ENV_VAR}` expands in commands, args, env, urls, and headers. See `mcp.client.json.example`.
+`<host>/mcp.json` (override `AGENTS_MCP_CONFIG`) uses the Claude/Cursor `mcpServers` shape, plus optional `allow` / `deny` globs. `${ENV_VAR}` expands in commands, args, env, urls, and headers. See `mcp.client.json.example`.
 
 Each server tool is a catalog module `mcp.<server>.<tool>` (`kind: mcp_remote`) with the server's `inputSchema`. Side effects follow `side_effects`, then `mutates`, then `readOnlyHint`. Anything without those fields is a mutator for the approval gate. Hand-written modules of the same name win.
 
-The loop process is new every turn. Schemas are cached for `AGENTS_MCP_CACHE_SEC` (default 60) in `AGENTS_MCP_CACHE` (default `~/.agents/mcp-tools-cache.json`). `AGENTS_MCP_CONNECT_TIMEOUT` (default 10 s) bounds each listing or call session, connect included. Each call connects, initializes, calls one tool, and disconnects (stdio, streamable HTTP, or SSE). Install the SDK with `pip install "agents-harness[mcp]"`. OAuth is out of scope.
+The loop process is new every turn. Schemas are cached for `AGENTS_MCP_CACHE_SEC` (default 60) in `AGENTS_MCP_CACHE_FILE` (default `<host>/cache/mcp-tools-cache.json`, alias `AGENTS_MCP_CACHE`). `AGENTS_MCP_CONNECT_TIMEOUT` (default 10 s) bounds each listing or call session, connect included. Each call connects, initializes, calls one tool, and disconnects (stdio, streamable HTTP, or SSE). Install the SDK with `pip install "agents-harness[mcp]"`. OAuth is out of scope.
 
 ## MCP Server Integration
 

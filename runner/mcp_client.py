@@ -13,7 +13,7 @@ OAuth is out of scope.
 
 Session strategy: each ``runner.loop`` turn is a new process, so there is no
 cross-turn MCP session. Tool *schemas* are cached in memory and in
-``~/.agents/mcp-tools-cache.json`` (TTL ``AGENTS_MCP_CACHE_SEC``, default 60s;
+``<host>/cache/mcp-tools-cache.json`` (TTL ``AGENTS_MCP_CACHE_SEC``, default 60s;
 ``0`` refreshes every list). Each ``call_job`` opens a short-lived session,
 initializes, calls one tool, and closes it. Stdio and streamable HTTP are
 supported. SSE is used when ``transport`` is ``sse`` or the URL path ends with
