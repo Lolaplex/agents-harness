@@ -75,6 +75,43 @@ class TestCordisTools(unittest.TestCase):
         self.assertNotIn("sk-abcdefghijklmnopqrstuvwxyz", out)
         self.assertNotIn("/data/.agents/identity.json", out)
 
+    def test_redact_secret_env_patterns_and_values_without_root_warning(self):
+        import warnings
+
+        secret_keys = (
+            "RELAY_SECRET",
+            "GATEWAY_SECRET",
+            "RELAY_WEB_TOKEN",
+            "WEBHOOK_SECRET",
+            "AGENTS_TERMINAL_NOTIFY_SECRET",
+            "AGENTS_APPROVAL_TOKEN",
+            "AGENTS_SYNC_TOKEN",
+            "AGENTS_SYNC_SERVER_SECRET",
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            from agents_workspace import Host
+
+            host = Host(dir=Path(tmp) / "host")
+            host.create("demo")
+            env_vals = {key: f"val_{key.lower()}_987654" for key in secret_keys}
+            env_vals["AGENTS_HOST_DIR"] = str(host.dir)
+            env_vals["AGENTS_WORKSPACE"] = "demo"
+            lines = [f"{k}=inline_{k.lower()}" for k in secret_keys] + list(env_vals.values())
+            raw = "\n".join(lines)
+            with patch.dict(os.environ, env_vals, clear=False):
+                with warnings.catch_warnings(record=True) as seen:
+                    warnings.simplefilter("always")
+                    out = redact_tool_output(raw)
+            self.assertFalse(
+                any("Workspace.root is deprecated" in str(w.message) for w in seen),
+                seen,
+            )
+            for key in secret_keys:
+                self.assertNotIn(f"inline_{key.lower()}", out)
+                self.assertNotIn(env_vals[key], out)
+                self.assertNotIn(f"{key}=", out)
+            self.assertIn("[redacted]", out)
+
     def test_execute_job_redacts_stdout(self):
         mod = find_module("skill.catalog")
         self.assertIsNotNone(mod)

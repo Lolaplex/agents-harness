@@ -1,4 +1,4 @@
-"""Redact secrets from Cordis job stdout before traces or the next complete."""
+"""Redact secrets from Cordis job output before traces or the next complete."""
 
 from __future__ import annotations
 
@@ -6,7 +6,21 @@ import os
 import re
 from pathlib import Path
 
-from agents_workspace import Workspace
+from agents_workspace import Host, Workspace
+
+_SECRET_ENV_KEYS: tuple[str, ...] = (
+    "TELEGRAM_BOT_TOKEN",
+    "RELAY_SECRET",
+    "GATEWAY_SECRET",
+    "RELAY_WEB_TOKEN",
+    "WEBHOOK_SECRET",
+    "AGENTS_TERMINAL_NOTIFY_SECRET",
+    "AGENTS_APPROVAL_TOKEN",
+    "AGENTS_SYNC_TOKEN",
+    "AGENTS_SYNC_SERVER_SECRET",
+)
+
+_MIN_ENV_SECRET_LEN = 6
 
 _PATTERNS: list[re.Pattern[str]] = [
     re.compile(r"sk-[A-Za-z0-9_-]{8,}", re.IGNORECASE),
@@ -14,9 +28,8 @@ _PATTERNS: list[re.Pattern[str]] = [
     re.compile(
         r"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----[\s\S]*?-----END (?:RSA |EC |OPENSSH )?PRIVATE KEY-----"
     ),
+    re.compile(r"(?i)(?:" + "|".join(_SECRET_ENV_KEYS) + r")\s*[:=]\s*\S+"),
     re.compile(r"(?i)(?:api[_-]?key|token|secret|password)\s*[:=]\s*\S+"),
-    re.compile(r"TELEGRAM_BOT_TOKEN=\S+"),
-    re.compile(r"GATEWAY_SECRET=\S+"),
 ]
 
 _REDACTED = "[redacted]"
@@ -24,15 +37,22 @@ _REDACTED = "[redacted]"
 
 def _agents_home_paths() -> list[str]:
     """Path prefixes to scrub from tool output (longest first)."""
-    ws = Workspace.from_env()
     candidates: list[str] = []
-    raw = str(
-        ws.source_env.get("AGENTS_WORKSPACE_ROOT") or ""
-    ).strip()
-    if raw:
-        candidates.append(raw)
-    candidates.append(str(ws.root))
-    candidates.append(str(ws.host.dir))
+    try:
+        ws = Workspace.from_env()
+    except ValueError:
+        candidates.append(str(Host.from_env().dir))
+        raw = str(os.environ.get("AGENTS_WORKSPACE_ROOT") or "").strip()
+        if raw:
+            candidates.append(raw)
+    else:
+        raw = str(
+            ws.source_env.get("AGENTS_WORKSPACE_ROOT") or ""
+        ).strip()
+        if raw:
+            candidates.append(raw)
+        candidates.append(str(ws.dir))
+        candidates.append(str(ws.host.dir))
     legacy = os.path.expanduser("~/.agents")
     if legacy not in candidates:
         candidates.append(legacy)
@@ -54,6 +74,20 @@ def _agents_home_paths() -> list[str]:
     return sorted(prefixes, key=len, reverse=True)
 
 
+def _redact_env_values(text: str) -> str:
+    if not text:
+        return text
+    values: list[str] = []
+    for key in _SECRET_ENV_KEYS:
+        val = (os.environ.get(key) or "").strip()
+        if len(val) >= _MIN_ENV_SECRET_LEN and val not in values:
+            values.append(val)
+    for val in sorted(values, key=len, reverse=True):
+        if val in text:
+            text = text.replace(val, _REDACTED)
+    return text
+
+
 def _redact_paths(text: str) -> str:
     if not text:
         return text
@@ -64,10 +98,11 @@ def _redact_paths(text: str) -> str:
 
 
 def redact_tool_output(text: str) -> str:
-    """One boundary for tool stdout before tool messages and traces."""
+    """One boundary for tool output before tool messages and traces."""
     if not text:
         return text
     out = text
     for pat in _PATTERNS:
         out = pat.sub(_REDACTED, out)
+    out = _redact_env_values(out)
     return _redact_paths(out)

@@ -5,6 +5,8 @@ from __future__ import annotations
 import io
 import json
 import os
+import shlex
+import sys
 import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
@@ -392,7 +394,7 @@ class TestCliExitReceipt(unittest.TestCase):
         }
         with patch.dict(
             os.environ,
-            {"AGENTS_APPROVAL_CMD": "false", "AGENTS_APPROVAL_MODE": "ask"},
+            {"AGENTS_APPROVAL_CMD": f"{shlex.quote(sys.executable)} -c 'raise SystemExit(1)'", "AGENTS_APPROVAL_MODE": "ask"},
             clear=False,
         ):
             with patch("runner.cordis_tools.execute_job") as run:

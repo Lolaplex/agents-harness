@@ -1,12 +1,11 @@
 """Workspace model selection: a persistent provider/model switch.
 
 ``python -m runner.model use --provider openai.default [--model X]`` writes the
-pick to ``<ws>/config.json`` under ``"model"``. ``runner.loop`` and
-``get_provider`` read it when no explicit ``--provider``/``--model`` or
-``LLM_PROVIDER``/``LLM_MODEL`` env applies. Resolution order:
+pick to ``<ws>/config.json`` under ``"model"``. Resolution order for
+``current()`` (aligned with ``agents-relay`` ``turn.py``):
 
-    provider: --provider flag > LLM_PROVIDER env > workspace pick > openai.default
-    model:    --model flag    > workspace pick   > LLM_MODEL env > manifest model
+    provider: workspace pick > LLM_PROVIDER env > default
+    model:    workspace pick > LLM_MODEL env > manifest model
 
 ``list`` shows every provider manifest with the effective pick marked.
 """
@@ -92,27 +91,47 @@ class ModelError(Exception):
 
 def current(workspace: Any = None) -> dict[str, Any]:
     """Effective provider/model for the next turn, plus where each came from."""
-    from .providers import find_provider, get_provider
+    from .providers import OpenAICompatProvider, find_provider, get_provider, list_providers
 
     pick = selected(workspace)
-    provider_name = (
-        os.environ.get("LLM_PROVIDER", "").strip() or pick["provider"] or ""
-    )
+    env_provider = os.environ.get("LLM_PROVIDER", "").strip()
+    provider_name = pick["provider"] or env_provider or ""
+    if provider_name:
+        provider_source = "workspace" if pick["provider"] else "env"
+    else:
+        provider_source = "default"
     try:
-        provider = get_provider(provider_name)
+        if not provider_name and workspace is not None:
+            rows = list_providers()
+            manifest_default = (
+                find_provider("openai.default")
+                or next((r for r in rows if r.get("kind") == "openai_compat"), None)
+                or (rows[0] if rows else None)
+            )
+            if manifest_default is not None:
+                provider = get_provider(str(manifest_default["name"]))
+            else:
+                provider = OpenAICompatProvider(
+                    {
+                        "name": "openai.default",
+                        "kind": "openai_compat",
+                        "url_env": "LLM_BASE_URL",
+                        "key_env": "LLM_API_KEY",
+                        "model_env": "LLM_MODEL",
+                    }
+                )
+        else:
+            provider = get_provider(provider_name)
     except KeyError as exc:
         raise ModelError(str(exc), code=2)
     manifest = find_provider(provider.name) or {}
-    model = (
-        pick["model"]
-        or os.environ.get(manifest.get("model_env") or "LLM_MODEL", "").strip()
-        or str(manifest.get("model") or "")
-    )
+    env_model = os.environ.get(manifest.get("model_env") or "LLM_MODEL", "").strip()
+    model = pick["model"] or env_model or str(manifest.get("model") or "")
     return {
         "provider": provider.name,
-        "provider_source": "env" if os.environ.get("LLM_PROVIDER", "").strip() else ("workspace" if pick["provider"] else "default"),
+        "provider_source": provider_source,
         "model": model,
-        "model_source": "workspace" if pick["model"] else ("env" if os.environ.get(manifest.get("model_env") or "LLM_MODEL", "").strip() else "manifest"),
+        "model_source": "workspace" if pick["model"] else ("env" if env_model else "manifest"),
     }
 
 

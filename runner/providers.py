@@ -10,6 +10,7 @@ import json
 import os
 import urllib.error
 import urllib.request
+import warnings
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Iterable, Protocol
@@ -22,16 +23,27 @@ PROVIDERS_DIR = Path(__file__).parent / "providers"
 
 
 def _provider_dirs(primary: Path | None = None) -> list[Path]:
-    """Package providers first; AGENTS_PROVIDERS_DIR overlays by name.
+    """Package providers first; host dir and AGENTS_PROVIDERS_DIR overlay by name.
 
-    Machine URLs and tokens live in the overlay (agents-sandbox), not in the
-    clone. Extra dir wins on name collision.
+    Machine URLs and tokens live in overlays (``<host>/providers``,
+    agents-sandbox), not in the clone. Later dirs win on name collision;
+    an explicit AGENTS_PROVIDERS_DIR is the strongest pick.
     """
     dirs = [primary or PROVIDERS_DIR]
+    overlays = []
+    try:
+        from agents_workspace import Host
+
+        overlays.append(Host.from_env().dir / "providers")
+    except Exception:
+        pass
     extra = os.environ.get("AGENTS_PROVIDERS_DIR", "").strip()
     if extra:
-        overlay = Path(extra)
-        if overlay.resolve() not in {d.resolve() for d in dirs}:
+        overlays.append(Path(extra))
+    seen = {d.resolve() for d in dirs}
+    for overlay in overlays:
+        if overlay.resolve() not in seen:
+            seen.add(overlay.resolve())
             dirs.append(overlay)
     return dirs
 
@@ -44,6 +56,7 @@ class CompletionRequest:
     extra: dict[str, Any] = field(default_factory=dict)
     on_status: Callable[[str], None] | None = None
     on_delta: Callable[[str], None] | None = None
+    on_thought: Callable[[str], None] | None = None
 
 
 @dataclass
@@ -61,11 +74,29 @@ class Provider(Protocol):
         ...
 
 
+def _warn_plaintext_api_key(
+    manifest: dict[str, Any], *, path: Path | None = None, stacklevel: int = 3
+) -> None:
+    raw = str(manifest.get("api_key") or "").strip()
+    if not raw:
+        return
+    name = str(manifest.get("name") or (path.stem if path is not None else "unknown"))
+    loc = f"{name!r} ({path})" if path is not None else f"{name!r}"
+    warnings.warn(
+        f"Provider manifest {loc} contains plaintext 'api_key'; "
+        "migrate to 'key_env' and store the secret in the host secret vault "
+        "(plaintext 'api_key' is deprecated and will be removed after one release).",
+        UserWarning,
+        stacklevel=stacklevel,
+    )
+
+
 def load_provider(path: Path) -> dict[str, Any]:
     data = load_manifest(path)
     data.setdefault("kind", "openai_compat")
     data.setdefault("when", "on_request")
     data.setdefault("cadence", "on_request")
+    _warn_plaintext_api_key(data, path=path)
     return data
 
 
@@ -215,6 +246,7 @@ def consume_sse(
     lines: Iterable[bytes | str],
     *,
     on_delta: Callable[[str], None] | None = None,
+    on_thought: Callable[[str], None] | None = None,
 ) -> tuple[str, list[Any] | None, dict[str, Any]]:
     """Fold an OpenAI-compat SSE stream into text + tool_calls.
 
@@ -241,6 +273,9 @@ def consume_sse(
         n += 1
         choice = (chunk.get("choices") or [{}])[0]
         delta = choice.get("delta") or {}
+        reasoning = delta.get("reasoning") or delta.get("reasoning_content")
+        if isinstance(reasoning, str) and reasoning and on_thought:
+            on_thought(reasoning)
         piece = delta.get("content")
         if piece:
             text_parts.append(str(piece))
@@ -278,9 +313,11 @@ def _iter_sse_lines(resp: Any, idle_sec: float):
 class OpenAICompatProvider:
     kind = "openai_compat"
 
-    def __init__(self, manifest: dict[str, Any]):
+    def __init__(self, manifest: dict[str, Any], *, _warn_plaintext: bool = True):
         self.name = str(manifest.get("name") or "openai.default")
         self.manifest = manifest
+        if _warn_plaintext:
+            _warn_plaintext_api_key(manifest, stacklevel=3)
 
     def complete(self, req: CompletionRequest) -> CompletionResult:
         url = (
@@ -337,6 +374,8 @@ class OpenAICompatProvider:
             if "tool_choice" not in extra:
                 choice = self.manifest.get("tool_choice")
                 body["tool_choice"] = "auto" if choice is None else choice
+        if "reasoning" not in extra and "reasoning" in self.manifest:
+            body["reasoning"] = self.manifest["reasoning"]
         if extra:
             body.update(extra)
         payload = json.dumps(body).encode("utf-8")
@@ -359,6 +398,7 @@ class OpenAICompatProvider:
                     text, tool_calls, meta = consume_sse(
                         _iter_sse_lines(resp, idle),
                         on_delta=req.on_delta,
+                        on_thought=req.on_thought,
                     )
                     return CompletionResult(text=text, tool_calls=tool_calls, raw=meta)
                 data = json.loads(resp.read().decode("utf-8"))
@@ -375,6 +415,9 @@ class OpenAICompatProvider:
             ) from e
         choice = (data.get("choices") or [{}])[0]
         msg = choice.get("message") or {}
+        reasoning = msg.get("reasoning") or msg.get("reasoning_content")
+        if isinstance(reasoning, str) and reasoning and req.on_thought:
+            req.on_thought(reasoning)
         return CompletionResult(
             text=str(msg.get("content") or "").strip(),
             tool_calls=msg.get("tool_calls") or None,
@@ -423,17 +466,28 @@ def get_provider(name: str = "", providers_dir: Path | None = None) -> Provider:
             wanted = ""
     rows = list_providers(providers_dir)
     manifest = None
+    from_disk = False
     if wanted:
-        manifest = find_provider(wanted, providers_dir)
+        needle = wanted.lower()
+        manifest = next(
+            (r for r in rows if str(r.get("name", "")).lower() == needle),
+            None,
+        )
         if manifest is None:
             raise KeyError(f"no provider named '{wanted}'")
+        from_disk = True
     else:
-        manifest = find_provider("openai.default", providers_dir)
+        manifest = next(
+            (r for r in rows if str(r.get("name", "")).lower() == "openai.default"),
+            None,
+        )
         if manifest is None:
             manifest = next((r for r in rows if r.get("kind") == "openai_compat"), None)
         if manifest is None and rows:
             manifest = rows[0]
-        if manifest is None:
+        if manifest is not None:
+            from_disk = True
+        else:
             manifest = {
                 "name": "openai.default",
                 "kind": "openai_compat",
@@ -445,4 +499,6 @@ def get_provider(name: str = "", providers_dir: Path | None = None) -> Provider:
     factory = _KINDS.get(kind)
     if factory is None:
         raise KeyError(f"unknown provider kind '{kind}'")
+    if factory is OpenAICompatProvider and from_disk:
+        return OpenAICompatProvider(manifest, _warn_plaintext=False)
     return factory(manifest)

@@ -4,7 +4,8 @@
 ``runner.loop --detached-session`` turn and returns ``dlg_<id>``. The subagent
 inherits the workspace environment but its own session, so it can run tools
 while the parent turn continues. State lives under
-``AGENTS_DELEGATES_DIR`` (default ``<workspace>/delegates``):
+``AGENTS_DELEGATES_DIR`` (default ``<workspace>/run/delegates``, with a
+1-release fallback read for legacy ``<workspace>/delegates``):
 
     delegates/<id>/meta.json   id, task, session, supervisor pid, provider, model
     delegates/<id>/out.log     turn stdout
@@ -37,20 +38,37 @@ from pathlib import Path
 from typing import Any
 
 
-def _root() -> Path:
+def _override_dir() -> Path | None:
     raw = os.environ.get("AGENTS_DELEGATES_DIR", "").strip()
-    if raw:
-        return Path(raw).expanduser().resolve()
+    return Path(raw).expanduser().resolve() if raw else None
+
+
+def _roots() -> tuple[Path, Path | None]:
+    """Return ``(primary_delegates_dir, legacy_delegates_dir_or_none)``."""
+    override = _override_dir()
+    if override is not None:
+        return override, None
     from agents_workspace import Workspace
 
-    return Workspace.from_env().dir / "delegates"
+    ws = Workspace.from_env()
+    primary = getattr(ws, "delegates", None) or (ws.dir / "run" / "delegates")
+    legacy = ws.dir / "delegates"
+    return primary, (legacy if legacy != primary else None)
 
 
-def _dir(dlg_id: str) -> Path:
+def _root() -> Path:
+    return _roots()[0]
+
+
+def _safe_id(dlg_id: str) -> str:
     safe = "".join(ch for ch in dlg_id if ch.isalnum() or ch in ("-", "_"))
     if not safe or safe != dlg_id:
         raise DelegateError("invalid delegate id", code=2)
-    return _root() / safe
+    return safe
+
+
+def _dir(dlg_id: str) -> Path:
+    return _root() / _safe_id(dlg_id)
 
 
 class DelegateError(Exception):
@@ -123,15 +141,68 @@ def _state(ddir: Path) -> dict[str, Any]:
 
 
 def _ledger_path() -> Path:
-    # <ws>/run/delegate.depth for the default <ws>/delegates root; scoped inside
+    # <ws>/run/delegate.depth for the default ws.delegates root; scoped inside
     # the delegates dir when AGENTS_DELEGATES_DIR overrides (tests, overlays).
-    base = _root() if os.environ.get("AGENTS_DELEGATES_DIR", "").strip() else _root().parent
-    return base / "run" / "delegate.depth"
+    override = _override_dir()
+    if override is not None:
+        return override / "run" / "delegate.depth"
+    from agents_workspace import Workspace
+
+    ws = Workspace.from_env()
+    run_dir = getattr(ws, "run", None) or (ws.dir / "run")
+    return run_dir / "delegate.depth"
+
+
+def _recompute_ledger() -> int:
+    """Recompute active delegate depth from live runs without exit.json."""
+    max_active = 0
+    try:
+        primary, legacy = _roots()
+    except Exception:
+        primary, legacy = None, None
+    seen: set[str] = set()
+    for root in (primary, legacy):
+        if root is None or not root.is_dir():
+            continue
+        for child in root.iterdir():
+            if child.name in seen or not child.is_dir():
+                continue
+            meta_path = child / "meta.json"
+            if not meta_path.is_file():
+                continue
+            seen.add(child.name)
+            if (child / "exit.json").is_file():
+                continue
+            meta = _read_json(meta_path)
+            try:
+                pid = int(meta.get("pid") or 0)
+            except (TypeError, ValueError):
+                pid = 0
+            if pid <= 0 or not _pid_alive(pid):
+                continue
+            try:
+                run_depth = int(meta.get("depth") or 1)
+            except (TypeError, ValueError):
+                run_depth = 1
+            max_active = max(max_active, max(1, run_depth))
+    try:
+        path = _ledger_path()
+    except Exception:
+        return max_active
+    if max_active > 0:
+        _write_ledger(max_active)
+    else:
+        try:
+            path.unlink(missing_ok=True)
+        except OSError:
+            _write_ledger(0)
+    return max_active
 
 
 def _ledger_depth() -> int:
     """Depth claimed on disk. Same-UID children could forge the env counter;
     the ledger survives env tampering (advisory until real container isolation)."""
+    _recompute_ledger()
     try:
         return int(_ledger_path().read_text(encoding="utf-8").strip() or 0)
     except (OSError, ValueError):
@@ -166,21 +237,111 @@ def _checked_workdir(raw: str) -> str:
     """A delegate workdir must stay inside roots the child's lock would allow.
 
     The child runs with ``AGENTS_WORKDIR_LOCK=1``; letting it point anywhere
-    would make the jail boundary whatever the caller asked for. The accepted
-    set is the same one the harness lock honors: the locked workdir root plus
-    ``agents_workspace.allowed_roots()`` (workspace tree, host infra, allow list).
+    would make the jail boundary whatever the caller asked for.
+    ``agents_workspace.denied_paths(ws)`` is enforced before
+    ``allowed_roots(ws)`` and the locked workdir root so sensitive host and
+    workspace paths are always refused.
     """
-    from agents_workspace import Workspace, allowed_roots
+    from agents_workspace import Workspace, allowed_roots, denied_paths
     from .executor import _under, workdir_root
 
+    ws = Workspace.from_env()
     candidate = Path(raw).expanduser().resolve(strict=False)
-    roots = allowed_roots(Workspace.from_env())
+    if any(_under(denied, candidate) for denied in denied_paths(ws)):
+        raise DelegateError("workdir escapes the workspace boundary", code=2)
+    roots = allowed_roots(ws)
     locked = workdir_root()
     if locked is not None:
         roots.append(locked)
     if not any(_under(root, candidate) for root in roots):
         raise DelegateError("workdir escapes the workspace boundary", code=2)
     return str(candidate)
+
+
+def _resolve_workspace():
+    """Resolve the active Workspace without creating one for standalone overrides."""
+    try:
+        from agents_workspace import Host, Workspace
+    except ImportError:
+        return None
+    if _override_dir() is None:
+        return Workspace.from_env()
+    host = Host.from_env()
+    if os.environ.get("AGENTS_WORKSPACE_ROOT", "").strip() or host.has_legacy_layout():
+        try:
+            return Workspace.from_env()
+        except ValueError:
+            return None
+    env_ws = os.environ.get("AGENTS_WORKSPACE", "").strip()
+    if env_ws:
+        if not host.workspace_exists(env_ws):
+            return None
+        return Workspace.from_env()
+    if not host.list_workspaces():
+        return None
+    try:
+        return Workspace.from_env()
+    except ValueError:
+        return None
+
+
+def _spawn_env(
+    dlg_id: str,
+    *,
+    depth: int,
+    max_depth: int,
+    persona: str = "",
+    workdir: str = "",
+) -> dict[str, str]:
+    ws = _resolve_workspace()
+    if ws is not None:
+        env = ws.env(
+            os.environ,
+            role="turn",
+            persona=persona,
+            workdir=workdir or None,
+        )
+    else:
+        env = dict(os.environ)
+        try:
+            from agents_workspace import INFRA_SECRET_KEYS, REMOVED_ENV
+        except ImportError:
+            INFRA_SECRET_KEYS = (
+                "RELAY_SECRET",
+                "GATEWAY_SECRET",
+                "RELAY_WEB_TOKEN",
+                "TELEGRAM_BOT_TOKEN",
+                "WEBHOOK_SECRET",
+                "DOCKER_HOST",
+                "AGENTS_SYNC_SERVER_SECRET",
+                "AGENTS_TERMINAL_NOTIFY_SECRET",
+            )
+            REMOVED_ENV = ("AGENTS_DIR",)
+        for key in (*INFRA_SECRET_KEYS, *REMOVED_ENV, "AGENTS_SYNC_TOKEN"):
+            env.pop(key, None)
+        if persona:
+            env["AGENTS_PERSONA"] = persona
+    if persona and ws is not None:
+        try:
+            from .personas import apply_memory_env
+
+            apply_memory_env(persona, env, ws)
+        except Exception:
+            pass
+    if workdir:
+        env["AGENTS_WORKDIR"] = workdir
+        env["AGENTS_WORKDIR_LOCK"] = "1"
+    env["AGENTS_DELEGATE"] = dlg_id
+    env["AGENTS_DELEGATE_DEPTH"] = str(depth)
+    try:
+        from agents_workspace import delegate_env
+
+        env = delegate_env(env, max_depth=max_depth)
+    except ImportError:
+        env["AGENTS_DELEGATE_DEPTH"] = str(depth + 1)
+    except ValueError as exc:
+        raise DelegateError(str(exc), code=2) from exc
+    return env
 
 
 def spawn(
@@ -194,21 +355,31 @@ def spawn(
     task = task.strip()
     if not task:
         raise DelegateError("spawn requires --task", code=2)
+    _recompute_ledger()
     depth = _depth()
-    if depth >= _max_depth():
+    max_depth = _max_depth()
+    if depth >= max_depth:
         raise DelegateError(
             f"delegate depth limit reached (AGENTS_DELEGATE_DEPTH={depth})", code=2
         )
     if workdir:
         workdir = _checked_workdir(workdir)
     dlg_id = "dlg_" + uuid.uuid4().hex[:12]
+    session = "ses_dlg_" + dlg_id[4:]
+    env = _spawn_env(
+        dlg_id,
+        depth=depth,
+        max_depth=max_depth,
+        persona=persona,
+        workdir=workdir,
+    )
     ddir = _root() / dlg_id
     ddir.mkdir(parents=True, exist_ok=True)
-    session = "ses_dlg_" + dlg_id[4:]
     meta = {
         "id": dlg_id,
         "task": task,
         "session": session,
+        "depth": depth + 1,
         "provider": provider,
         "model": model,
         "persona": persona,
@@ -218,21 +389,6 @@ def spawn(
     _write_json(ddir / "meta.json", meta)
     _write_ledger(depth + 1)
 
-    env = dict(os.environ)
-    env["AGENTS_DELEGATE"] = dlg_id
-    env["AGENTS_DELEGATE_DEPTH"] = str(depth + 1)
-    if persona:
-        try:
-            from agents_workspace import Workspace
-
-            from .personas import apply_memory_env
-
-            apply_memory_env(persona, env, Workspace.from_env())
-        except Exception:
-            pass
-    if workdir:
-        env["AGENTS_WORKDIR"] = workdir
-        env["AGENTS_WORKDIR_LOCK"] = "1"
     kwargs: dict[str, Any] = {
         "stdin": subprocess.DEVNULL,
         "stdout": subprocess.DEVNULL,
@@ -251,6 +407,11 @@ def spawn(
             **kwargs,
         )
     except OSError as exc:
+        _write_json(
+            ddir / "exit.json",
+            {"code": 1, "finished": datetime.now(timezone.utc).isoformat(), "error": str(exc)},
+        )
+        _recompute_ledger()
         raise DelegateError(str(exc))
     meta["pid"] = proc.pid
     _write_json(ddir / "meta.json", meta)
@@ -284,6 +445,7 @@ def _run_supervisor(dlg_id: str) -> int:
         argv.append(f"--persona={meta['persona']}")
     out_f = ddir / "out.log"
     err_f = ddir / "err.log"
+    code = 1
     try:
         with open(out_f, "wb") as out, open(err_f, "wb") as err:
             proc = subprocess.run(argv, stdout=out, stderr=err, timeout=None)
@@ -291,18 +453,26 @@ def _run_supervisor(dlg_id: str) -> int:
     except Exception as exc:  # supervisor itself failed; record it
         err_f.write_text(f"delegate supervisor failed: {exc}", encoding="utf-8")
         code = 1
-    _write_json(
-        ddir / "exit.json",
-        {"code": code, "finished": datetime.now(timezone.utc).isoformat()},
-    )
+    finally:
+        _write_json(
+            ddir / "exit.json",
+            {"code": code, "finished": datetime.now(timezone.utc).isoformat()},
+        )
+        _recompute_ledger()
     return code
 
 
 def _load(dlg_id: str) -> Path:
-    ddir = _dir(dlg_id)
-    if not (ddir / "meta.json").is_file():
-        raise DelegateError("unknown delegate id", code=2)
-    return ddir
+    safe = _safe_id(dlg_id)
+    primary, legacy = _roots()
+    ddir = primary / safe
+    if (ddir / "meta.json").is_file():
+        return ddir
+    if legacy is not None:
+        legacy_dir = legacy / safe
+        if (legacy_dir / "meta.json").is_file():
+            return legacy_dir
+    raise DelegateError("unknown delegate id", code=2)
 
 
 def status(dlg_id: str) -> dict[str, Any]:
@@ -310,12 +480,19 @@ def status(dlg_id: str) -> dict[str, Any]:
 
 
 def list_runs() -> dict[str, Any]:
-    root = _root()
+    primary, legacy = _roots()
     rows = []
-    if root.is_dir():
+    seen: set[str] = set()
+    for root in (primary, legacy):
+        if root is None or not root.is_dir():
+            continue
         for child in sorted(root.iterdir()):
+            if child.name in seen:
+                continue
             if child.is_dir() and (child / "meta.json").is_file():
+                seen.add(child.name)
                 rows.append(_state(child))
+    rows.sort(key=lambda r: r["id"])
     return {"delegates": rows}
 
 
@@ -368,6 +545,7 @@ def cancel(dlg_id: str) -> dict[str, Any]:
     ddir = _load(dlg_id)
     state = _state(ddir)
     if state["state"] == "exited":
+        _recompute_ledger()
         return {"id": dlg_id, "state": "exited", "exit_code": state.get("exit_code")}
     _kill_tree(int(state.get("pid") or 0))
     if not (ddir / "exit.json").is_file():
@@ -375,6 +553,7 @@ def cancel(dlg_id: str) -> dict[str, Any]:
             ddir / "exit.json",
             {"code": -9, "finished": datetime.now(timezone.utc).isoformat(), "cancelled": True},
         )
+    _recompute_ledger()
     return {"id": dlg_id, "state": "exited", "exit_code": -9}
 
 

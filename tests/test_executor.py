@@ -64,6 +64,105 @@ class TestWorkspaceJob(unittest.TestCase):
             self.assertEqual(result["status"], "ERROR")
             self.assertIn("unknown workspace", result["stderr"])
 
+    def test_execute_job_redacts_stderr_before_log_return_and_stream(self):
+        import io
+        from contextlib import redirect_stderr
+        from agents_workspace import Host
+
+        with tempfile.TemporaryDirectory() as tmp:
+            host = Host(dir=Path(tmp) / "host")
+            ws = host.create("demo")
+            log_file = Path(tmp) / "runner.jsonl"
+            secret_tok = "sk-stderrsecret12345678"
+            relay_val = "relay_secret_value_99"
+            verb = (
+                "python -c "
+                "\"import sys; sys.stderr.write('boom ' + 'sk-' + 'stderrsecret12345678 ' + 'relay_' + 'secret_value_99\\n'); sys.exit(1)\""
+            )
+            manifest = {
+                "name": "err_redact",
+                "verb": verb,
+                "rests_on": "test",
+                "cadence": "one_shot",
+                "expected_exit": 0,
+                "timeout_sec": 15,
+            }
+            stream = io.StringIO()
+            with patch.dict(
+                os.environ,
+                {
+                    "AGENTS_HOST_DIR": str(host.dir),
+                    "AGENTS_WORKSPACE": "demo",
+                    "RELAY_SECRET": relay_val,
+                },
+                clear=False,
+            ):
+                with redirect_stderr(stream):
+                    res = execute_job(manifest, log_path=log_file, workspace=ws)
+            logged = json.loads(log_file.read_text(encoding="utf-8").splitlines()[0])
+            for text in (res["stderr"], res["stderr_tail"], logged["stderr_tail"], stream.getvalue()):
+                self.assertNotIn(secret_tok, text)
+                self.assertNotIn(relay_val, text)
+                self.assertIn("[redacted]", text)
+
+    def test_execute_job_uses_tool_role_env_and_preserves_overrides(self):
+        from agents_workspace import Host
+
+        with tempfile.TemporaryDirectory() as tmp:
+            host = Host(dir=Path(tmp) / "host")
+            ws = host.create("demo")
+            script = Path(tmp) / "dump_env.py"
+            script.write_text(
+                "import json, os; print(json.dumps(dict(os.environ)))",
+                encoding="utf-8",
+            )
+            base_env = {
+                "AGENTS_HOST_DIR": str(host.dir),
+                "AGENTS_WORKSPACE": "demo",
+                "AGENTS_WORKDIR_LOCK": "1",
+                "AGENTS_PERSONA": "ops",
+                "RELAY_SECRET": "relay_sek_123",
+                "GATEWAY_SECRET": "gw_sek_123",
+                "RELAY_WEB_TOKEN": "web_tok_123",
+                "TELEGRAM_BOT_TOKEN": "tg_tok_123",
+                "LLM_API_KEY": "llm_key_123",
+                "OPENAI_API_KEY": "oai_key_123",
+                "AGENTS_APPROVAL_TOKEN": "app_tok_123",
+                "AGENTS_SYNC_TOKEN": "sync_tok_123",
+                "GITHUB_TOKEN": "gh_tok_123",
+            }
+            manifest = {
+                "name": "env_role_check",
+                "verb": f'python "{script}"',
+                "rests_on": "test",
+                "cadence": "one_shot",
+                "expected_exit": 0,
+                "timeout_sec": 20,
+                "env": {"TOOL_OVERRIDE": "explicit-ok"},
+            }
+            with patch.dict(os.environ, base_env, clear=False):
+                res_default = execute_job(manifest, log_path=None)
+                res_explicit = execute_job(manifest, log_path=None, workspace=ws)
+            for res, expect_persona in ((res_default, "ops"), (res_explicit, "")):
+                self.assertEqual(res["status"], "SUCCESS", res["stderr"])
+                child_env = json.loads(res["stdout"])
+                for stripped in (
+                    "RELAY_SECRET",
+                    "GATEWAY_SECRET",
+                    "RELAY_WEB_TOKEN",
+                    "TELEGRAM_BOT_TOKEN",
+                    "LLM_API_KEY",
+                    "OPENAI_API_KEY",
+                    "AGENTS_APPROVAL_TOKEN",
+                    "AGENTS_SYNC_TOKEN",
+                    "GITHUB_TOKEN",
+                ):
+                    self.assertNotIn(stripped, child_env)
+                self.assertEqual(child_env.get("AGENTS_WORKDIR_LOCK"), "1")
+                self.assertEqual(child_env.get("TOOL_OVERRIDE"), "explicit-ok")
+                self.assertTrue(any(k.upper() == "PATH" and child_env[k] for k in child_env))
+                self.assertEqual(child_env.get("AGENTS_PERSONA", ""), expect_persona)
+
 
 class TestHarnessExecutor(unittest.TestCase):
     def setUp(self):

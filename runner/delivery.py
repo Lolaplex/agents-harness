@@ -33,11 +33,13 @@ def bind_delivery(
     stdout: TextIO | None = None,
     stderr: TextIO | None = None,
     stdout_tty: bool | None = None,
-) -> tuple[str, Callable[[str], None] | None, Callable[[str], None] | None, Callable[[str], None]]:
-    """status, delta, emit for one request.
+) -> tuple[str, Callable[[str], None] | None, Callable[[str], None] | None, Callable[[str], None] | None, Callable[[str], None]]:
+    """status, delta, thought, emit for one request.
 
-    status: prompt received, generation ongoing (stderr).
+    status: prompt received, generation ongoing (stderr, one line each).
     delta: tokens, only when delivery is stream (stdout, no newline).
+    thought: model reasoning chunks (stderr, raw, no newline) — stderr is
+    the thought channel for ACP/relay consumers.
     emit: final buffered answer (stdout). Stream delivery only ends the line.
     """
     out = stdout if stdout is not None else sys.stdout
@@ -47,6 +49,11 @@ def bind_delivery(
         msg = (text or "thinking...").strip()
         if msg:
             print(msg, file=err, flush=True)
+
+    def on_thought(piece: str) -> None:
+        if piece:
+            err.write(piece)
+            err.flush()
 
     on_delta: Callable[[str], None] | None = None
     if mode == "stream":
@@ -65,4 +72,4 @@ def bind_delivery(
             if text:
                 print(text, file=out, flush=True)
 
-    return mode, on_status, on_delta, emit
+    return mode, on_status, on_delta, on_thought, emit

@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import shlex
+import sys
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -23,6 +24,8 @@ from runner.approval_policy import (
 )
 from runner.cordis_tools import handle_cordis_tool
 from runner.modules import find_module
+
+_DENY_CMD = f"{shlex.quote(sys.executable)} -c 'raise SystemExit(1)'"
 
 
 def _env(**extra: str) -> dict[str, str]:
@@ -76,7 +79,7 @@ class RulesDoNotWeaken(unittest.TestCase):
         self.assertIsNotNone(git_mod)
         with patch.dict(
             os.environ,
-            _env(AGENTS_APPROVAL_CMD="false", AGENTS_APPROVAL_MODE="ask"),
+            _env(AGENTS_APPROVAL_CMD=_DENY_CMD, AGENTS_APPROVAL_MODE="ask"),
             clear=True,
         ):
             self.assertFalse(needs_approval(git_mod, {"command": "status"}))
@@ -179,7 +182,7 @@ class RulesDoNotWeaken(unittest.TestCase):
         with patch.dict(
             os.environ,
             _env(
-                AGENTS_APPROVAL_CMD="false",
+                AGENTS_APPROVAL_CMD=_DENY_CMD,
                 AGENTS_APPROVAL_MODE="off",
                 AGENTS_APPROVAL_RULES=rules,
             ),
@@ -248,3 +251,31 @@ class RulesDoNotWeaken(unittest.TestCase):
             with patch.dict(os.environ, _env(AGENTS_APPROVAL_POLICY=str(path)), clear=True):
                 with self.assertRaises(PolicyError):
                     load_rules()
+
+    def test_multi_workspace_config_uses_default_workspace_and_default_fallback(self):
+        from runner.workspace_config import config_documents
+
+        with TemporaryDirectory() as tmp:
+            host = Host(dir=Path(tmp) / "host")
+            host.dir.mkdir()
+            # Empty host: reading config must not create a default workspace.
+            with patch.dict(os.environ, _env(AGENTS_HOST_DIR=str(host.dir)), clear=True):
+                self.assertEqual(config_documents(), [{}])
+                self.assertEqual(host.list_workspaces(), [])
+
+            ws_default = host.create("default")
+            ws_beta = host.create("beta")
+            ws_default.config.write_text(
+                json.dumps({"approval": {"rules": [{"action": "cmd:rm", "decision": "deny"}]}}),
+                encoding="utf-8",
+            )
+            ws_beta.config.write_text(
+                json.dumps({"approval": {"rules": [{"action": "fs.delete", "decision": "deny"}]}}),
+                encoding="utf-8",
+            )
+            with patch.dict(os.environ, _env(AGENTS_HOST_DIR=str(host.dir)), clear=True):
+                rules_default = load_rules()
+                self.assertEqual([(r.action, r.decision) for r in rules_default], [("cmd:rm", "deny")])
+                host.agents_json.write_text(json.dumps({"default_workspace": "beta"}), encoding="utf-8")
+                rules_beta = load_rules()
+                self.assertEqual([(r.action, r.decision) for r in rules_beta], [("fs.delete", "deny")])

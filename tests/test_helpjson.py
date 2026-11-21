@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import json
 import os
+import shlex
 import subprocess
+import sys
 import unittest
 from unittest.mock import patch
 
@@ -21,6 +23,8 @@ from runner.helpjson import (
 )
 from runner.mcp_client import modules_from_descriptors
 from runner.modules import find_module
+
+_DENY_CMD = f"{shlex.quote(sys.executable)} -c 'raise SystemExit(1)'"
 
 
 FAKE = {
@@ -152,7 +156,7 @@ class TestClassify(unittest.TestCase):
     def test_approval_uses_the_command_not_the_module_flag(self) -> None:
         with patch.dict(
             os.environ,
-            {"AGENTS_APPROVAL_CMD": "false", "AGENTS_APPROVAL_MODE": "ask"},
+            {"AGENTS_APPROVAL_CMD": _DENY_CMD, "AGENTS_APPROVAL_MODE": "ask"},
             clear=False,
         ):
             self.assertFalse(needs_approval(FAKE, {"argv": ["list", "."]}))
@@ -167,7 +171,7 @@ class TestClassify(unittest.TestCase):
         self.assertIn("declined", why)
         with patch.dict(
             os.environ,
-            {"AGENTS_APPROVAL_CMD": "false", "AGENTS_APPROVAL_MODE": "strict"},
+            {"AGENTS_APPROVAL_CMD": _DENY_CMD, "AGENTS_APPROVAL_MODE": "strict"},
             clear=False,
         ):
             self.assertFalse(needs_approval(FAKE, {"command_name": "read", "path": "a"}))
@@ -274,7 +278,7 @@ class TestClassify(unittest.TestCase):
                 return Proc()
             return real_run(argv, *args, **kwargs)
 
-        env = {"AGENTS_APPROVAL_CMD": "false", "AGENTS_APPROVAL_MODE": "ask"}
+        env = {"AGENTS_APPROVAL_CMD": _DENY_CMD, "AGENTS_APPROVAL_MODE": "ask"}
         with patch.dict(os.environ, env, clear=False):
             with patch("runner.helpjson.subprocess.run", side_effect=_run):
                 with patch("runner.cordis_tools.find_module", return_value=dict(mod)):

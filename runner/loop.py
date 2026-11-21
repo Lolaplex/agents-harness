@@ -847,7 +847,7 @@ def _main_impl(argv: list[str] | None = None) -> int:
     if slash in ("/undo", "/compress", "/retry"):
         from .session_ops import compress_session, rewind_after_last_user, undo_last_turn
 
-        mode, on_status, on_delta, emit = bind_delivery(args.channel, override=args.deliver)
+        mode, on_status, on_delta, on_thought, emit = bind_delivery(args.channel, override=args.deliver)
         if slash == "/undo":
             res = undo_last_turn(session)
             text = (
@@ -947,7 +947,7 @@ def _main_impl(argv: list[str] | None = None) -> int:
         return 1
 
     provider = get_provider(args.provider or provider_name)
-    mode, on_status, on_delta, emit = bind_delivery(args.channel, override=args.deliver)
+    mode, on_status, on_delta, on_thought, emit = bind_delivery(args.channel, override=args.deliver)
     if user_text or attachments:
         recorded = user_text
         if attachments:
@@ -977,6 +977,7 @@ def _main_impl(argv: list[str] | None = None) -> int:
         tools=tools or None,
         on_status=on_status,
         on_delta=on_delta,
+        on_thought=on_thought,
     )
     max_rounds = max(1, getattr(args, "max_tool_rounds", 12))
     last_scratch = ""
@@ -1077,6 +1078,7 @@ def _main_impl(argv: list[str] | None = None) -> int:
                     tools=round_tools,
                     on_status=on_status,
                     on_delta=on_delta,
+                    on_thought=on_thought,
                 ),
             )
         except Exception as e:
@@ -1130,6 +1132,7 @@ def _main_impl(argv: list[str] | None = None) -> int:
                     tools=None,
                     on_status=on_status,
                     on_delta=on_delta,
+                    on_thought=on_thought,
                 ),
             )
         except Exception as e:
@@ -1181,6 +1184,7 @@ def _main_impl(argv: list[str] | None = None) -> int:
                         tools=None,
                         on_status=on_status,
                         on_delta=on_delta,
+                        on_thought=on_thought,
                     ),
                 )
             except Exception as exc:

@@ -17,7 +17,7 @@ class TestDelivery(unittest.TestCase):
 
     def test_buffered_acks_stderr_and_prints_once(self):
         out, err = io.StringIO(), io.StringIO()
-        mode, on_status, on_delta, emit = bind_delivery(
+        mode, on_status, on_delta, on_thought, emit = bind_delivery(
             "telegram", stdout=out, stderr=err, stdout_tty=True
         )
         self.assertEqual(mode, "buffered")
@@ -30,7 +30,7 @@ class TestDelivery(unittest.TestCase):
 
     def test_stream_writes_tokens(self):
         out, err = io.StringIO(), io.StringIO()
-        mode, on_status, on_delta, emit = bind_delivery(
+        mode, on_status, on_delta, on_thought, emit = bind_delivery(
             "local", stdout=out, stderr=err, stdout_tty=True
         )
         self.assertEqual(mode, "stream")
