@@ -22,16 +22,27 @@ PROVIDERS_DIR = Path(__file__).parent / "providers"
 
 
 def _provider_dirs(primary: Path | None = None) -> list[Path]:
-    """Package providers first; AGENTS_PROVIDERS_DIR overlays by name.
+    """Package providers first; host dir and AGENTS_PROVIDERS_DIR overlay by name.
 
-    Machine URLs and tokens live in the overlay (agents-sandbox), not in the
-    clone. Extra dir wins on name collision.
+    Machine URLs and tokens live in overlays (``<host>/providers``,
+    agents-sandbox), not in the clone. Later dirs win on name collision;
+    an explicit AGENTS_PROVIDERS_DIR is the strongest pick.
     """
     dirs = [primary or PROVIDERS_DIR]
+    overlays = []
+    try:
+        from agents_workspace import Host
+
+        overlays.append(Host.from_env().dir / "providers")
+    except Exception:
+        pass
     extra = os.environ.get("AGENTS_PROVIDERS_DIR", "").strip()
     if extra:
-        overlay = Path(extra)
-        if overlay.resolve() not in {d.resolve() for d in dirs}:
+        overlays.append(Path(extra))
+    seen = {d.resolve() for d in dirs}
+    for overlay in overlays:
+        if overlay.resolve() not in seen:
+            seen.add(overlay.resolve())
             dirs.append(overlay)
     return dirs
 
@@ -44,6 +55,7 @@ class CompletionRequest:
     extra: dict[str, Any] = field(default_factory=dict)
     on_status: Callable[[str], None] | None = None
     on_delta: Callable[[str], None] | None = None
+    on_thought: Callable[[str], None] | None = None
 
 
 @dataclass
@@ -215,6 +227,7 @@ def consume_sse(
     lines: Iterable[bytes | str],
     *,
     on_delta: Callable[[str], None] | None = None,
+    on_thought: Callable[[str], None] | None = None,
 ) -> tuple[str, list[Any] | None, dict[str, Any]]:
     """Fold an OpenAI-compat SSE stream into text + tool_calls.
 
@@ -241,6 +254,9 @@ def consume_sse(
         n += 1
         choice = (chunk.get("choices") or [{}])[0]
         delta = choice.get("delta") or {}
+        reasoning = delta.get("reasoning") or delta.get("reasoning_content")
+        if isinstance(reasoning, str) and reasoning and on_thought:
+            on_thought(reasoning)
         piece = delta.get("content")
         if piece:
             text_parts.append(str(piece))
@@ -337,6 +353,8 @@ class OpenAICompatProvider:
             if "tool_choice" not in extra:
                 choice = self.manifest.get("tool_choice")
                 body["tool_choice"] = "auto" if choice is None else choice
+        if "reasoning" not in extra and "reasoning" in self.manifest:
+            body["reasoning"] = self.manifest["reasoning"]
         if extra:
             body.update(extra)
         payload = json.dumps(body).encode("utf-8")
@@ -359,6 +377,7 @@ class OpenAICompatProvider:
                     text, tool_calls, meta = consume_sse(
                         _iter_sse_lines(resp, idle),
                         on_delta=req.on_delta,
+                        on_thought=req.on_thought,
                     )
                     return CompletionResult(text=text, tool_calls=tool_calls, raw=meta)
                 data = json.loads(resp.read().decode("utf-8"))
@@ -375,6 +394,9 @@ class OpenAICompatProvider:
             ) from e
         choice = (data.get("choices") or [{}])[0]
         msg = choice.get("message") or {}
+        reasoning = msg.get("reasoning") or msg.get("reasoning_content")
+        if isinstance(reasoning, str) and reasoning and req.on_thought:
+            req.on_thought(reasoning)
         return CompletionResult(
             text=str(msg.get("content") or "").strip(),
             tool_calls=msg.get("tool_calls") or None,
