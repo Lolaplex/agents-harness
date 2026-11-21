@@ -162,41 +162,70 @@ def _merge_mcp(base: dict[str, Any], overlay: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+def _resolve_ws_no_create():
+    """Resolve the active Workspace without creating a missing workspace dir."""
+    from agents_workspace import Host, Workspace
+
+    host = Host.from_env()
+    if os.environ.get("AGENTS_WORKSPACE_ROOT", "").strip() or host.has_legacy_layout():
+        try:
+            return Workspace.from_env()
+        except ValueError:
+            return None
+    env_ws = os.environ.get("AGENTS_WORKSPACE", "").strip()
+    if env_ws:
+        return host.workspace(env_ws) if host.workspace_exists(env_ws) else None
+    found = host.list_workspaces()
+    if not found:
+        return None
+    if len(found) == 1:
+        return found[0]
+    try:
+        return host.select_workspace(env=os.environ)
+    except ValueError:
+        return None
+
+
 def _workspace_overlay_targets() -> tuple[str, Path | None]:
     """Resolve ``(ws_id, <ws>/mcp.json)`` without creating a default workspace."""
     try:
-        from agents_workspace import Host, Workspace
+        from agents_workspace import Host, Workspace  # noqa: F401
     except ImportError:
         ws_id = os.environ.get("AGENTS_WORKSPACE", "").strip()
         if not (_WS_ID_OK.match(ws_id) and ".." not in ws_id):
             return "", None
         return ws_id, _host_dir() / "workspaces" / ws_id / "mcp.json"
 
-    host = Host.from_env()
-    if os.environ.get("AGENTS_WORKSPACE_ROOT", "").strip() or host.has_legacy_layout():
-        try:
-            ws = Workspace.from_env()
-            return ws.id, ws.mcp_json
-        except ValueError:
-            return "", None
-    env_ws = os.environ.get("AGENTS_WORKSPACE", "").strip()
-    if env_ws:
-        if host.workspace_exists(env_ws):
-            ws = host.workspace(env_ws)
-            return ws.id, ws.mcp_json
-        if _WS_ID_OK.match(env_ws) and ".." not in env_ws:
-            return env_ws, None
-        return "", None
-    found = host.list_workspaces()
-    if not found:
-        return "", None
-    if len(found) == 1:
-        return found[0].id, found[0].mcp_json
-    try:
-        ws = host.select_workspace(env=os.environ)
+    ws = _resolve_ws_no_create()
+    if ws is not None:
         return ws.id, ws.mcp_json
-    except ValueError:
-        return "", None
+    env_ws = os.environ.get("AGENTS_WORKSPACE", "").strip()
+    if env_ws and _WS_ID_OK.match(env_ws) and ".." not in env_ws:
+        return env_ws, None
+    return "", None
+
+
+def _expand_trusted(data: dict[str, Any]) -> dict[str, Any]:
+    """Expand ``${VAR}`` via host/workspace secret vault when available, else env."""
+    try:
+        from agents_workspace import Host, expand_secrets
+    except ImportError:
+        return _interpolate(data)
+    env: dict[str, str] | None = None
+    if not str(os.environ.get("AGENTS_KEYRING") or "").strip():
+        try:
+            Path.home()
+        except RuntimeError:
+            # secrets._keyring_enabled checks default_host_dir() -> Path.home()
+            # when AGENTS_KEYRING is unset; disable keyring in homedir-less envs.
+            env = {**os.environ, "AGENTS_KEYRING": "0"}
+    return expand_secrets(
+        data,
+        ws=_resolve_ws_no_create(),
+        host=Host.from_env(),
+        env=env,
+        trusted=True,
+    )
 
 
 def _config_layers() -> tuple[Path, Path | None, Path | None]:
@@ -210,24 +239,24 @@ def _config_layers() -> tuple[Path, Path | None, Path | None]:
 
 def load_mcp_config(path: Path | None = None) -> dict[str, Any] | None:
     """Host ``mcp.json``, optional host ``<host>/mcp/ws-<id>.json`` (both
-    ``${ENV}``-interpolated), plus uninterpolated ``<ws>/mcp.json``.
+    vault/env-expanded), plus unexpanded ``<ws>/mcp.json``.
 
     An explicit ``path`` short-circuits the merge.
     """
     if path is not None:
         data = _load_one(path)
-        return _interpolate(data) if data is not None else None
+        return _expand_trusted(data) if data is not None else None
     cfg_path, host_ws_path, ws_mcp = _config_layers()
     data: dict[str, Any] = {}
     found = False
     raw_host = _load_one(cfg_path)
     if raw_host is not None:
-        data = _interpolate(raw_host)
+        data = _expand_trusted(raw_host)
         found = True
     if host_ws_path is not None and host_ws_path != cfg_path and host_ws_path.is_file():
         raw_host_ws = _load_one(host_ws_path)
         if raw_host_ws is not None:
-            data = _merge_mcp(data, _interpolate(raw_host_ws))
+            data = _merge_mcp(data, _expand_trusted(raw_host_ws))
             found = True
     if (
         ws_mcp is not None
@@ -237,7 +266,7 @@ def load_mcp_config(path: Path | None = None) -> dict[str, Any] | None:
     ):
         raw_ws = _load_one(ws_mcp)
         if raw_ws is not None:
-            # Agent-writable <ws>/mcp.json must never expand ${ENV} host secrets.
+            # Agent-writable <ws>/mcp.json must never expand ${ENV} or vault secrets.
             data = _merge_mcp(data, raw_ws)
             found = True
     if not found or not data:

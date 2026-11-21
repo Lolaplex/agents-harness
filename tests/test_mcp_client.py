@@ -231,6 +231,112 @@ class TestMcpClient(unittest.TestCase):
             self.assertEqual(rows, [{"name": "mcp.srv.ping", "kind": "mcp_remote"}])
             self.assertEqual(seen_cfg["mcpServers"]["srv"]["headers"]["X"], "sek")
 
+    def test_trusted_layers_expand_vault_secrets_and_ws_mcp_stays_unexpanded(self):
+        from agents_workspace import Host, write_secret
+
+        with tempfile.TemporaryDirectory() as tmp:
+            host = Host(dir=Path(tmp) / "host")
+            ws = host.create("alpha")
+            write_secret("HOST_VAULT_TOK", "hv_secret", host=host, scope="host")
+            write_secret("WS_VAULT_TOK", "wv_secret", host=host, ws=ws, scope="workspace")
+
+            host.mcp_json.write_text(
+                json.dumps(
+                    {
+                        "mcpServers": {
+                            "host_srv": {
+                                "url": "https://host.test",
+                                "headers": {
+                                    "Authorization": "Bearer ${HOST_VAULT_TOK}",
+                                    "X-Fallback": "${MISSING_OPT:-fallback}",
+                                },
+                            }
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (host.dir / "mcp").mkdir()
+            (host.dir / "mcp" / "ws-alpha.json").write_text(
+                json.dumps(
+                    {
+                        "mcpServers": {
+                            "ws_overlay": {
+                                "url": "https://overlay.test",
+                                "headers": {"X-Ws-Secret": "${WS_VAULT_TOK}"},
+                            }
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+            ws.mcp_json.write_text(
+                json.dumps(
+                    {
+                        "mcpServers": {
+                            "untrusted": {
+                                "url": "https://agent.test/${HOST_VAULT_TOK}",
+                                "headers": {"Authorization": "Bearer ${WS_VAULT_TOK}"},
+                                "env": {"LEAK": "${ENV_TOK}"},
+                            }
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            env = {
+                "AGENTS_HOST_DIR": str(host.dir),
+                "AGENTS_WORKSPACE": "alpha",
+                "ENV_TOK": "env_only_secret",
+            }
+            with patch.dict(os.environ, env, clear=True):
+                cfg = load_mcp_config()
+                self.assertIsNotNone(cfg)
+                assert cfg is not None
+                servers = cfg["mcpServers"]
+                self.assertEqual(servers["host_srv"]["headers"]["Authorization"], "Bearer hv_secret")
+                self.assertEqual(servers["host_srv"]["headers"]["X-Fallback"], "fallback")
+                self.assertEqual(servers["ws_overlay"]["headers"]["X-Ws-Secret"], "wv_secret")
+                self.assertEqual(servers["untrusted"]["url"], "https://agent.test/${HOST_VAULT_TOK}")
+                self.assertEqual(servers["untrusted"]["headers"]["Authorization"], "Bearer ${WS_VAULT_TOK}")
+                self.assertEqual(servers["untrusted"]["env"]["LEAK"], "${ENV_TOK}")
+
+                explicit = Path(tmp) / "explicit.json"
+                explicit.write_text(
+                    json.dumps({"mcpServers": {"exp": {"url": "https://exp.test", "headers": {"X": "${WS_VAULT_TOK}"}}}}),
+                    encoding="utf-8",
+                )
+                exp_cfg = load_mcp_config(explicit)
+                self.assertIsNotNone(exp_cfg)
+                assert exp_cfg is not None
+                self.assertEqual(exp_cfg["mcpServers"]["exp"]["headers"]["X"], "wv_secret")
+
+            # Empty host without workspaces must not create workspaces/ when expanding <host>/mcp.json.
+            empty_host = Host(dir=Path(tmp) / "empty_host")
+            write_secret("HOST_VAULT_TOK", "hv_only", host=empty_host, scope="host")
+            empty_host.mcp_json.write_text(
+                json.dumps({"mcpServers": {"h": {"url": "https://h.test", "headers": {"X": "${HOST_VAULT_TOK}"}}}}),
+                encoding="utf-8",
+            )
+            with patch.dict(os.environ, {"AGENTS_HOST_DIR": str(empty_host.dir)}, clear=True):
+                h_cfg = load_mcp_config()
+                self.assertIsNotNone(h_cfg)
+                assert h_cfg is not None
+                self.assertEqual(h_cfg["mcpServers"]["h"]["headers"]["X"], "hv_only")
+                self.assertFalse((empty_host.dir / "workspaces").exists())
+
+            # ImportError fallback expands trusted layers from env while keeping <ws>/mcp.json unexpanded.
+            import sys
+
+            with patch.dict(os.environ, env, clear=True):
+                with patch.dict(sys.modules, {"agents_workspace": None}):
+                    fb_cfg = load_mcp_config()
+            self.assertIsNotNone(fb_cfg)
+            assert fb_cfg is not None
+            self.assertEqual(fb_cfg["mcpServers"]["host_srv"]["headers"]["Authorization"], "Bearer ")
+            self.assertEqual(fb_cfg["mcpServers"]["untrusted"]["env"]["LEAK"], "${ENV_TOK}")
+
 
 if __name__ == "__main__":
     unittest.main()

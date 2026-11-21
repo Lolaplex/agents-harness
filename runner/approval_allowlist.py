@@ -77,15 +77,11 @@ def _workspace_roots(workspace: Any = None, host: Any | None = None) -> list[Pat
     host_key = _path_key(Path(host_dir)) if host_dir is not None else ""
 
     if host is not None:
-        ws_dir_fn = getattr(host, "_workspaces_dir", None)
-        if callable(ws_dir_fn):
-            try:
-                roots.append(Path(ws_dir_fn()))
-            except Exception:
-                pass
         ws_parent = getattr(host, "workspaces_dir", None)
         if ws_parent is not None:
             roots.append(Path(ws_parent))
+        elif host_dir is not None:
+            roots.append(Path(host_dir) / "workspaces")
     elif host_dir is not None:
         roots.append(Path(host_dir) / "workspaces")
 
