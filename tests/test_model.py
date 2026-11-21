@@ -60,6 +60,32 @@ class TestModelPick(unittest.TestCase):
         self.assertEqual(cur["model"], "m1")
         self.assertEqual(cur["model_source"], "workspace")
 
+    def test_current_precedence_workspace_beats_env_beats_default(self) -> None:
+        with patch.dict(os.environ, {"LLM_PROVIDER": "", "LLM_MODEL": ""}):
+            cur_default = model.current()
+            self.assertEqual(cur_default["provider_source"], "default")
+
+        with patch.dict(os.environ, {"LLM_PROVIDER": "echo", "LLM_MODEL": "env-m"}):
+            cur_env = model.current()
+            self.assertEqual(cur_env["provider"], "echo")
+            self.assertEqual(cur_env["provider_source"], "env")
+
+        model.use("echo", model="ws-m")
+        with patch.dict(os.environ, {"LLM_PROVIDER": "openai.default", "LLM_MODEL": "env-m"}):
+            cur_ws = model.current()
+            self.assertEqual(cur_ws["provider"], "echo")
+            self.assertEqual(cur_ws["provider_source"], "workspace")
+            self.assertEqual(cur_ws["model"], "ws-m")
+            self.assertEqual(cur_ws["model_source"], "workspace")
+
+    def test_current_explicit_workspace_does_not_leak_active_pick(self) -> None:
+        ws_other = Host.from_env().create("other", "other")
+        model.use("echo", model="m1")
+        with patch.dict(os.environ, {"LLM_PROVIDER": "", "LLM_MODEL": ""}):
+            cur_other = model.current(ws_other)
+            self.assertEqual(cur_other["provider_source"], "default")
+            self.assertNotEqual(cur_other["model"], "m1")
+
 
 class TestModelDeclaredCommands(unittest.TestCase):
     """commands_from: help-json wires the module without a cordis_tools shim."""

@@ -48,9 +48,10 @@ class RecallSwitch(unittest.TestCase):
         clear_recall_providers()
 
     def test_default_is_off_and_adds_no_prompt_line(self):
-        with patch.dict(os.environ, _env(), clear=True):
-            self.assertFalse(recall_enabled())
-            payload = build_payload("ses_recall", "What color is the sandbox canary?")
+        with TemporaryDirectory() as tmp:
+            with patch.dict(os.environ, _env(AGENTS_HOST_DIR=tmp), clear=True):
+                self.assertFalse(recall_enabled())
+                payload = build_payload("ses_recall", "What color is the sandbox canary?")
         blob = "\n".join(
             item["content"] for item in payload if isinstance(item.get("content"), str)
         )

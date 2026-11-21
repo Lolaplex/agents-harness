@@ -15,6 +15,8 @@ from runner.approval import gate_module, module_is_mutator, module_is_read_only
 from runner.cordis_tools import handle_cordis_tool
 from runner.modules import find_module
 
+_DENY_CMD = f"{shlex.quote(sys.executable)} -c 'raise SystemExit(1)'"
+
 
 class TestApproval(unittest.TestCase):
     def test_read_and_mutate_flags(self):
@@ -128,7 +130,7 @@ class TestApproval(unittest.TestCase):
         self.assertIsNotNone(add)
         self.assertTrue(add["mutates"])
         self.assertIs(add.get("approval_ask"), False)
-        env_ask = {"AGENTS_APPROVAL_CMD": "false", "AGENTS_APPROVAL_MODE": "ask"}
+        env_ask = {"AGENTS_APPROVAL_CMD": _DENY_CMD, "AGENTS_APPROVAL_MODE": "ask"}
         with patch.dict(os.environ, env_ask, clear=False):
             with patch("runner.cordis_tools.execute_job", return_value={"status": "SUCCESS", "stdout_tail": "added"}) as run:
                 out = handle_cordis_tool(
@@ -151,7 +153,7 @@ class TestApproval(unittest.TestCase):
             remove_run.assert_not_called()
             self.assertTrue(denied.startswith("Denied:"))
         self.assertTrue(remove["mutates"])
-        with patch.dict(os.environ, {"AGENTS_APPROVAL_CMD": "false", "AGENTS_APPROVAL_MODE": "strict"}, clear=False):
+        with patch.dict(os.environ, {"AGENTS_APPROVAL_CMD": _DENY_CMD, "AGENTS_APPROVAL_MODE": "strict"}, clear=False):
             with patch("runner.cordis_tools.execute_job") as strict_run:
                 strict = handle_cordis_tool(
                     "call_job",
@@ -169,7 +171,7 @@ class TestApproval(unittest.TestCase):
     def test_ask_skips_read_only(self):
         with patch.dict(
             os.environ,
-            {"AGENTS_APPROVAL_CMD": "false", "AGENTS_APPROVAL_MODE": "ask"},
+            {"AGENTS_APPROVAL_CMD": _DENY_CMD, "AGENTS_APPROVAL_MODE": "ask"},
             clear=False,
         ):
             with patch("runner.cordis_tools.execute_job", return_value={"status": "SUCCESS", "stdout_tail": "listed"}) as run:
@@ -183,7 +185,7 @@ class TestApproval(unittest.TestCase):
     def test_off_mode_skips_even_with_command(self):
         with patch.dict(
             os.environ,
-            {"AGENTS_APPROVAL_CMD": "false", "AGENTS_APPROVAL_MODE": "off"},
+            {"AGENTS_APPROVAL_CMD": _DENY_CMD, "AGENTS_APPROVAL_MODE": "off"},
             clear=False,
         ):
             with patch("runner.cordis_tools.execute_job", return_value={"status": "SUCCESS", "stdout_tail": "added"}) as run:

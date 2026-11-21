@@ -40,7 +40,20 @@ from typing import Any
 
 _ENV = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
 _SAFE = re.compile(r"[^A-Za-z0-9_-]")
+_WS_ID_OK = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
 _CACHE_MEM: dict[str, Any] = {"key": None, "modules": []}
+
+
+def _host_dir() -> Path:
+    try:
+        from agents_workspace import Host
+
+        return Host.from_env().dir
+    except ImportError:
+        raw = os.environ.get("AGENTS_HOST_DIR", "").strip()
+        if raw:
+            return Path(raw).expanduser().resolve()
+        return (Path.home() / ".agents").resolve()
 
 
 def mcp_config_path() -> Path:
@@ -60,9 +73,12 @@ def mcp_config_path() -> Path:
             )
     if raw:
         return Path(raw).expanduser()
-    from agents_workspace import Workspace
+    try:
+        from agents_workspace import Host
 
-    return Workspace.from_env().host.mcp_json
+        return Host.from_env().mcp_json
+    except ImportError:
+        return _host_dir() / "mcp.json"
 
 
 def mcp_cache_path() -> Path:
@@ -82,9 +98,12 @@ def mcp_cache_path() -> Path:
             )
     if raw:
         return Path(raw).expanduser()
-    from agents_workspace import Workspace
+    try:
+        from agents_workspace import Host
 
-    return Workspace.from_env().host.cache / "mcp-tools-cache.json"
+        return Host.from_env().cache / "mcp-tools-cache.json"
+    except ImportError:
+        return _host_dir() / "cache" / "mcp-tools-cache.json"
 
 
 def _cache_ttl() -> float:
@@ -143,27 +162,87 @@ def _merge_mcp(base: dict[str, Any], overlay: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+def _workspace_overlay_targets() -> tuple[str, Path | None]:
+    """Resolve ``(ws_id, <ws>/mcp.json)`` without creating a default workspace."""
+    try:
+        from agents_workspace import Host, Workspace
+    except ImportError:
+        ws_id = os.environ.get("AGENTS_WORKSPACE", "").strip()
+        if not (_WS_ID_OK.match(ws_id) and ".." not in ws_id):
+            return "", None
+        return ws_id, _host_dir() / "workspaces" / ws_id / "mcp.json"
+
+    host = Host.from_env()
+    if os.environ.get("AGENTS_WORKSPACE_ROOT", "").strip() or host.has_legacy_layout():
+        try:
+            ws = Workspace.from_env()
+            return ws.id, ws.mcp_json
+        except ValueError:
+            return "", None
+    env_ws = os.environ.get("AGENTS_WORKSPACE", "").strip()
+    if env_ws:
+        if host.workspace_exists(env_ws):
+            ws = host.workspace(env_ws)
+            return ws.id, ws.mcp_json
+        if _WS_ID_OK.match(env_ws) and ".." not in env_ws:
+            return env_ws, None
+        return "", None
+    found = host.list_workspaces()
+    if not found:
+        return "", None
+    if len(found) == 1:
+        return found[0].id, found[0].mcp_json
+    try:
+        ws = host.select_workspace(env=os.environ)
+        return ws.id, ws.mcp_json
+    except ValueError:
+        return "", None
+
+
+def _config_layers() -> tuple[Path, Path | None, Path | None]:
+    """Return ``(host_cfg, host_ws_overlay, ws_overlay)`` paths."""
+    cfg_path = mcp_config_path()
+    host_dir = _host_dir()
+    ws_id, ws_mcp = _workspace_overlay_targets()
+    host_ws_path = (host_dir / "mcp" / f"ws-{ws_id}.json") if ws_id else None
+    return cfg_path, host_ws_path, ws_mcp
+
+
 def load_mcp_config(path: Path | None = None) -> dict[str, Any] | None:
-    """Host ``mcp.json`` plus the optional ``<ws>/mcp.json`` overlay
-    (D-mcp-level). An explicit ``path`` short-circuits the merge."""
+    """Host ``mcp.json``, optional host ``<host>/mcp/ws-<id>.json`` (both
+    ``${ENV}``-interpolated), plus uninterpolated ``<ws>/mcp.json``.
+
+    An explicit ``path`` short-circuits the merge.
+    """
     if path is not None:
         data = _load_one(path)
         return _interpolate(data) if data is not None else None
-    cfg_path = mcp_config_path()
-    data = _load_one(cfg_path)
-    if data is None and not cfg_path.is_file():
+    cfg_path, host_ws_path, ws_mcp = _config_layers()
+    data: dict[str, Any] = {}
+    found = False
+    raw_host = _load_one(cfg_path)
+    if raw_host is not None:
+        data = _interpolate(raw_host)
+        found = True
+    if host_ws_path is not None and host_ws_path != cfg_path and host_ws_path.is_file():
+        raw_host_ws = _load_one(host_ws_path)
+        if raw_host_ws is not None:
+            data = _merge_mcp(data, _interpolate(raw_host_ws))
+            found = True
+    if (
+        ws_mcp is not None
+        and ws_mcp != cfg_path
+        and ws_mcp != host_ws_path
+        and ws_mcp.is_file()
+    ):
+        raw_ws = _load_one(ws_mcp)
+        if raw_ws is not None:
+            # Agent-writable <ws>/mcp.json must never expand ${ENV} host secrets.
+            data = _merge_mcp(data, raw_ws)
+            found = True
+    if not found or not data:
         return None
-    data = data or {}
-    from agents_workspace import Workspace
-
-    overlay_path = Workspace.from_env().dir / "mcp.json"
-    if overlay_path != cfg_path and overlay_path.is_file():
-        overlay = _load_one(overlay_path)
-        if overlay:
-            data = _merge_mcp(data, overlay)
-    if not data:
-        return None
-    return _interpolate(data)
+    return data
 
 
 def server_map(cfg: dict[str, Any]) -> dict[str, dict[str, Any]]:
@@ -432,12 +511,20 @@ def discover_modules(cfg: dict[str, Any]) -> list[dict[str, Any]]:
     return asyncio.run(_discover(cfg))
 
 
+def _cache_key_for(paths: list[Path]) -> str:
+    return "|".join(_cache_key(p) for p in paths)
+
+
 def remote_modules() -> list[dict[str, Any]]:
     """Catalog rows for configured remote tools. Empty when no config or SDK."""
-    path = mcp_config_path()
-    if not path.is_file():
+    cfg_path, host_ws_path, ws_mcp = _config_layers()
+    existing: list[Path] = []
+    for p in (cfg_path, host_ws_path, ws_mcp):
+        if p is not None and p not in existing and p.is_file():
+            existing.append(p)
+    if not existing:
         return []
-    key = _cache_key(path)
+    key = _cache_key_for(existing)
     if _CACHE_MEM.get("key") == key and _cache_ttl() != 0:
         fetched = float(_CACHE_MEM.get("fetched_at") or 0)
         if (time.time() - fetched) <= _cache_ttl():
@@ -448,7 +535,7 @@ def remote_modules() -> list[dict[str, Any]]:
         _CACHE_MEM["fetched_at"] = time.time()
         _CACHE_MEM["modules"] = disk
         return list(disk)
-    cfg = load_mcp_config(path)
+    cfg = load_mcp_config()
     if not cfg:
         return []
     try:

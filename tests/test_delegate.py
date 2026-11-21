@@ -82,6 +82,40 @@ class TestDelegate(unittest.TestCase):
         finally:
             delegate.cancel(spawned["id"])
 
+    def test_denied_paths_refused_before_allowed_roots(self) -> None:
+        from pathlib import Path
+        from unittest.mock import patch
+        from agents_workspace import Host, denied_paths
+
+        with tempfile.TemporaryDirectory() as tmp:
+            host = Host(dir=Path(tmp) / "host")
+            ws = host.create("demo")
+            (host.keys / "sub").mkdir(parents=True, exist_ok=True)
+            (host.dir / "mcp").mkdir(parents=True, exist_ok=True)
+            (host.dir / "secrets").mkdir(parents=True, exist_ok=True)
+            with patch.dict(
+                os.environ,
+                {
+                    "AGENTS_HOST_DIR": str(host.dir),
+                    "AGENTS_WORKSPACE": "demo",
+                    # Even explicit allow-listing must not override denied_paths.
+                    "AGENTS_WORKDIR_ALLOW": os.pathsep.join(
+                        [str(host.keys), str(ws.secrets), str(host.dir / "mcp")]
+                    ),
+                },
+                clear=False,
+            ):
+                targets = list(denied_paths(ws)) + [
+                    host.keys / "sub",
+                    host.dir / "mcp" / "ws-demo.json",
+                    host.dir / "secrets" / "app.json",
+                ]
+                for target in targets:
+                    with self.assertRaises(delegate.DelegateError, msg=str(target)):
+                        delegate.spawn("x", workdir=str(target))
+                self.assertEqual(delegate._checked_workdir(str(ws.dir)), str(ws.dir.resolve()))
+                self.assertEqual(delegate._checked_workdir(str(ws.workdir)), str(ws.workdir.resolve()))
+
     def test_dash_task_not_parsed_as_flag(self) -> None:
         """A task starting with '-' must reach the child as a value, not an option."""
         spawned = delegate.spawn("--verbose marker", provider="echo")

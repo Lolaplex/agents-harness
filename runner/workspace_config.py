@@ -46,10 +46,21 @@ def _workspace_from_env(host):
                 return None
             return host.workspace(ws_id)
         found = host.list_workspaces()
+        if not found:
+            return None
+        if len(found) == 1:
+            return found[0]
+        if hasattr(host, "select_workspace"):
+            return host.select_workspace(env=os.environ)
+        from agents_workspace import host_config
+
+        configured = str(host_config(host).get("default_workspace") or "").strip()
+        if configured:
+            return host.workspace(configured) if host.workspace_exists(configured) else None
+        if host.workspace_exists("default"):
+            return host.workspace("default")
     except Exception:
         return None
-    if len(found) == 1:
-        return found[0]
     return None
 
 

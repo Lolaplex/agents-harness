@@ -318,6 +318,37 @@ def refuse_workspace(cwd: str | Path | None, root: Path | None = None) -> str | 
     return None
 
 
+def _tool_env(
+    ws: "Workspace",
+    manifest: Dict[str, Any],
+    *,
+    inherit_persona: bool = False,
+) -> dict[str, str]:
+    persona = str(
+        manifest.get("persona")
+        or (os.environ.get("AGENTS_PERSONA") if inherit_persona else "")
+        or ""
+    ).strip()
+    extra_allow = manifest.get("extra_allow")
+    allow = (
+        [str(k) for k in extra_allow]
+        if isinstance(extra_allow, (list, tuple, set))
+        else ()
+    )
+    env = ws.env(role="tool", persona=persona, extra_allow=allow)
+    mod_env = manifest.get("env")
+    if isinstance(mod_env, dict):
+        for k, v in mod_env.items():
+            key = str(k).strip()
+            if not key:
+                continue
+            if v is None:
+                env.pop(key, None)
+            else:
+                env[key] = str(v)
+    return env
+
+
 def execute_job(
     manifest: Dict[str, Any],
     log_path: Optional[Path] = DEFAULT_LOG_FILE,
@@ -340,7 +371,7 @@ def execute_job(
     workspace_error = ""
     if workspace is not None:
         # Explicit object: child env comes straight from it, no re-resolve.
-        job_env = workspace.env()
+        job_env = _tool_env(workspace, manifest)
         if _lock_on():
             job_root = workspace.workdir.resolve(strict=False)
     elif workspace_ref:
@@ -350,9 +381,13 @@ def execute_job(
         if ws is None:
             workspace_error = f"unknown workspace: {workspace_ref}"
         else:
-            job_env = ws.env()
+            job_env = _tool_env(ws, manifest)
             if _lock_on():
                 job_root = ws.workdir.resolve(strict=False)
+    else:
+        from agents_workspace import Workspace
+
+        job_env = _tool_env(Workspace.from_env(), manifest, inherit_persona=True)
 
     print(f"[*] Running '{name}' (rests on: {manifest['rests_on']})...", file=sys.stderr)
     print(f"    CMD: {verb}" + (f" {extra_argv}" if extra_argv else ""), file=sys.stderr)
@@ -382,7 +417,7 @@ def execute_job(
             )
             exit_code = proc.returncode
             stdout_text = redact_tool_output(proc.stdout.strip())
-            stderr_text = proc.stderr.strip()
+            stderr_text = redact_tool_output(proc.stderr.strip())
 
             if exit_code != expected_exit:
                 status = "FAILED"
@@ -400,8 +435,8 @@ def execute_job(
         print(f"[-] '{name}' TIMEOUT after {timeout_sec}s", file=sys.stderr)
     except Exception as e:
         status = "ERROR"
-        stderr_text = str(e)
-        print(f"[-] '{name}' ERROR: {e}", file=sys.stderr)
+        stderr_text = redact_tool_output(str(e))
+        print(f"[-] '{name}' ERROR: {stderr_text}", file=sys.stderr)
 
     duration_ms = (time.time() - start_time) * 1000.0
     record = {

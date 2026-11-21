@@ -166,15 +166,19 @@ def _checked_workdir(raw: str) -> str:
     """A delegate workdir must stay inside roots the child's lock would allow.
 
     The child runs with ``AGENTS_WORKDIR_LOCK=1``; letting it point anywhere
-    would make the jail boundary whatever the caller asked for. The accepted
-    set is the same one the harness lock honors: the locked workdir root plus
-    ``agents_workspace.allowed_roots()`` (workspace tree, host infra, allow list).
+    would make the jail boundary whatever the caller asked for.
+    ``agents_workspace.denied_paths(ws)`` is enforced before
+    ``allowed_roots(ws)`` and the locked workdir root so sensitive host and
+    workspace paths are always refused.
     """
-    from agents_workspace import Workspace, allowed_roots
+    from agents_workspace import Workspace, allowed_roots, denied_paths
     from .executor import _under, workdir_root
 
+    ws = Workspace.from_env()
     candidate = Path(raw).expanduser().resolve(strict=False)
-    roots = allowed_roots(Workspace.from_env())
+    if any(_under(denied, candidate) for denied in denied_paths(ws)):
+        raise DelegateError("workdir escapes the workspace boundary", code=2)
+    roots = allowed_roots(ws)
     locked = workdir_root()
     if locked is not None:
         roots.append(locked)
