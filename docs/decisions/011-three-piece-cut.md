@@ -1,0 +1,4 @@
+# 011 Three Piece Cut
+
+- Cut: Felix keeps agents-assistant as a private personal bot. We do not build on it. Three pieces: (1) agents-gateway — protocols only (Telegram, HTTP, later A2A), POST into the loop, no ~/.agents. (2) agents-harness — the loop; Cordis modules point at brain/tools CLIs, it does not merge or import those stores. (3) agents-sandbox tests the install of that bundle into an isolated AGENTS_HOME. vand + origins.lock is the recipe; live data is one machine ~/.agents. No Dockerfile-as-brain-install.
+- The loop does not advertise every module as an OpenAI function. Cordis always-on is three verbs: list_catalog, load_schema, call_job. The rest is discovered in the turn (catalog names in the prefix; schemas/bodies fill when named). `enabled.json` is a sandbox smoke overlay, not the live tool list.
