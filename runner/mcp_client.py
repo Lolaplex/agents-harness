@@ -101,9 +101,16 @@ def mcp_cache_path() -> Path:
     try:
         from agents_workspace import Host
 
-        return Host.from_env().cache / "mcp-tools-cache.json"
+        host = Host.from_env()
     except ImportError:
         return _host_dir() / "cache" / "mcp-tools-cache.json"
+    try:
+        ws = _resolve_ws_no_create()
+    except Exception:
+        ws = None
+    if ws is not None:
+        return host.cache / f"mcp-tools-cache-{ws.id}.json"
+    return host.cache / "mcp-tools-cache.json"
 
 
 def _cache_ttl() -> float:

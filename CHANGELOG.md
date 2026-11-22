@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Provider overlays layered package < `<host>/providers` < `AGENTS_PROVIDERS_DIR` (later wins), `<ws>/config.json` `approval.mode` resolution, approval allowlists at `Host.approval_allowlist` with legacy path fallback and workspace-path rejection, per-workspace `mcp-tools-cache-<ws>.json` via `_resolve_ws_no_create()` (#37).
+
 ### Fixed
 - Workspace persona manifests are scrubbed to an allowlist (`id`, `name`, `system_append`, `notes`) on load; unknown keys — including privileged ones like `allowed_kinds` or `caps_ref` — are ignored so a remote persona create cannot claim package-only fields.
 - `a2a.peer` resolves the relay via `RELAY_URL`, then `http://127.0.0.1:$RELAY_PORT`, then `GATEWAY_URL` (deprecated) instead of hardcoding 8787 — works on-host and in-container. Transport failure exits non-zero with `{"ok": false}` (no fake `stub: true` receipt). Module text clarifies it is cross-host board DID mail; intra-workspace persona chat uses `persona.*`. Verb moved to `python -m runner.a2a_peer`.

@@ -132,6 +132,19 @@ def store_path(workspace: Any = None) -> Path | None:
         return _fallback_host_dir() / "approval-allowlist.json"
     if host is None:
         return None
+    ws = workspace
+    if ws is None:
+        try:
+            from .mcp_client import _resolve_ws_no_create
+
+            ws = _resolve_ws_no_create()
+        except Exception:
+            ws = None
+    host_dir = getattr(host, "dir", None)
+    if ws is not None and host_dir is not None:
+        ws_id = str(getattr(ws, "id", "") or "").strip()
+        if ws_id:
+            return Path(host_dir) / "approvals" / f"ws-{ws_id}.allowlist.json"
     allowlist = getattr(host, "approval_allowlist", None)
     if allowlist is not None:
         return Path(allowlist)
@@ -144,8 +157,7 @@ def store_path(workspace: Any = None) -> Path | None:
     return Path(agents).parent / "approval-allowlist.json"
 
 
-def load_patterns(workspace: Any = None) -> list[str]:
-    path = store_path(workspace)
+def _read_patterns(path: Path | None) -> list[str]:
     if path is None or not path.is_file():
         return []
     try:
@@ -157,6 +169,19 @@ def load_patterns(workspace: Any = None) -> list[str]:
     if not isinstance(data, list):
         return []
     return [str(p).strip() for p in data if str(p).strip()]
+
+
+def load_patterns(workspace: Any = None) -> list[str]:
+    path = store_path(workspace)
+    patterns = _read_patterns(path)
+    # Migration read: a workspace-scoped path never loses patterns that only
+    # exist in the legacy host-wide file.
+    if path is not None and path.name != "approval-allowlist.json":
+        host, _ = _resolve_host(workspace)
+        host_dir = getattr(host, "dir", None) if host is not None else None
+        legacy = Path(host_dir) / "approval-allowlist.json" if host_dir else None
+        patterns += [p for p in _read_patterns(legacy) if p not in patterns]
+    return patterns
 
 
 def _canonical(tool: str, args: Any) -> str:
@@ -202,7 +227,7 @@ def remember(tool: str, args: Any, pattern: str = "", *, workspace: Any = None) 
     if path is None:
         return None
     pat = (pattern or "").strip() or _canonical(tool, args)
-    patterns = load_patterns(workspace)
+    patterns = _read_patterns(path)
     if pat not in patterns:
         patterns.append(pat)
         try:

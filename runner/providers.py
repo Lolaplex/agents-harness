@@ -34,7 +34,16 @@ def _provider_dirs(primary: Path | None = None) -> list[Path]:
     try:
         from agents_workspace import Host
 
-        overlays.append(Host.from_env().dir / "providers")
+        host = Host.from_env()
+        overlays.append(host.dir / "providers")
+        try:
+            from .mcp_client import _resolve_ws_no_create
+
+            ws = _resolve_ws_no_create()
+        except Exception:
+            ws = None
+        if ws is not None:
+            overlays.append(host.dir / "providers" / f"ws-{ws.id}")
     except Exception:
         pass
     extra = os.environ.get("AGENTS_PROVIDERS_DIR", "").strip()

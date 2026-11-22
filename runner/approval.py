@@ -42,11 +42,35 @@ def approval_command() -> str:
     return os.environ.get("AGENTS_APPROVAL_CMD", "").strip()
 
 
-def approval_mode() -> str:
-    """Resolved mode. Empty mode + command => ask. Empty mode + no command => off."""
+def _workspace_approval_mode(workspace: Any = None) -> str:
+    """``approval.mode`` from the active workspace's ``config.json`` ("" if none)."""
+    try:
+        from agents_workspace import read_workspace_config
+
+        ws = workspace
+        if ws is None:
+            from .mcp_client import _resolve_ws_no_create
+
+            ws = _resolve_ws_no_create()
+        if ws is None:
+            return ""
+        cfg = read_workspace_config(ws)
+        approval = cfg.get("approval") if isinstance(cfg.get("approval"), dict) else {}
+        mode = str(approval.get("mode") or "").strip().lower()
+        return mode if mode in ("off", "ask", "strict") else ""
+    except Exception:
+        return ""
+
+
+def approval_mode(workspace: Any = None) -> str:
+    """Resolved mode. ``AGENTS_APPROVAL_MODE`` > ``<ws>/config.json``
+    ``approval.mode`` > empty mode + command => ask; else off."""
     mode = os.environ.get("AGENTS_APPROVAL_MODE", "").strip().lower()
     if mode in ("off", "ask", "strict"):
         return mode
+    ws_mode = _workspace_approval_mode(workspace)
+    if ws_mode:
+        return ws_mode
     if approval_command():
         return "ask"
     return "off"
@@ -89,8 +113,10 @@ def call_is_mutator(mod: dict[str, Any], args: Any = None) -> bool:
     return module_is_mutator(mod)
 
 
-def needs_approval(mod: dict[str, Any], args: Any = None) -> bool:
-    mode = approval_mode()
+def needs_approval(
+    mod: dict[str, Any], args: Any = None, *, workspace: Any = None
+) -> bool:
+    mode = approval_mode(workspace)
     if mode == "off" or not approval_command():
         return False
     if args is not None:
@@ -247,7 +273,7 @@ def gate_module(
         return False, _denied(req_id, tool, str(exc))
     if rule is not None and rule.decision == "deny":
         return False, _denied(req_id, tool, f"policy denied {matched or rule.action}")
-    tier_ask = needs_approval(mod, args)
+    tier_ask = needs_approval(mod, args, workspace=workspace)
     rule_ask = rule is not None and rule.decision == "ask" and bool(approval_command())
     if not tier_ask and not rule_ask:
         return True, ""

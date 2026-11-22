@@ -340,3 +340,51 @@ class TestMcpClient(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestWorkspaceMcpCache(unittest.TestCase):
+    """agents-harness#37: per-workspace mcp-tools-cache-<ws.id>.json."""
+
+    def test_cache_path_scoped_per_workspace(self):
+        import os
+        from unittest.mock import patch
+        from agents_workspace import Host
+        from runner.mcp_client import mcp_cache_path
+
+        with tempfile.TemporaryDirectory() as tmp:
+            host = Host.open(tmp)
+            host.create("ws-a")
+            host.create("ws-b")
+            env = {
+                "AGENTS_HOST_DIR": tmp,
+                "AGENTS_MCP_CACHE_FILE": "",
+                "AGENTS_MCP_CACHE": "",
+            }
+            env["AGENTS_WORKSPACE"] = "ws-a"
+            with patch.dict(os.environ, env, clear=False):
+                self.assertEqual(
+                    mcp_cache_path(),
+                    host.cache / "mcp-tools-cache-ws-a.json")
+            env["AGENTS_WORKSPACE"] = "ws-b"
+            with patch.dict(os.environ, env, clear=False):
+                self.assertEqual(
+                    mcp_cache_path(),
+                    host.cache / "mcp-tools-cache-ws-b.json")
+
+    def test_env_override_still_wins(self):
+        import os
+        from unittest.mock import patch
+        from agents_workspace import Host
+        from runner.mcp_client import mcp_cache_path
+
+        with tempfile.TemporaryDirectory() as tmp:
+            host = Host.open(tmp)
+            host.create("ws-a")
+            env = {
+                "AGENTS_HOST_DIR": tmp,
+                "AGENTS_WORKSPACE": "ws-a",
+                "AGENTS_MCP_CACHE_FILE": str(Path(tmp) / "explicit.json"),
+            }
+            with patch.dict(os.environ, env, clear=False):
+                self.assertEqual(
+                    mcp_cache_path(), Path(tmp) / "explicit.json")

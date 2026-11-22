@@ -98,16 +98,26 @@ class TestAllowlist(unittest.TestCase):
             self.skipTest("no host")
         path = al.store_path()
         self.assertIsNotNone(path)
-        self.assertEqual(path, host.approval_allowlist)
-        self.assertEqual(path.parent, Path(host.agents_json).parent)
+        # Active workspace context scopes the store under <host>/approvals/;
+        # without any workspace the legacy host-wide file is used.
+        from agents_workspace import Workspace  # noqa: F401
+
+        found = host.list_workspaces()
+        if found:
+            self.assertEqual(path.parent, host.dir / "approvals")
+            self.assertTrue(path.name.startswith("ws-"))
+            self.assertTrue(path.name.endswith(".allowlist.json"))
+        else:
+            self.assertEqual(path, host.approval_allowlist)
 
         with tempfile.TemporaryDirectory() as tmp:
             isolated = Host(dir=Path(tmp) / "host")
             ws = isolated.create("demo")
             with patch.dict(os.environ, {"AGENTS_HOST_DIR": str(isolated.dir)}, clear=False):
                 os.environ.pop("AGENTS_APPROVAL_ALLOWLIST", None)
-                self.assertEqual(al.store_path(), isolated.approval_allowlist)
-                self.assertEqual(al.store_path(ws), isolated.approval_allowlist)
+                ws_path = isolated.dir / "approvals" / "ws-demo.allowlist.json"
+                self.assertEqual(al.store_path(), ws_path)
+                self.assertEqual(al.store_path(ws), ws_path)
 
     def test_workspace_inside_override_paths_rejected(self) -> None:
         from unittest.mock import patch
@@ -198,3 +208,45 @@ class TestAllowlist(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestWorkspaceScopedAllowlist(unittest.TestCase):
+    """agents-harness#37: <host>/approvals/ws-<id>.allowlist.json."""
+
+    def test_patterns_isolated_per_workspace(self):
+        import os
+        from unittest.mock import patch
+        from agents_workspace import Host
+        from runner.approval_allowlist import is_allowed, remember, store_path
+
+        with tempfile.TemporaryDirectory() as tmp:
+            host = Host.open(tmp)
+            ws_a = host.create("ws-a")
+            host.create("ws-b")
+            env = {"AGENTS_HOST_DIR": tmp, "AGENTS_WORKSPACE": "ws-a"}
+            with patch.dict(os.environ, env, clear=False):
+                path = store_path()
+                self.assertEqual(
+                    path, host.dir / "approvals" / "ws-ws-a.allowlist.json")
+                remember("mcp.terminal", {"cmd": "git status"})
+                self.assertTrue(is_allowed("mcp.terminal", {"cmd": "git status"}))
+            env["AGENTS_WORKSPACE"] = "ws-b"
+            with patch.dict(os.environ, env, clear=False):
+                self.assertFalse(is_allowed("mcp.terminal", {"cmd": "git status"}))
+                self.assertEqual(
+                    store_path(),
+                    host.dir / "approvals" / "ws-ws-b.allowlist.json")
+
+    def test_explicit_workspace_arg(self):
+        import os
+        from unittest.mock import patch
+        from agents_workspace import Host
+        from runner.approval_allowlist import store_path
+
+        with tempfile.TemporaryDirectory() as tmp:
+            host = Host.open(tmp)
+            ws_a = host.create("ws-a")
+            with patch.dict(os.environ, {"AGENTS_HOST_DIR": tmp}, clear=False):
+                self.assertEqual(
+                    store_path(ws_a),
+                    host.dir / "approvals" / "ws-ws-a.allowlist.json")
