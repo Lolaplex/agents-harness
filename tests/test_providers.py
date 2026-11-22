@@ -167,3 +167,52 @@ class TestProviderKeyWarnings(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestWorkspaceProviderOverlays(unittest.TestCase):
+    """agents-harness#37: <host>/providers/ws-<id> layering."""
+
+    def test_ws_overlay_overrides_host(self):
+        import json
+        import os
+        from unittest.mock import patch
+        from agents_workspace import Host
+        from runner.providers import find_provider
+
+        with tempfile.TemporaryDirectory() as tmp:
+            host = Host.open(tmp)
+            host.create("ws-a")
+            host.create("ws-b")
+            (host.dir / "providers").mkdir(parents=True)
+            (host.dir / "providers" / "custom.json").write_text(json.dumps(
+                {"name": "custom", "kind": "echo", "verb": "true", "cadence": "on_request", "rests_on": []}), encoding="utf-8")
+            ws_dir = host.dir / "providers" / "ws-ws-a"
+            ws_dir.mkdir(parents=True)
+            (ws_dir / "custom.json").write_text(json.dumps(
+                {"name": "custom", "kind": "scripted", "verb": "true", "cadence": "on_request", "rests_on": [], "tool_name": "ws-a-tool"}), encoding="utf-8")
+            env = {"AGENTS_HOST_DIR": tmp, "AGENTS_WORKSPACE": "ws-a"}
+            with patch.dict(os.environ, env, clear=False):
+                row = find_provider("custom")
+                self.assertEqual(row["kind"], "scripted")
+            env = {"AGENTS_HOST_DIR": tmp, "AGENTS_WORKSPACE": "ws-b"}
+            with patch.dict(os.environ, env, clear=False):
+                row = find_provider("custom")
+                self.assertEqual(row["kind"], "echo")
+
+    def test_ws_local_providers_dir_ignored(self):
+        import json
+        import os
+        from unittest.mock import patch
+        from agents_workspace import Host
+        from runner.providers import find_provider
+
+        with tempfile.TemporaryDirectory() as tmp:
+            host = Host.open(tmp)
+            ws = host.create("ws-a")
+            poison = ws.dir / "providers"
+            poison.mkdir(parents=True)
+            (poison / "evil.json").write_text(json.dumps(
+                {"name": "evil", "kind": "echo", "verb": "true", "cadence": "on_request", "rests_on": []}), encoding="utf-8")
+            env = {"AGENTS_HOST_DIR": tmp, "AGENTS_WORKSPACE": "ws-a"}
+            with patch.dict(os.environ, env, clear=False):
+                self.assertIsNone(find_provider("evil"))

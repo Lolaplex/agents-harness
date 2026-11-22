@@ -220,3 +220,47 @@ class TestApproval(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestWorkspaceApprovalMode(unittest.TestCase):
+    """agents-harness#37: approval.mode from <ws>/config.json."""
+
+    def test_ws_config_mode_applies_per_workspace(self):
+        from unittest.mock import patch
+        from agents_workspace import Host, update_workspace_config
+        from runner.approval import approval_mode
+
+        with tempfile.TemporaryDirectory() as tmp:
+            host = Host.open(tmp)
+            ws_a = host.create("ws-a")
+            host.create("ws-b")
+            update_workspace_config(ws_a, {"approval": {"mode": "strict"}})
+            env = {
+                "AGENTS_HOST_DIR": tmp,
+                "AGENTS_WORKSPACE": "ws-a",
+                "AGENTS_APPROVAL_CMD": "",
+                "AGENTS_APPROVAL_MODE": "",
+            }
+            with patch.dict(os.environ, env, clear=False):
+                self.assertEqual(approval_mode(), "strict")
+            env["AGENTS_WORKSPACE"] = "ws-b"
+            with patch.dict(os.environ, env, clear=False):
+                self.assertEqual(approval_mode(), "off")
+
+    def test_env_mode_beats_ws_config(self):
+        from unittest.mock import patch
+        from agents_workspace import Host, update_workspace_config
+        from runner.approval import approval_mode
+
+        with tempfile.TemporaryDirectory() as tmp:
+            host = Host.open(tmp)
+            ws_a = host.create("ws-a")
+            update_workspace_config(ws_a, {"approval": {"mode": "strict"}})
+            env = {
+                "AGENTS_HOST_DIR": tmp,
+                "AGENTS_WORKSPACE": "ws-a",
+                "AGENTS_APPROVAL_MODE": "off",
+                "AGENTS_APPROVAL_CMD": "",
+            }
+            with patch.dict(os.environ, env, clear=False):
+                self.assertEqual(approval_mode(), "off")
