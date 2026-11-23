@@ -165,6 +165,109 @@ class TestProviderKeyWarnings(unittest.TestCase):
         self.assertIn("api_key", str(caught[0].message))
 
 
+def _http_error(code: int, retry_after: str | None = None):
+    import email.message
+    import urllib.error
+
+    hdrs = email.message.Message()
+    if retry_after is not None:
+        hdrs["Retry-After"] = retry_after
+    return urllib.error.HTTPError(
+        "https://api.example/v1/chat/completions", code, "err", hdrs,
+        io.BytesIO(b'{"error":"busy"}'))
+
+
+class TestProviderRetries(unittest.TestCase):
+    def _prov(self, **extra):
+        manifest = {"name": "retry.prov", "url": "https://api.example/v1",
+                    "model": "m", "key_env": "RETRY_TEST_KEY"}
+        manifest.update(extra)
+        return OpenAICompatProvider(manifest)
+
+    def _run(self, prov, outcomes):
+        calls = []
+        sleeps = []
+        statuses = []
+
+        def fake_urlopen(req, timeout=None):
+            calls.append(json.loads(req.data.decode("utf-8")).get("model"))
+            item = outcomes[len(calls) - 1]
+            if isinstance(item, Exception):
+                raise item
+            return _FakeResponse(json.dumps(
+                {"choices": [{"message": {"content": item}}]}).encode("utf-8"))
+
+        with patch("urllib.request.urlopen", side_effect=fake_urlopen), \
+                patch("runner.providers._sleep", side_effect=sleeps.append):
+            try:
+                res = prov.complete(CompletionRequest(
+                    messages=[{"role": "user", "content": "hi"}],
+                    extra={"stream": False}, on_status=statuses.append))
+            except RuntimeError as exc:
+                res = exc
+        return res, calls, sleeps, statuses
+
+    def test_retries_transient_then_succeeds(self):
+        res, calls, sleeps, statuses = self._run(
+            self._prov(), [_http_error(429), _http_error(503), "ok"])
+        self.assertEqual(res.text, "ok")
+        self.assertEqual(len(calls), 3)
+        self.assertEqual(sleeps, [1.0, 2.0])
+        self.assertTrue(any("retry 1/2" in s for s in statuses))
+
+    def test_gives_up_after_retries(self):
+        res, calls, sleeps, _ = self._run(
+            self._prov(), [_http_error(502) for _ in range(3)])
+        self.assertIsInstance(res, RuntimeError)
+        self.assertIn("HTTP 502", str(res))
+        self.assertEqual(len(calls), 3)
+
+    def test_non_transient_not_retried(self):
+        res, calls, sleeps, _ = self._run(
+            self._prov(), [_http_error(400), "never"])
+        self.assertIsInstance(res, RuntimeError)
+        self.assertIn("HTTP 400", str(res))
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(sleeps, [])
+
+    def test_retry_after_header_capped(self):
+        res, calls, sleeps, _ = self._run(
+            self._prov(), [_http_error(429, "3"), _http_error(429, "600"), "ok"])
+        self.assertEqual(res.text, "ok")
+        self.assertEqual(sleeps, [3.0, 10.0])
+
+    def test_retry_after_http_date(self):
+        from datetime import datetime, timedelta, timezone
+        from email.utils import format_datetime
+
+        future = format_datetime(
+            datetime.now(timezone.utc) + timedelta(seconds=5), usegmt=True)
+        past = format_datetime(
+            datetime.now(timezone.utc) - timedelta(seconds=60), usegmt=True)
+        far = format_datetime(
+            datetime.now(timezone.utc) + timedelta(hours=1), usegmt=True)
+        res, calls, sleeps, _ = self._run(
+            self._prov(), [_http_error(503, future), _http_error(503, past),
+                           "ok"])
+        self.assertEqual(res.text, "ok")
+        self.assertTrue(3.0 <= sleeps[0] <= 5.0, sleeps)
+        self.assertEqual(sleeps[1], 0.0)
+        res, _, sleeps, _ = self._run(
+            self._prov(), [_http_error(429, far), "ok"])
+        self.assertEqual(sleeps, [10.0])
+
+    def test_retry_after_garbage_falls_back_to_backoff(self):
+        res, _, sleeps, _ = self._run(
+            self._prov(), [_http_error(429, "soon-ish"), "ok"])
+        self.assertEqual(res.text, "ok")
+        self.assertEqual(sleeps, [1.0])
+
+    def test_manifest_retries_zero_disables(self):
+        res, calls, _, _ = self._run(self._prov(retries=0), [_http_error(503), "x"])
+        self.assertIsInstance(res, RuntimeError)
+        self.assertEqual(len(calls), 1)
+
+
 if __name__ == "__main__":
     unittest.main()
 
