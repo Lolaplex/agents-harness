@@ -77,8 +77,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The workspace boundary is its own switch (`AGENTS_WORKSPACE_LOCK`). `AGENTS_WORKSPACE_DIR` only names the working directory. `AGENTS_WORKSPACE_ALLOW` adds allowed roots.
 - The executor checks only the working directory it hands to a verb. It no longer guesses which argument is a path, so ordinary text with a slash (a branch name, a date) is not refused. Path confinement stays in the terminal, which owns file access.
 
-## [0.1.2] - 2026-11-08
-
 ### Security
 - A set workspace refuses tool paths and working directories outside that root. Skills, modules, memory, traces, schedules, and the agent home stay reachable. An unset or blank workspace leaves commands unchanged.
 
@@ -177,8 +175,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Agent runtime engine and scheduled task runner (`python -m runner.loop`, Cordis job kernel, MCP tool round).
 
-[Unreleased]: https://github.com/Lolaplex/agents-harness/compare/v0.1.2...HEAD
-[0.1.2]: https://github.com/Lolaplex/agents-harness/compare/v0.1.1...v0.1.2
+[Unreleased]: https://github.com/Lolaplex/agents-harness/compare/v0.1.1...HEAD
 [0.1.1]: https://github.com/Lolaplex/agents-harness/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/Lolaplex/agents-harness/compare/v0.0.2...v0.1.0
 [0.0.2]: https://github.com/Lolaplex/agents-harness/compare/v0.0.1...v0.0.2
