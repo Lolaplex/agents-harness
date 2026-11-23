@@ -140,11 +140,9 @@ def _document_rules(doc: dict[str, Any]) -> list[Rule]:
     return _parse_rules(section.get("rules") or [], source="config")
 
 
-def load_rules(workspace=None) -> list[Rule]:
-    """All rules from config and the environment. Invalid JSON is an error."""
+def _env_rules() -> list[Rule]:
+    """Rules from ``AGENTS_APPROVAL_POLICY`` and ``AGENTS_APPROVAL_RULES``."""
     rules: list[Rule] = []
-    for doc in config_documents(workspace):
-        rules.extend(_document_rules(doc))
     path = os.environ.get("AGENTS_APPROVAL_POLICY", "").strip()
     if path:
         file_doc = read_json_strict(path)
@@ -156,6 +154,25 @@ def load_rules(workspace=None) -> list[Rule]:
         except json.JSONDecodeError as exc:
             raise PolicyError("AGENTS_APPROVAL_RULES is not valid JSON") from exc
         rules.extend(_parse_rules(parsed, source="AGENTS_APPROVAL_RULES"))
+    return rules
+
+
+def load_rules(workspace=None) -> list[Rule]:
+    """All rules from config and the environment. Invalid JSON is an error."""
+    rules: list[Rule] = []
+    for doc in config_documents(workspace):
+        rules.extend(_document_rules(doc))
+    rules.extend(_env_rules())
+    return rules
+
+
+def load_trusted_rules() -> list[Rule]:
+    """Host ``agents.json`` + env policy only. ``<ws>/config.json`` is
+    agent-writable — a rule there can never authorize a host effect."""
+    rules: list[Rule] = []
+    for doc in config_documents(include_workspace=False):
+        rules.extend(_document_rules(doc))
+    rules.extend(_env_rules())
     return rules
 
 

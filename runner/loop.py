@@ -33,7 +33,6 @@ from .project_context import project_context_block
 from .receipts import GROUNDING_NOTE, final_check_findings, format_receipt_context
 from .retrieve import RETRIEVAL_NOTE, iter_refs, tool_history_block
 from .search_report import SEARCH_NOTE
-from . import session_gate
 from .skills import skills_prompt_block
 from .memory_rules import memory_rules_prompt_block
 from .pinned import pinned_verbs_prompt_block
@@ -336,8 +335,6 @@ def _run_tool_calls(
                     session=session,
                     workspace=workspace,
                 )
-                if not str(outcome.text).startswith("refused"):
-                    session_gate.maybe_bind(session, source, workspace)
                 content = outcome.text
                 notice = outcome.notice
                 if outcome.clarify and clarifies is not None:
@@ -834,6 +831,9 @@ def _main_impl(argv: list[str] | None = None) -> int:
 
     resolved = _resolve_identity(args)
     session = resolved.session.id
+    # Child turns (delegate/persona) keep the root ref they inherited;
+    # this is the session spawned tools attribute host binding to.
+    os.environ.setdefault("AGENTS_PARENT_SESSION", session)
     user_text = args.message or ""
     profile = load_user_profile(ws)
     project = (args.project or "").strip()

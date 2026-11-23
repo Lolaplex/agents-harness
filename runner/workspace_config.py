@@ -64,15 +64,17 @@ def _workspace_from_env(host):
     return None
 
 
-def config_documents(workspace=None) -> list[dict[str, Any]]:
-    """Host document, then workspace document. Later overrides earlier."""
+def config_documents(workspace=None, *, include_workspace: bool = True) -> list[dict[str, Any]]:
+    """Host document, then workspace document. Later overrides earlier.
+    ``include_workspace=False`` reads only the host-trusted layer —
+    ``<ws>/config.json`` is agent-writable and must never grant trust."""
     if workspace is not None:
         docs: list[dict[str, Any]] = []
         host = getattr(workspace, "host", None)
         agents = getattr(host, "agents_json", None) if host is not None else None
         if agents is not None:
             docs.append(read_json(Path(agents)))
-        cfg = getattr(workspace, "config", None)
+        cfg = getattr(workspace, "config", None) if include_workspace else None
         if cfg is not None:
             docs.append(read_json(Path(cfg)))
         return docs
@@ -80,7 +82,7 @@ def config_documents(workspace=None) -> list[dict[str, Any]]:
     if host is None:
         return []
     docs = [read_json(host.agents_json)]
-    ws = _workspace_from_env(host)
+    ws = _workspace_from_env(host) if include_workspace else None
     if ws is not None:
         docs.append(read_json(ws.config))
     return docs

@@ -273,7 +273,9 @@ def load_mcp_config(path: Path | None = None) -> dict[str, Any] | None:
     ):
         raw_ws = _load_one(ws_mcp)
         if raw_ws is not None:
-            # Agent-writable <ws>/mcp.json must never expand ${ENV} or vault secrets.
+            # Agent-writable <ws>/mcp.json must never expand ${ENV} or vault
+            # secrets, and stdio servers need an approval-policy allow.
+            raw_ws = _strip_untrusted_stdio(raw_ws, data)
             data = _merge_mcp(data, raw_ws)
             found = True
     if not found or not data:
@@ -292,6 +294,60 @@ def server_map(cfg: dict[str, Any]) -> dict[str, dict[str, Any]]:
         if isinstance(spec, dict):
             out[str(name)] = spec
     return out
+
+
+def _ws_stdio_permitted(server: str) -> bool:
+    """An approval rule ``allow`` on ``mcp.stdio:<server>`` (or ``*``)
+    explicitly permits a ws-overlay stdio server. ``deny``/``ask`` and
+    silence refuse it. Only host-trusted layers count — a rule inside the
+    agent-writable ``<ws>/config.json`` can never permit a host binary."""
+    try:
+        from .approval_policy import load_trusted_rules, rule_matches
+    except ImportError:
+        return False
+    try:
+        rules = load_trusted_rules()
+    except Exception:
+        return False
+    allowed = False
+    for rule in rules:
+        if not rule_matches(rule.action, f"mcp.stdio:{server}"):
+            continue
+        if rule.decision != "allow":
+            return False
+        allowed = True
+    return allowed
+
+
+def _strip_untrusted_stdio(
+    ws_doc: dict[str, Any], trusted: dict[str, Any]
+) -> dict[str, Any]:
+    """Drop ws-overlay stdio servers lacking an approval-policy allow.
+
+    A ``command`` spec spawns an arbitrary host binary; the agent-writable
+    ws layer may only mount one when a trusted rule allows it. An overlay
+    entry that would edit a trusted stdio spec is refused for the same
+    reason."""
+    servers = ws_doc.get("mcpServers")
+    if not isinstance(servers, dict) or not servers:
+        return ws_doc
+    trusted_servers = server_map(trusted)
+    for name, spec in list(servers.items()):
+        if not isinstance(spec, dict):
+            continue
+        base = trusted_servers.get(name)
+        stdio = bool(spec.get("command")) or (
+            isinstance(base, dict) and bool(base.get("command"))
+        )
+        if not stdio or _ws_stdio_permitted(str(name)):
+            continue
+        del servers[name]
+        print(
+            f"[!] MCP ws server '{name}' refused: stdio needs an "
+            "approval-policy allow (mcp.stdio:<server>)",
+            file=sys.stderr,
+        )
+    return ws_doc
 
 
 def tool_allowed(server: str, tool: str, cfg: dict[str, Any]) -> bool:

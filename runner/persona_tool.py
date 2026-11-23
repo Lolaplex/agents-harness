@@ -120,9 +120,19 @@ def _spawn_persona_turn(to: str, prompt: str, task_id: str, thread_id: str) -> s
     return str(spawned["id"])
 
 
+def _bind_before_spawn() -> None:
+    """Bind the forwarded parent session BEFORE any inbox mutation —
+    a bind that fails after ``create_task`` would orphan the task."""
+    try:
+        delegate.bind_parent_session()
+    except delegate.DelegateError as exc:
+        raise SystemExit(_err(str(exc)))
+
+
 def cmd_ask(args: argparse.Namespace) -> int:
     _hop_guard()
     _self_guard(args.to)
+    _bind_before_spawn()
     from agents_workspace.inbox import create_task, reply_task
 
     ws = _ws()
@@ -166,6 +176,8 @@ def cmd_ask(args: argparse.Namespace) -> int:
 
 def cmd_handoff(args: argparse.Namespace) -> int:
     _hop_guard()
+    if args.wake:
+        _bind_before_spawn()
     from agents_workspace.inbox import create_task, handoff
 
     ws = _ws()

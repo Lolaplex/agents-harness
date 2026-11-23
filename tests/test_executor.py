@@ -111,6 +111,9 @@ class TestWorkspaceJob(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             host = Host(dir=Path(tmp) / "host")
             ws = host.create("demo")
+            # AGENTS_WORKDIR_LOCK is resolver-owned: it reaches the tool env
+            # only from workspace.json workdir_lock, not the parent env.
+            host.update_workspace("demo", workdir_lock=True)
             script = Path(tmp) / "dump_env.py"
             script.write_text(
                 "import json, os; print(json.dumps(dict(os.environ)))",

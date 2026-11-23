@@ -113,6 +113,33 @@ def call_is_mutator(mod: dict[str, Any], args: Any = None) -> bool:
     return module_is_mutator(mod)
 
 
+def _verb_arg_rearms(mod: dict[str, Any], args: Any) -> bool:
+    """An ``approval_ask: false`` waiver holds only when the call cannot
+    queue an arbitrary ``--verb``. A non-empty ``verb`` argument — or a
+    ``--verb`` / ``--verb=...`` token inside a raw ``argv`` list — re-arms
+    the prompt for the mutating class (mcp.schedule.add)."""
+    if not isinstance(args, dict):
+        return False
+    inner = args.get("arguments") if set(args.keys()) == {"arguments"} else args
+    if not isinstance(inner, dict):
+        return False
+    if str(inner.get("verb") or "").strip():
+        return True
+    argv = inner.get("argv")
+    if isinstance(argv, str):
+        try:
+            argv = shlex.split(argv)
+        except ValueError:
+            argv = [argv]
+    if not isinstance(argv, list):
+        return False
+    for token in argv:
+        tok = str(token).strip()
+        if tok == "--verb" or tok.startswith("--verb="):
+            return True
+    return False
+
+
 def needs_approval(
     mod: dict[str, Any], args: Any = None, *, workspace: Any = None
 ) -> bool:
@@ -127,7 +154,7 @@ def needs_approval(
             return True
     if mode == "strict":
         return not module_is_read_only(mod)
-    if mod.get("approval_ask") is False:
+    if mod.get("approval_ask") is False and not _verb_arg_rearms(mod, args):
         return False
     return module_is_mutator(mod)
 

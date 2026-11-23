@@ -118,6 +118,42 @@ class TestPersonaTool(unittest.TestCase):
         self.assertEqual(data["owner"], "default")  # returned to sender
         self.assertEqual(data["status"], "done")
 
+    def test_ask_bind_failure_orphans_no_task(self):
+        # The parent-session bind runs BEFORE create_task — a declined
+        # bind must leave zero inbox state behind.
+        from agents_workspace.inbox import list_inbox
+
+        from runner import session_gate
+
+        session_gate._reset_for_tests()  # _fired latches once per process
+        session_gate.register_session_gate(lambda *a: False)
+        env = dict(self.env, AGENTS_PARENT_SESSION="ses_root")
+        try:
+            rc, _, err = _run(["ask", "cos", "hello"], env)
+        finally:
+            session_gate._reset_for_tests()
+        self.assertNotEqual(rc, 0)
+        self.assertIn("session bind declined", err)
+        self.assertEqual(list_inbox(self.ws, "cos"), [])
+
+    def test_handoff_wake_bind_failure_creates_no_task(self):
+        from agents_workspace.inbox import list_inbox
+
+        from runner import session_gate
+
+        session_gate._reset_for_tests()  # _fired latches once per process
+        session_gate.register_session_gate(lambda *a: False)
+        env = dict(self.env, AGENTS_PARENT_SESSION="ses_root")
+        try:
+            rc, _, err = _run(
+                ["handoff", "--to", "cos", "--title", "x", "--wake"], env
+            )
+        finally:
+            session_gate._reset_for_tests()
+        self.assertNotEqual(rc, 0)
+        self.assertIn("session bind declined", err)
+        self.assertEqual(list_inbox(self.ws, "cos"), [])
+
     def test_help_json(self):
         rc, out, _ = _run(["--help-json"], self.env)
         spec = json.loads(out)
