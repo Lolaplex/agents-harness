@@ -1074,6 +1074,7 @@ def _main_impl(argv: list[str] | None = None) -> int:
             result = _complete_once(
                 provider,
                 CompletionRequest(
+                    model=model_override,
                     messages=messages,
                     tools=round_tools,
                     on_status=on_status,
@@ -1128,6 +1129,7 @@ def _main_impl(argv: list[str] | None = None) -> int:
             result = _complete_once(
                 provider,
                 CompletionRequest(
+                    model=model_override,
                     messages=messages,
                     tools=None,
                     on_status=on_status,
@@ -1180,6 +1182,7 @@ def _main_impl(argv: list[str] | None = None) -> int:
                 revised = _complete_once(
                     provider,
                     CompletionRequest(
+                        model=model_override,
                         messages=messages,
                         tools=None,
                         on_status=on_status,

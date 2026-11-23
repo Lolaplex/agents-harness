@@ -355,6 +355,44 @@ class TestModulesAndLoop(unittest.TestCase):
         rc = loop_main(["--list-tools"])
         self.assertEqual(rc, 0)
 
+    def test_model_override_reaches_follow_up_rounds(self):
+        """The chat-picked --model must be sent on every completion of the
+        turn, not only the first one (tool rounds used to fall back to the
+        provider default model)."""
+        seen_models = []
+
+        class ToolThenAnswer:
+            def complete(self, req):
+                seen_models.append(req.model)
+                if len(seen_models) == 1:
+                    return CompletionResult(text="", tool_calls=[{
+                        "id": "c1", "name": "call_job",
+                        "arguments": '{"catalog": "skill.catalog"}'}])
+                return CompletionResult(text="final answer", tool_calls=None)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            env = dict(os.environ)
+            env.update({
+                "AGENTS_HOST_DIR": tmp,
+                "AGENTS_TRACES_DIR": str(Path(tmp) / "traces"),
+                "AGENTS_IDENTITY_PATH": str(Path(tmp) / "identity.json"),
+            })
+            out, err = io.StringIO(), io.StringIO()
+            with patch.dict(os.environ, env, clear=True):
+                with patch("runner.loop.get_provider", return_value=ToolThenAnswer()):
+                    with redirect_stdout(out), redirect_stderr(err):
+                        rc = loop_main([
+                            "--channel", "telegram", "--user", "modelpick",
+                            "--new-session", "--message", "use a tool",
+                            "--complete", "--provider", "fake",
+                            "--model", "picked/model-x",
+                            "--deliver", "buffered",
+                        ])
+            self.assertEqual(rc, 0, err.getvalue())
+            self.assertIn("final answer", out.getvalue())
+            self.assertGreaterEqual(len(seen_models), 2)
+            self.assertEqual(set(seen_models), {"picked/model-x"})
+
     def test_max_tool_rounds_forces_synthesis(self):
         seen_requests = []
 

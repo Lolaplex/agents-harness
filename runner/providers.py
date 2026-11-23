@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 import urllib.error
 import urllib.request
 import warnings
@@ -73,6 +74,52 @@ class CompletionResult:
     text: str
     tool_calls: list[Any] | None = None
     raw: dict[str, Any] | None = None
+
+
+# Transient upstream statuses retried before the first byte. Nothing has
+# streamed to the user yet, so a retry cannot duplicate output.
+RETRY_STATUSES = frozenset({429, 502, 503, 504})
+DEFAULT_RETRIES = 2
+RETRY_BASE_SEC = 1.0
+RETRY_MAX_SEC = 10.0
+_sleep = time.sleep  # patched in tests
+
+
+def _retry_delay(err: urllib.error.HTTPError, attempt: int) -> float:
+    """Retry-After (seconds) when sane, else exponential backoff; capped."""
+    delay = RETRY_BASE_SEC * (2 ** attempt)
+    try:
+        hdr = (err.headers or {}).get("Retry-After") if err.headers else None
+        if hdr is not None and str(hdr).strip():
+            delay = float(str(hdr).strip())
+    except (TypeError, ValueError):
+        pass
+    return max(0.0, min(RETRY_MAX_SEC, delay))
+
+
+def _open_with_retry(http_req, timeout: float, retries: int,
+                     on_status: Callable[[str], None] | None = None):
+    """urlopen with up to ``retries`` retries on 429/502/503/504.
+
+    Only the request open is retried (status line not yet consumed), never
+    a response that already started streaming.
+    """
+    attempt = 0
+    while True:
+        try:
+            return urllib.request.urlopen(http_req, timeout=timeout)
+        except urllib.error.HTTPError as e:
+            if e.code not in RETRY_STATUSES or attempt >= retries:
+                raise
+            delay = _retry_delay(e, attempt)
+            try:
+                e.close()
+            except Exception:
+                pass
+            attempt += 1
+            if on_status:
+                on_status(f"provider HTTP {e.code}, retry {attempt}/{retries} in {delay:.0f}s")
+            _sleep(delay)
 
 
 class Provider(Protocol):
@@ -328,6 +375,15 @@ class OpenAICompatProvider:
         if _warn_plaintext:
             _warn_plaintext_api_key(manifest, stacklevel=3)
 
+    def _retries(self) -> int:
+        raw = self.manifest.get("retries")
+        if raw is None:
+            raw = os.environ.get("LLM_RETRIES", "")
+        try:
+            return max(0, min(5, int(raw))) if str(raw).strip() != "" else DEFAULT_RETRIES
+        except (TypeError, ValueError):
+            return DEFAULT_RETRIES
+
     def complete(self, req: CompletionRequest) -> CompletionResult:
         url = (
             os.environ.get(self.manifest.get("url_env") or "LLM_BASE_URL", "")
@@ -401,7 +457,9 @@ class OpenAICompatProvider:
         if req.on_status:
             req.on_status("thinking...")
         try:
-            with urllib.request.urlopen(http_req, timeout=first_byte) as resp:
+            with _open_with_retry(
+                http_req, first_byte, self._retries(), req.on_status
+            ) as resp:
                 ctype = (resp.headers.get("Content-Type") or "").lower()
                 if stream or "text/event-stream" in ctype:
                     text, tool_calls, meta = consume_sse(
