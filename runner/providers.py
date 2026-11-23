@@ -13,6 +13,7 @@ import urllib.error
 import urllib.request
 import warnings
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Iterable, Protocol
 
@@ -86,13 +87,23 @@ _sleep = time.sleep  # patched in tests
 
 
 def _retry_delay(err: urllib.error.HTTPError, attempt: int) -> float:
-    """Retry-After (seconds) when sane, else exponential backoff; capped."""
+    """Retry-After (delta-seconds or HTTP-date) when sane, else
+    exponential backoff; capped."""
     delay = RETRY_BASE_SEC * (2 ** attempt)
     try:
         hdr = (err.headers or {}).get("Retry-After") if err.headers else None
-        if hdr is not None and str(hdr).strip():
-            delay = float(str(hdr).strip())
-    except (TypeError, ValueError):
+        raw = str(hdr).strip() if hdr is not None else ""
+        if raw:
+            try:
+                delay = float(raw)
+            except ValueError:
+                from email.utils import parsedate_to_datetime
+
+                when = parsedate_to_datetime(raw)
+                if when.tzinfo is None:
+                    when = when.replace(tzinfo=timezone.utc)
+                delay = (when - datetime.now(timezone.utc)).total_seconds()
+    except (TypeError, ValueError, IndexError, OverflowError):
         pass
     return max(0.0, min(RETRY_MAX_SEC, delay))
 

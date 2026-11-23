@@ -236,6 +236,32 @@ class TestProviderRetries(unittest.TestCase):
         self.assertEqual(res.text, "ok")
         self.assertEqual(sleeps, [3.0, 10.0])
 
+    def test_retry_after_http_date(self):
+        from datetime import datetime, timedelta, timezone
+        from email.utils import format_datetime
+
+        future = format_datetime(
+            datetime.now(timezone.utc) + timedelta(seconds=5), usegmt=True)
+        past = format_datetime(
+            datetime.now(timezone.utc) - timedelta(seconds=60), usegmt=True)
+        far = format_datetime(
+            datetime.now(timezone.utc) + timedelta(hours=1), usegmt=True)
+        res, calls, sleeps, _ = self._run(
+            self._prov(), [_http_error(503, future), _http_error(503, past),
+                           "ok"])
+        self.assertEqual(res.text, "ok")
+        self.assertTrue(3.0 <= sleeps[0] <= 5.0, sleeps)
+        self.assertEqual(sleeps[1], 0.0)
+        res, _, sleeps, _ = self._run(
+            self._prov(), [_http_error(429, far), "ok"])
+        self.assertEqual(sleeps, [10.0])
+
+    def test_retry_after_garbage_falls_back_to_backoff(self):
+        res, _, sleeps, _ = self._run(
+            self._prov(), [_http_error(429, "soon-ish"), "ok"])
+        self.assertEqual(res.text, "ok")
+        self.assertEqual(sleeps, [1.0])
+
     def test_manifest_retries_zero_disables(self):
         res, calls, _, _ = self._run(self._prov(retries=0), [_http_error(503), "x"])
         self.assertIsInstance(res, RuntimeError)
