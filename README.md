@@ -1,7 +1,7 @@
 <h1 align="center">agents-harness</h1>
 
 <p align="center">
-  <a href="https://github.com/Lolaplex/agents-harness/releases"><img src="https://img.shields.io/badge/version-0.1.1-blue.svg?style=flat-square" alt="Version 0.1.1"></a>
+  <a href="https://github.com/Lolaplex/agents-harness/releases"><img src="https://img.shields.io/badge/version-0.2.0-blue.svg?style=flat-square" alt="Version 0.2.0"></a>
   <a href="https://modelcontextprotocol.io"><img src="https://img.shields.io/badge/MCP-Standard-orange.svg?style=flat-square" alt="MCP"></a>
   <a href="https://python.org"><img src="https://img.shields.io/badge/Python-3.10+-3776AB.svg?style=flat-square&logo=python&logoColor=white" alt="Python 3.10+"></a>
   <a href="https://pypi.org/project/agents-harness/"><img src="https://img.shields.io/pypi/v/agents-harness.svg?style=flat-square" alt="PyPI"></a>
@@ -10,7 +10,7 @@
 
 <p align="center">
   <strong>Declarative scheduled flow runner, per-request agent loop, and job kernel for local agent services.</strong><br>
-  Zero heavy dependencies (Python standard library only). No Celery, no Redis, no cron daemons.
+  Python standard library + `agents-workspace` only. No Celery, no Redis, no cron daemons.
 </p>
 
 ---
@@ -54,7 +54,7 @@ Calendar tools (`mcp.calendar.add`, `mcp.calendar.update`, `mcp.calendar.list`) 
 - **Per-request loop (`runner.loop`)**: Reconstructs conversation traces on demand. Cordis modules (`runner/modules/*.json`) map as tools into OpenAI-compatible tool calling rounds.
 - **Strict Layering (Cordis Principle)**: The executor owns no domain state or complex semantics. It strictly executes declared CLI verbs and inspects exit codes (`0 = healthy`).
 - **Durable Manifests (Koru Principle)**: Scheduled tasks are declared in `runner/schedules/*.json`. Dynamic reminders are managed via `runner.schedule`.
-- **Zero Bloat**: Pure Python standard library (`subprocess`, `json`, `pathlib`, `urllib`).
+- **Zero Bloat**: Python standard library (`subprocess`, `json`, `pathlib`, `urllib`) plus `agents-workspace` for the Host/Workspace path contract.
 
 ---
 
@@ -75,7 +75,7 @@ Calendar tools (`mcp.calendar.add`, `mcp.calendar.update`, `mcp.calendar.list`) 
 - [x] **Provider Streaming**: Streaming completions with prefill (`first_byte_sec`) and stall (`idle_sec`) hang detection.
 - [x] **Decoupled Identity**: Decoupled alias (`telegram:123`), user (`u_...`), and session (`ses_...`) directory.
 - [x] **FastMCP Interface (`runner.mcp_server`)**: Exposes `list_catalog`, `load_schema`, and `call_job` for MCP hosts.
-- [x] **Zero Bloat Runtime**: Pure Python standard library only (no Celery, no Redis, no cron daemons).
+- [x] **Zero Bloat Runtime**: Python standard library + `agents-workspace` only (no Celery, no Redis, no cron daemons).
 
 ### Planned (Roadmap)
 
