@@ -30,6 +30,43 @@ def _session_events(session: str, *, days: int = 3650) -> list[Any]:
     return events
 
 
+def _project_frame(frame: Any) -> None:
+    """Mirror the coverage frame into ``<ws>/store.db`` right away.
+
+    Soft imports only — ``klanker.msgsync`` owns the ``msg:*`` projection;
+    without klanker (or agents_store) the trace frame alone is the source
+    of truth and the next wssync tick projects it anyway. Skipped when the
+    trace store isn't the workspace's own (custom ``AGENTS_TRACES_DIR``):
+    the projection only mirrors ``<ws>/traces``.
+    """
+    try:
+        from agents_store.db import connect
+        from agents_traces.store import TraceStore
+        from agents_workspace import Workspace
+        from klanker.msgsync import (
+            ensure_domain, local_node_id, project_event, project_traces)
+        from pathlib import Path
+
+        ws = Workspace.from_env()
+        if Path(ws.traces).resolve() != Path(TraceStore().traces_dir).resolve():
+            return
+        db = getattr(ws, "store_db", None) or ws.dir / "store.db"
+        conn = connect(str(db), check_same_thread=False)
+        try:
+            ensure_domain(conn)
+            # Unprojected turn messages must land FIRST: the frame's
+            # tombstone span only retires msg entities already in
+            # store.db. A message projected after the frame would arrive
+            # un-deleted and resurrect the undone turn on synced hosts.
+            project_traces(conn, ws.dir, traces_dir=ws.traces)
+            project_event(conn, local_node_id(), frame,
+                          traces_dir=ws.traces)
+        finally:
+            conn.close()
+    except Exception:
+        pass
+
+
 def _cover(session: str, first_ts: str, last_ts: str, *, kind: str) -> Any:
     """Append an empty-content frame covering [first_ts, last_ts]."""
     from agents_traces.models import TraceEvent
@@ -50,6 +87,7 @@ def _cover(session: str, first_ts: str, last_ts: str, *, kind: str) -> Any:
         },
     )
     TraceStore().append(frame)
+    _project_frame(frame)
     return frame
 
 
@@ -110,6 +148,7 @@ def compress_session(session: str, *, keep_last: int = 6) -> dict[str, Any]:
     frame = compact_session(session, keep_last=keep_last)
     if frame is None:
         return {"ok": False, "error": "nothing to compress"}
+    _project_frame(frame)
     rng = frame_meta(frame).get("summarized_from") or {}
     return {
         "ok": True,
