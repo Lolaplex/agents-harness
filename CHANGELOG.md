@@ -10,6 +10,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Provider overlays layered package < `<host>/providers` < `AGENTS_PROVIDERS_DIR` (later wins), `<ws>/config.json` `approval.mode` resolution, approval allowlists at `Host.approval_allowlist` with legacy path fallback and workspace-path rejection, per-workspace `mcp-tools-cache-<ws>.json` via `_resolve_ws_no_create()` (#37).
 
+### Added
+- `_parse_text_tool_calls` coerces the `<tool_call><function=name><parameter=k>v</parameter></function></tool_call>` emission shape (taught by qwen-family chat templates) in addition to the JSON-body shape, including multi-call blocks. LM Studio's OpenAI-compat parser does not recognize the `<function=` variant and falls back to `content`; the app layer now catches what the endpoint misses. Terminal rounds (`tools=None`) never coerce: a coerced call cannot execute there, so coercion would silently eat the only reply text.
+- `AGENTS_CLOCK=0` suppresses all real-time injection — the trailing `<clock>` message, `<session start_date>` in `<runtime_context>`, and `<ts>` stamps on replayed history — for frozen-world/replay deployments.
+- System-prompt layout override resolution: `<ws>/prompts/system_prompt.txt` wins over `AGENTS_PROMPT_TEMPLATE_FILE`, then inline `AGENTS_PROMPT_TEMPLATE`; empty falls back to the byte-identical built-in layout.
+
 ### Fixed
 - The approval allowlist no longer scopes itself to a phantom workspace on unmigrated legacy hosts. `store_path()` resolved the legacy host as an ad-hoc workspace named after its directory (`.agents`) and partitioned approvals under `ws-.agents` — a workspace that will never exist — silently dropping the host-wide allowlist. Legacy hosts keep the host-wide store.
 - The chat-picked model (`--model`) is now sent on every completion of a turn. Tool follow-up rounds, the forced final summary, and the final-check revision used to drop it and fall back to `LLM_MODEL` or the manifest model, so tool-using turns failed (`Turn failed: LLM_MODEL required ...` / unknown model) or switched models mid-turn.
