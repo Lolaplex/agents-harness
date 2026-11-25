@@ -9,7 +9,7 @@ from typing import Any
 from .approval import call_is_mutator, gate_module
 from .fence import HarnessError, HarnessMessage
 from .executor import execute_job
-from .helpjson import declared_argv, with_discovered_commands
+from .helpjson import declared_argv, select_command, with_discovered_commands
 from .modules import find_module, find_module_for_tool, list_modules, openai_tool_name
 from .toolsets import command_allowed, filter_modules, module_allowed
 from .receipts import harness_failure, make_receipt, subprocess_succeeded
@@ -99,7 +99,12 @@ def openai_cordis_tools() -> list[dict[str, Any]]:
             "type": "function",
             "function": {
                 "name": "call_job",
-                "description": "Run one catalog module by name. Unknown names fail closed.",
+                "description": (
+                    "Run one catalog module by name. Unknown names fail closed. "
+                    "Use exact parameter names from the pinned examples or "
+                    "load_schema; invented or missing required parameters are "
+                    "rejected with the valid names."
+                ),
                 "parameters": _CALL_JOB_SCHEMA,
             },
         },
@@ -142,6 +147,90 @@ def _cli_flag_set(val: Any) -> bool:
     if isinstance(val, str):
         return val.strip().lower() in {"1", "true", "yes", "on"}
     return False
+
+
+# Modules with hand-written tolerant argument mappers in _arguments_to_argv
+# (deliberate synonym compatibility). Schema-strict unknown-key rejection
+# would break those documented shapes, so they are exempt from it — missing
+# required keys still fail loud everywhere.
+_TOLERANT_MAPPER_MODULES = frozenset(
+    {"mcp.terminal", "mcp.memory.add", "mcp.memory.read", "mcp.schedule.add"}
+)
+
+# Envelope/control keys that never reach the tool itself: the call_job
+# module selector, command routers, and the raw-argv escape hatch.
+_META_KEYS = ("command", "command_name", "subcommand", "cmd", "name", "argv", "action")
+
+
+def _validate_job_args(mod: dict[str, Any], job_args: Any) -> str:
+    """Schema-driven argument check. Returns error text, empty when clean.
+
+    Small models invent friendlier parameter names instead of loading the
+    schema; the tool then fails deep inside with a shape error the model
+    often cannot parse into a corrected retry. Failing loud here — before
+    approval and execution — hands back the valid names in the same turn.
+    Only presence is checked, never types: nested shapes stay the tool's
+    own contract.
+
+    The contract layer is the resolved command spec, not the module's
+    top-level ``parameters``: command-routed modules carry a router envelope
+    there (``command``/``argv``), which would reject every legitimate direct
+    call. Modules whose commands exist but resolve none stay unvalidated —
+    guessing the wrong contract is worse than none."""
+    if not isinstance(job_args, dict):
+        return ""
+    commands = mod.get("commands")
+    # `commands_from` modules are command-routed even when runtime discovery
+    # yields nothing: their top-level schema documents the router envelope
+    # (command/argv), never a callable contract.
+    has_commands = (isinstance(commands, dict) and bool(commands)) or bool(
+        mod.get("commands_from")
+    )
+    required: list[str] = []
+    if has_commands:
+        selected = select_command(mod, job_args)
+        if selected is None:
+            return ""
+        spec = selected[1]
+        schema = spec.get("parameters") if isinstance(spec.get("parameters"), dict) else {}
+        # command specs may drop `required` for argv building (positional vs
+        # flagged); borrow it from the module level when both levels declare
+        # the same property set — i.e. the same contract copied down.
+        required = [str(k) for k in (schema.get("required") or [])]
+        top = mod.get("parameters") if isinstance(mod.get("parameters"), dict) else {}
+        top_props = top.get("properties") if isinstance(top.get("properties"), dict) else {}
+        spec_props = schema.get("properties") if isinstance(schema.get("properties"), dict) else {}
+        if not required and top_props and set(top_props) == set(spec_props):
+            required = [str(k) for k in (top.get("required") or [])]
+    else:
+        schema = mod.get("parameters")
+        if not isinstance(schema, dict):
+            return ""
+        required = [str(k) for k in (schema.get("required") or [])]
+    raw_props = schema.get("properties")
+    props: dict[str, Any] = raw_props if isinstance(raw_props, dict) else {}
+    if not props:
+        return ""
+    missing = [k for k in required if k in props and k not in job_args]
+    open_world = schema.get("additionalProperties") is True
+    tolerant = str(mod.get("name") or "") in _TOLERANT_MAPPER_MODULES
+    unknown = (
+        []
+        if (open_world or tolerant)
+        else [k for k in job_args if k not in props and k not in _META_KEYS]
+    )
+    if not missing and not unknown:
+        return ""
+    parts = []
+    if missing:
+        parts.append("missing required: " + ", ".join(missing))
+    if unknown:
+        parts.append("unknown: " + ", ".join(unknown))
+    valid = ", ".join(str(k) for k in props)
+    return (
+        f"call_job {mod.get('name')}: " + "; ".join(parts)
+        + f". valid parameters: {valid}."
+    )
 
 
 def _arguments_to_argv(mod: dict[str, Any], arguments: Any) -> list[str]:
@@ -619,6 +708,14 @@ def run_cordis_tool(
                 job_args["channel"] = default_channel
             if not job_args.get("timezone") and default_timezone:
                 job_args["timezone"] = default_timezone
+        arg_error = _validate_job_args(mod, job_args)
+        if arg_error:
+            return _outcome(
+                HarnessError(arg_error),
+                success=False,
+                tool=mod_name or "call_job",
+                arguments=job_args,
+            )
         mutating = call_is_mutator(mod, job_args)
         allowed, denial = gate_module(
             mod,

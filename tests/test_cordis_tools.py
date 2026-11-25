@@ -299,6 +299,116 @@ class TestCordisTools(unittest.TestCase):
         self.assertEqual(_arguments_to_argv(mod, {"arguments": ["USER.md"]}), ["USER.md"])
         self.assertEqual(_arguments_to_argv(mod, {"arguments": "USER.md"}), ["USER.md"])
 
+
+class TestValidateJobArgs(unittest.TestCase):
+    """Fail-loud argument validation: invented/missing keys must come back
+    with the valid names in the same turn, never as a deep tool error."""
+
+    def _tau2_mod(self):
+        props = {
+            "user_id": {"type": "string"},
+            "cabin": {"type": "string"},
+            "flights": {"type": "array"},
+        }
+        required = ["user_id", "cabin", "flights"]
+        # tau2 shape: spec drops required for argv building; the module level
+        # keeps the full original schema with the same property set.
+        spec_params = {"type": "object", "properties": dict(props)}
+        return {
+            "name": "tau2.book_reservation",
+            "parameters": {"type": "object", "properties": dict(props), "required": required},
+            "command_pin": "call",
+            "commands": {"call": {"action": "tau2.x", "parameters": spec_params}},
+        }
+
+    def test_invented_keys_fail_loud_with_valid_names(self):
+        from runner.cordis_tools import _validate_job_args
+
+        err = _validate_job_args(self._tau2_mod(), {"user_id": "u", "cabin_class": "economy", "flights": []})
+        self.assertIn("missing required: cabin", err)
+        self.assertIn("unknown: cabin_class", err)
+        self.assertIn("valid parameters: user_id, cabin, flights", err)
+
+    def test_schema_correct_call_passes(self):
+        from runner.cordis_tools import _validate_job_args
+
+        err = _validate_job_args(
+            self._tau2_mod(),
+            {"command": "call", "user_id": "u", "cabin": "economy", "flights": []},
+        )
+        self.assertEqual(err, "")
+
+    def test_command_routed_envelope_never_validates_direct_args(self):
+        """Router-envelope modules (mcp.browser shape) must not reject direct
+        argument dicts: their top-level schema documents command/argv routing,
+        not a callable contract."""
+        from runner.cordis_tools import _validate_job_args
+
+        mod = {
+            "name": "mcp.browser",
+            "commands_from": "help-json",
+            "parameters": {
+                "type": "object",
+                "properties": {"command": {"type": "string"}, "argv": {"type": "array"}},
+            },
+        }
+        self.assertEqual(_validate_job_args(mod, {"url": "https://x.test"}), "")
+
+    def test_open_world_schema_allows_extras(self):
+        from runner.cordis_tools import _validate_job_args
+
+        mod = {
+            "name": "mcp.flex",
+            "parameters": {
+                "type": "object",
+                "properties": {"query": {"type": "string"}},
+                "additionalProperties": True,
+            },
+        }
+        self.assertEqual(_validate_job_args(mod, {"query": "q", "extra": 1}), "")
+
+    def test_tolerant_mapper_modules_exempt_from_unknown_rejection(self):
+        from runner.cordis_tools import _validate_job_args
+
+        mod = {
+            "name": "mcp.memory.read",
+            "parameters": {"type": "object", "properties": {"file_id": {"type": "string"}}},
+        }
+        self.assertEqual(_validate_job_args(mod, {"path": "USER.md"}), "")
+
+    def test_module_without_schema_passes(self):
+        from runner.cordis_tools import _validate_job_args
+
+        self.assertEqual(_validate_job_args({"name": "x"}, {"anything": 1}), "")
+
+    def test_no_required_borrow_when_property_sets_differ(self):
+        """An envelope-shaped top level must not lend its required list down
+        into a command spec with a different contract."""
+        from runner.cordis_tools import _validate_job_args
+
+        mod = {
+            "name": "mcp.mixed",
+            "parameters": {
+                "type": "object",
+                "properties": {"command": {"type": "string"}},
+                "required": ["command"],
+            },
+            "command_pin": "go",
+            "commands": {
+                "go": {"action": "x", "parameters": {"type": "object", "properties": {"speed": {"type": "integer"}}}}
+            },
+        }
+        # 'command' is not part of the spec contract; nothing is missing.
+        self.assertEqual(_validate_job_args(mod, {"speed": 2}), "")
+
+    def test_call_job_description_carries_discovery_contract(self):
+        desc = ""
+        for tool in openai_cordis_tools():
+            if tool["function"]["name"] == "call_job":
+                desc = tool["function"]["description"]
+        self.assertIn("load_schema", desc)
+        self.assertIn("rejected", desc)
+
     def test_calendar_argv_wall_time_timezone_and_all_day(self):
         from runner.cordis_tools import _arguments_to_argv
 
@@ -489,4 +599,3 @@ class TestCordisTools(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
