@@ -785,6 +785,187 @@ class TestModulesAndLoop(unittest.TestCase):
                 self.assertTrue(content.endswith("</untrusted_data>"), content)
                 self.assertIn(payload, content)
 
+    def _run_loop_with_provider(self, provider, job, extra_env=None):
+        env = dict(os.environ)
+        with tempfile.TemporaryDirectory() as tmp:
+            env.update(
+                {
+                    "AGENTS_HOST_DIR": tmp,
+                    "AGENTS_TRACES_DIR": str(Path(tmp) / "traces"),
+                    "AGENTS_IDENTITY_PATH": str(Path(tmp) / "identity.json"),
+                    "AGENTS_SKILLS_DIR": str(Path(tmp) / "skills"),
+                }
+            )
+            env.pop("AGENTS_APPROVAL_CMD", None)
+            env.pop("AGENTS_REPAIR_FAILED_MUTATIONS", None)
+            if extra_env:
+                env.update(extra_env)
+            out, err = io.StringIO(), io.StringIO()
+            with patch.dict(os.environ, env, clear=True):
+                with patch("runner.loop.get_provider", return_value=provider):
+                    with patch("runner.cordis_tools.execute_job", return_value=job):
+                        with redirect_stdout(out), redirect_stderr(err):
+                            rc = loop_main(
+                                [
+                                    "--channel", "local",
+                                    "--user", "repairuser",
+                                    "--new-session",
+                                    "--message", "book it",
+                                    "--complete",
+                                    "--provider", "fake",
+                                    "--deliver", "buffered",
+                                ]
+                            )
+        return rc, out.getvalue(), err.getvalue()
+
+    @staticmethod
+    def _mutation_then_text_script(claim):
+        """Provider: one mutating call, then a final text. Tracks requests.
+
+        Messages are snapshotted per completion: the loop mutates one list
+        in place, so holding the reference would alias later state into
+        earlier observations."""
+
+        class Script:
+            def __init__(self):
+                self.seen = []
+
+            def complete(self, req):
+                snapshot = [dict(m) for m in req.messages]
+                self.seen.append(snapshot)
+                if any(m.get("role") == "tool" for m in req.messages):
+                    return CompletionResult(text=claim, tool_calls=None)
+                return CompletionResult(
+                    text="",
+                    tool_calls=[
+                        {
+                            "id": "c_mut",
+                            "type": "function",
+                            "function": {
+                                "name": "call_job",
+                                "arguments": json.dumps(
+                                    {"name": "mcp.browser", "arguments": {"command": "open", "url": "https://x.test"}}
+                                ),
+                            },
+                        }
+                    ],
+                )
+
+        return Script()
+
+    def test_failed_mutation_blocks_turn_end_with_repair_notice(self):
+        """Truthfulness invariant: a turn may not end on an unrepaired
+        mutation failure — the notice must name the failure and the model
+        must get another completion."""
+        provider = self._mutation_then_text_script("Done! Booked it.")
+        job = {"status": "FAILED", "stderr_tail": "Error: Not enough seats on flight HAT139"}
+        rc, out, err = self._run_loop_with_provider(provider, job)
+        self.assertEqual(rc, 0, err)
+
+        def has_notice(msgs):
+            return any(
+                "Do not report these actions as successful" in str(m.get("content") or "")
+                for m in msgs
+            )
+
+        # initial request precedes any failure: no notice possible
+        self.assertFalse(has_notice(provider.seen[0]))
+        # the lie completion ends the turn attempt; the gate must force at
+        # least one more completion whose request carries the notice
+        self.assertGreaterEqual(len(provider.seen), 3)
+        self.assertFalse(has_notice(provider.seen[1]))
+        self.assertTrue(has_notice(provider.seen[2]))
+        notice_text = next(
+            str(m.get("content"))
+            for m in provider.seen[2]
+            if "Do not report these actions" in str(m.get("content") or "")
+        )
+        self.assertIn("Not enough seats", notice_text)
+
+    def test_repaired_mutation_fires_no_notice(self):
+        """A later success of the same tool repairs the earlier failure."""
+
+        class RepairingScript:
+            def __init__(self):
+                self.seen = []
+                self.calls = 0
+
+            def complete(self, req):
+                self.seen.append([dict(m) for m in req.messages])
+                tool_msgs = [m for m in req.messages if m.get("role") == "tool"]
+                if len(tool_msgs) >= 2:
+                    return CompletionResult(text="Booked on the second try.", tool_calls=None)
+                return CompletionResult(
+                    text="",
+                    tool_calls=[
+                        {
+                            "id": f"c{len(tool_msgs)}",
+                            "type": "function",
+                            "function": {
+                                "name": "call_job",
+                                "arguments": json.dumps(
+                                    {"name": "mcp.browser", "arguments": {"command": "open", "url": "https://x.test"}}
+                                ),
+                            },
+                        }
+                    ],
+                )
+
+        provider = RepairingScript()
+
+        # first execution fails, second succeeds
+        records = iter(
+            [
+                {"status": "FAILED", "stderr_tail": "boom"},
+                {"status": "SUCCESS", "stdout_tail": "opened"},
+            ]
+        )
+        env = dict(os.environ)
+        with tempfile.TemporaryDirectory() as tmp:
+            env.update(
+                {
+                    "AGENTS_HOST_DIR": tmp,
+                    "AGENTS_TRACES_DIR": str(Path(tmp) / "traces"),
+                    "AGENTS_IDENTITY_PATH": str(Path(tmp) / "identity.json"),
+                    "AGENTS_SKILLS_DIR": str(Path(tmp) / "skills"),
+                }
+            )
+            env.pop("AGENTS_APPROVAL_CMD", None)
+            env.pop("AGENTS_REPAIR_FAILED_MUTATIONS", None)
+            out, err = io.StringIO(), io.StringIO()
+            with patch.dict(os.environ, env, clear=True):
+                with patch("runner.loop.get_provider", return_value=provider):
+                    with patch("runner.cordis_tools.execute_job", side_effect=lambda *a, **k: next(records)):
+                        with redirect_stdout(out), redirect_stderr(err):
+                            rc = loop_main(
+                                [
+                                    "--channel", "local",
+                                    "--user", "repairuser2",
+                                    "--new-session",
+                                    "--message", "book it",
+                                    "--complete",
+                                    "--provider", "fake",
+                                    "--deliver", "buffered",
+                                ]
+                            )
+        self.assertEqual(rc, 0, err.getvalue())
+        for msgs in provider.seen:
+            for m in msgs:
+                self.assertNotIn("Do not report these actions as successful", str(m.get("content") or ""))
+
+    def test_repair_gate_env_off_disables(self):
+        provider = self._mutation_then_text_script("Done! Booked it.")
+        job = {"status": "FAILED", "stderr_tail": "boom"}
+        rc, out, err = self._run_loop_with_provider(
+            provider, job, extra_env={"AGENTS_REPAIR_FAILED_MUTATIONS": "0"}
+        )
+        self.assertEqual(rc, 0, err)
+        for msgs in provider.seen:
+            for m in msgs:
+                self.assertNotIn("Do not report these actions as successful", str(m.get("content") or ""))
+        # with the gate off the turn ends right after the lie: 2 completions
+        self.assertEqual(len(provider.seen), 2)
+
     def test_routine_session_does_not_replace_active_chat(self):
         from types import SimpleNamespace
 
@@ -851,4 +1032,3 @@ class TestModulesAndLoop(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

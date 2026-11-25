@@ -276,6 +276,7 @@ def _run_tool_calls(
     receipts: list[dict[str, Any]] | None = None,
     clarifies: list[dict[str, Any]] | None = None,
     workspace: Any = None,
+    events: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
     """Route tool_calls through the Cordis tools (closed carrier) with loop protection and trace recording."""
     messages: list[dict[str, Any]] = []
@@ -344,6 +345,19 @@ def _run_tool_calls(
                     batch.append(receipt)
                     if receipts is not None:
                         receipts.append(receipt)
+                if events is not None and outcome.mutating:
+                    if outcome.success:
+                        events.append({"kind": "mutation_success", "tool": outcome.tool})
+                    elif not str(content).startswith("Denied:"):
+                        # Approval denials are already communicated to the model
+                        # with do-not-retry guidance; they are not repairable failure.
+                        events.append(
+                            {
+                                "kind": "mutation_failure",
+                                "tool": outcome.tool,
+                                "error": str(content)[:160],
+                            }
+                        )
                 if turn_cache is not None:
                     if is_mutator:
                         turn_cache.clear()
@@ -374,6 +388,44 @@ def _run_tool_calls(
     if batch:
         messages.append({"role": "user", "content": format_receipt_context(batch)})
     return messages
+
+
+def _unrepaired_mutation_failures(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Failed mutating calls with no later success of the same tool this turn.
+
+    Module-level matching, not argument-level: a corrected retry almost
+    never repeats the failed arguments exactly, and the op-type is the
+    intent the model is responsible for. A success only repairs failures
+    that came before it — order in the events list is execution order."""
+    out: list[dict[str, Any]] = []
+    for i, ev in enumerate(events):
+        if ev.get("kind") != "mutation_failure":
+            continue
+        repaired = any(
+            later.get("kind") == "mutation_success" and later.get("tool") == ev.get("tool")
+            for later in events[i + 1 :]
+        )
+        if not repaired:
+            out.append(ev)
+    return out
+
+
+_REPAIR_NOTICE_CAP = 3
+
+
+def _repair_notice(failures: list[dict[str, Any]]) -> str:
+    lines = [
+        "[System Notice: {} mutating tool call(s) FAILED this turn and were not corrected:".format(
+            len(failures)
+        )
+    ]
+    for ev in failures[:_REPAIR_NOTICE_CAP]:
+        lines.append("- {}: {}".format(ev.get("tool") or "?", ev.get("error") or "unknown error"))
+    lines.append(
+        "Do not report these actions as successful or completed. Either retry with "
+        "corrected arguments, or inform the user exactly what failed and what did not happen.]"
+    )
+    return "\n".join(lines)
 
 
 _TOOL_TAG = re.compile(r"<tool_call>\s*(\{.*?\})\s*</tool_call>", re.DOTALL)
@@ -1094,6 +1146,19 @@ def _main_impl(argv: list[str] | None = None) -> int:
     turn_cache: dict[tuple[str, str], tuple[str, str]] = {}
     turn_receipts: list[dict[str, Any]] = []
     turn_clarifies: list[dict[str, Any]] = []
+    turn_events: list[dict[str, Any]] = []
+    repair_noticed: set[tuple[Any, Any]] = set()
+    repair_attempts = 0
+    try:
+        repair_max = int(os.environ.get("AGENTS_REPAIR_MAX", "2"))
+    except ValueError:
+        repair_max = 2
+    repair_enabled = os.environ.get("AGENTS_REPAIR_FAILED_MUTATIONS", "1").strip().lower() not in {
+        "0",
+        "false",
+        "off",
+        "no",
+    }
 
     for _round in range(max_rounds):
         if _interrupted():
@@ -1108,6 +1173,40 @@ def _main_impl(argv: list[str] | None = None) -> int:
             )
             return 0
         if not result.tool_calls:
+            # Truthfulness invariant: a turn may not end while a mutating
+            # call this turn failed and was neither repaired nor disclosed.
+            # Each distinct failure is named exactly once — a genuinely
+            # impossible op must not be nagged about repeatedly, but the
+            # model always gets one explicit chance to correct or disclose.
+            if repair_enabled and turn_events:
+                unrepaired = [
+                    ev
+                    for ev in _unrepaired_mutation_failures(turn_events)
+                    if (ev.get("tool"), ev.get("error")) not in repair_noticed
+                ]
+                if unrepaired and repair_attempts < repair_max:
+                    repair_attempts += 1
+                    for ev in unrepaired:
+                        repair_noticed.add((ev.get("tool"), ev.get("error")))
+                    messages.append({"role": "assistant", "content": result.text or None})
+                    messages.append({"role": "user", "content": _repair_notice(unrepaired)})
+                    try:
+                        result = _complete_once(
+                            provider,
+                            CompletionRequest(
+                                model=model_override,
+                                messages=messages,
+                                tools=tools,
+                                on_status=on_status,
+                                on_delta=on_delta,
+                                on_thought=on_thought,
+                            ),
+                        )
+                    except Exception:
+                        break
+                    if (result.text or "").strip():
+                        last_scratch = result.text.strip()
+                    continue
             break
         tool_msgs = _run_tool_calls(
             result.tool_calls,
@@ -1120,6 +1219,7 @@ def _main_impl(argv: list[str] | None = None) -> int:
             receipts=turn_receipts,
             clarifies=turn_clarifies,
             workspace=ws,
+            events=turn_events,
         )
         messages.append(
             {
