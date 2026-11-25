@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone, timedelta
+import io
 import os
 import shutil
 import tempfile
@@ -20,6 +21,7 @@ from runner.schedule import (
     parse_due_time,
     is_cron_due,
     wait_for_background_ticks,
+    main,
 )
 
 
@@ -76,6 +78,16 @@ class TestSchedule(unittest.TestCase):
     def test_text_without_channel_or_user_fails(self):
         with self.assertRaises(ValueError):
             add_schedule(name="no_target", at="+10m", text="hello")
+
+    def test_add_cli_rejects_verb_abbreviations(self):
+        for argv in (
+            ["add", "--at", "+1h", "--v", "python -c x"],
+            ["add", "--at", "+1h", "--ver=python -c x"],
+        ):
+            with self.subTest(argv=argv), patch("sys.stderr", new=io.StringIO()):
+                with self.assertRaises(SystemExit) as raised:
+                    main(argv)
+                self.assertEqual(raised.exception.code, 2)
 
     def test_is_cron_due(self):
         now = datetime(2026, 9, 5, 8, 0, 0, tzinfo=timezone.utc)

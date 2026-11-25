@@ -611,6 +611,49 @@ class TestBypassPaths(unittest.TestCase):
                 needs_approval(mod, {"arguments": {"argv": ["--verb", "x"]}})
             )
 
+    def test_schedule_add_argv_verb_abbreviations_rearm_approval(self):
+        from runner.approval import needs_approval
+        from runner.modules import find_module
+
+        mod = find_module("mcp.schedule.add")
+        self.assertIsNotNone(mod)
+        cases = (
+            {"argv": ["--at", "+1s", "--v", "python -c x"]},
+            {"argv": ["--at", "+1s", "--ve", "python -c x"]},
+            {"argv": ["--at=+1s", "--ver=python -c x"]},
+            {"argv": "--at +1s --v 'python -c x'"},
+            {"argv": "--at=+1s --ver='python -c x'"},
+        )
+        with patch.dict(
+            os.environ,
+            {"AGENTS_APPROVAL_CMD": "approve", "AGENTS_APPROVAL_MODE": "ask"},
+        ):
+            for args in cases:
+                with self.subTest(args=args):
+                    self.assertTrue(needs_approval(mod, args))
+
+    def test_schedule_add_non_dict_arguments_verb_rearms_approval(self):
+        from runner.approval import needs_approval
+        from runner.modules import find_module
+
+        mod = find_module("mcp.schedule.add")
+        self.assertIsNotNone(mod)
+        cases = (
+            {"arguments": ["--v", "python -c x"]},
+            {"arguments": ["--ver=python -c x"]},
+            {"arguments": "--v 'python -c x'"},
+            {"arguments": "--ver='python -c x'"},
+            ["--v", "python -c x"],
+            "--ver='python -c x'",
+        )
+        with patch.dict(
+            os.environ,
+            {"AGENTS_APPROVAL_CMD": "approve", "AGENTS_APPROVAL_MODE": "ask"},
+        ):
+            for args in cases:
+                with self.subTest(args=args):
+                    self.assertTrue(needs_approval(mod, args))
+
     def test_ws_config_allow_rule_never_permits_stdio(self):
         # <ws>/config.json is agent-writable: an allow rule written there
         # must never authorize a ws-overlay stdio binary. Only the host

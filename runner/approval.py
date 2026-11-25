@@ -113,31 +113,40 @@ def call_is_mutator(mod: dict[str, Any], args: Any = None) -> bool:
     return module_is_mutator(mod)
 
 
+def _raw_argv_tokens(value: Any) -> list[str]:
+    if isinstance(value, str):
+        try:
+            return shlex.split(value)
+        except ValueError:
+            return value.split()
+    if isinstance(value, (list, tuple)):
+        return [str(token).strip() for token in value]
+    return []
+
+
+def _is_verb_option(token: str) -> bool:
+    option = token.strip().split("=", 1)[0]
+    return len(option) >= 3 and "--verb".startswith(option)
+
+
 def _verb_arg_rearms(mod: dict[str, Any], args: Any) -> bool:
     """An ``approval_ask: false`` waiver holds only when the call cannot
     queue an arbitrary ``--verb``. A non-empty ``verb`` argument — or a
-    ``--verb`` / ``--verb=...`` token inside a raw ``argv`` list — re-arms
-    the prompt for the mutating class (mcp.schedule.add)."""
-    if not isinstance(args, dict):
-        return False
-    inner = args.get("arguments") if set(args.keys()) == {"arguments"} else args
-    if not isinstance(inner, dict):
-        return False
-    if str(inner.get("verb") or "").strip():
-        return True
-    argv = inner.get("argv")
-    if isinstance(argv, str):
-        try:
-            argv = shlex.split(argv)
-        except ValueError:
-            argv = [argv]
-    if not isinstance(argv, list):
-        return False
-    for token in argv:
-        tok = str(token).strip()
-        if tok == "--verb" or tok.startswith("--verb="):
+    ``--verb`` / abbreviation token inside raw argv — re-arms the prompt
+    for the mutating class (mcp.schedule.add)."""
+    inner = args
+    if isinstance(args, dict) and set(args.keys()) == {"arguments"}:
+        inner = args.get("arguments")
+    argv: Any = None
+    if isinstance(inner, dict):
+        if str(inner.get("verb") or "").strip():
             return True
-    return False
+        argv = inner.get("argv")
+    elif isinstance(inner, (str, list, tuple)):
+        argv = inner
+    if argv is None:
+        return False
+    return any(_is_verb_option(token) for token in _raw_argv_tokens(argv))
 
 
 def needs_approval(
