@@ -401,6 +401,65 @@ class TestValidateJobArgs(unittest.TestCase):
         # 'command' is not part of the spec contract; nothing is missing.
         self.assertEqual(_validate_job_args(mod, {"speed": 2}), "")
 
+    def test_raw_argv_escape_hatch_skips_missing_required(self):
+        from runner.cordis_tools import _validate_job_args
+
+        mod = {
+            "name": "mcp.terminal",
+            "commands": {
+                "write": {
+                    "action": "fs.write",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "path": {"type": "string"},
+                            "content": {"type": "string"},
+                        },
+                        "required": ["path"],
+                    },
+                }
+            },
+        }
+        self.assertEqual(_validate_job_args(mod, {"argv": ["write", "a.txt", "--content", "hi"]}), "")
+        self.assertIn("missing required: path", _validate_job_args(mod, {"command": "write", "argv": []}))
+        self.assertIn("missing required: path", _validate_job_args(mod, {"command": "write", "content": "hi"}))
+
+    def test_spec_declaring_argv_still_validates_required_argv(self):
+        from runner.cordis_tools import _validate_job_args
+
+        mod = {
+            "name": "mcp.terminal",
+            "commands": {
+                "run": {
+                    "action": "proc.run",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {"argv": {"type": "array"}},
+                        "required": ["argv"],
+                    },
+                }
+            },
+        }
+        self.assertIn("missing required: argv", _validate_job_args(mod, {"command": "run"}))
+
+    def test_raw_argv_non_tolerant_still_rejects_unknown_keys(self):
+        from runner.cordis_tools import _validate_job_args
+
+        mod = {
+            "name": "mcp.stricttool",
+            "commands": {
+                "go": {
+                    "action": "x.go",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {"target": {"type": "string"}},
+                        "required": ["target"],
+                    },
+                }
+            },
+        }
+        self.assertIn("unknown: bogus", _validate_job_args(mod, {"argv": ["go", "x"], "bogus": 1}))
+
     def test_call_job_description_carries_discovery_contract(self):
         desc = ""
         for tool in openai_cordis_tools():

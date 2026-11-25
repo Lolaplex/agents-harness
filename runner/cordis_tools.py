@@ -212,7 +212,20 @@ def _validate_job_args(mod: dict[str, Any], job_args: Any) -> str:
     props: dict[str, Any] = raw_props if isinstance(raw_props, dict) else {}
     if not props:
         return ""
-    missing = [k for k in required if k in props and k not in job_args]
+    # Raw-argv escape hatch: caller passed CLI tokens in `argv` for a spec
+    # whose own contract does not declare an `argv` parameter (e.g.
+    # mcp.terminal write/edit/read). Named required keys live inside the
+    # argv tokens, not at the top level of job_args; the CLI validates them.
+    raw_argv_passthrough = (
+        isinstance(job_args.get("argv"), list)
+        and bool(job_args.get("argv"))
+        and "argv" not in props
+    )
+    missing = (
+        []
+        if raw_argv_passthrough
+        else [k for k in required if k in props and k not in job_args]
+    )
     open_world = schema.get("additionalProperties") is True
     tolerant = str(mod.get("name") or "") in _TOLERANT_MAPPER_MODULES
     unknown = (
