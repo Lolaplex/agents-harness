@@ -14,6 +14,7 @@ from .modules import find_module, find_module_for_tool, list_modules, openai_too
 from .toolsets import command_allowed, filter_modules, module_allowed
 from .receipts import harness_failure, make_receipt, subprocess_succeeded
 from .redact import redact_tool_output
+from . import session_gate
 from .pre_pr import pre_pr_report
 from .retrieve import annotate_clip, read_content, render_read_result
 from .search_report import search_notice, strip_search_tags
@@ -728,6 +729,18 @@ def run_cordis_tool(
         if not allowed:
             return _outcome(
                 HarnessError(redact_tool_output(denial)),
+                success=False,
+                tool=tool_name,
+                mutating=mutating,
+                arguments=job_args,
+            )
+        # Session host bind: after approval, before any execution. A
+        # denied call returned above and never reaches this gate.
+        try:
+            session_gate.maybe_bind(session, tool_name, workspace, mod=mod)
+        except session_gate.SessionGateError as exc:
+            return _outcome(
+                HarnessError(f"error: session host bind failed: {exc}"),
                 success=False,
                 tool=tool_name,
                 mutating=mutating,

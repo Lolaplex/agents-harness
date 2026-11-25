@@ -971,7 +971,9 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser = argparse.ArgumentParser(prog="runner.schedule", description="Dynamic schedule & reminder manager")
     sub = parser.add_subparsers(dest="command")
 
-    add_p = sub.add_parser("add", help="Add a dynamic schedule or reminder")
+    add_p = sub.add_parser(
+        "add", help="Add a dynamic schedule or reminder", allow_abbrev=False
+    )
     add_p.add_argument("--name", help="Unique name/slug for the schedule")
     add_p.add_argument("--at", help="Due time: ISO-8601 (2026-09-05T20:00:00Z) or relative (+10m, +1h, +2d)")
     add_p.add_argument("--cron", help="Cron expression (e.g. '0 8 * * *')")

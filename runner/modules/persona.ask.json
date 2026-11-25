@@ -9,6 +9,7 @@
   "mutates": true,
   "timeout_sec": 660,
   "as_tool": true,
+  "extra_allow": ["AGENTS_SESSION_BIND_CMD", "AGENTS_PARENT_SESSION"],
   "parameters": {
     "type": "object",
     "properties": {

@@ -336,6 +336,11 @@ def _tool_env(
         else ()
     )
     env = ws.env(role="tool", persona=persona, extra_allow=allow)
+    # Session bind env stays host-side; a manifest re-admits it via
+    # extra_allow only when it must forward it to a spawned child turn.
+    for key in ("AGENTS_SESSION_BIND_CMD", "AGENTS_PARENT_SESSION"):
+        if key not in allow:
+            env.pop(key, None)
     mod_env = manifest.get("env")
     if isinstance(mod_env, dict):
         for k, v in mod_env.items():

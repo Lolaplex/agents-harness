@@ -37,6 +37,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from . import session_gate
+
 
 def _override_dir() -> Path | None:
     raw = os.environ.get("AGENTS_DELEGATES_DIR", "").strip()
@@ -344,6 +346,23 @@ def _spawn_env(
     return env
 
 
+def bind_parent_session() -> None:
+    """Bind the forwarded parent session before any child env is captured
+    or inbox state mutates.
+
+    A spawned local turn is a host-local effect (harness#42), and the
+    bind may switch ``AGENTS_WORKDIR`` to the session worktree — a child
+    env built from a pre-bind ``os.environ`` would route the delegate
+    into the main repo."""
+    parent_session = os.environ.get("AGENTS_PARENT_SESSION", "").strip()
+    if not parent_session:
+        return
+    try:
+        session_gate.maybe_bind(parent_session, "mcp.delegate")
+    except session_gate.SessionGateError as exc:
+        raise DelegateError(str(exc), code=2) from exc
+
+
 def spawn(
     task: str,
     *,
@@ -366,6 +385,7 @@ def spawn(
         workdir = _checked_workdir(workdir)
     dlg_id = "dlg_" + uuid.uuid4().hex[:12]
     session = "ses_dlg_" + dlg_id[4:]
+    bind_parent_session()
     env = _spawn_env(
         dlg_id,
         depth=depth,

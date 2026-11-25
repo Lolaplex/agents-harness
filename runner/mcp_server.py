@@ -6,10 +6,13 @@ import json
 
 from mcp.server.fastmcp import FastMCP
 
+from .approval import gate_module
 from .executor import execute_job, list_schedules, present_job_result
+from .helpjson import with_discovered_commands
 from .loop import build_payload
 from .modules import find_module, list_modules
 from .providers import list_providers
+from . import session_gate
 from .user_profile import load_user_profile
 
 mcp = FastMCP("agents-harness")
@@ -106,16 +109,35 @@ def assemble_session(
 
 
 @mcp.tool()
-def call_job(name: str) -> str:
-    """Run one module or schedule by name. Cordis: CLI verb + exit code only."""
+def call_job(name: str, session: str = "") -> str:
+    """Run one module or schedule by name. Cordis: CLI verb + exit code only.
+
+    Same gates as ``runner.loop`` call_job: approval policy first, then
+    the session host bind before any execution."""
     mod = find_module(name)
     if mod is not None:
+        mod = with_discovered_commands(mod)
+        allowed, denial = gate_module(mod, {}, session=session)
+        if not allowed:
+            return json.dumps({"error": denial})
+        try:
+            session_gate.maybe_bind(session, str(mod.get("name") or name), mod=mod)
+        except session_gate.SessionGateError as exc:
+            return json.dumps({"error": f"error: session host bind failed: {exc}"})
         res = present_job_result(execute_job(mod))
         return json.dumps(res, default=str)
     match = [s for s in list_schedules() if s["name"].lower() == name.lower()]
     if not match:
         return json.dumps({"error": f"no module or schedule named '{name}'"})
-    res = present_job_result(execute_job(match[0]))
+    sched = match[0]
+    allowed, denial = gate_module(sched, {}, session=session)
+    if not allowed:
+        return json.dumps({"error": denial})
+    try:
+        session_gate.maybe_bind(session, str(sched.get("name") or name), mod=sched)
+    except session_gate.SessionGateError as exc:
+        return json.dumps({"error": f"error: session host bind failed: {exc}"})
+    res = present_job_result(execute_job(sched))
     return json.dumps(res, default=str)
 
 
