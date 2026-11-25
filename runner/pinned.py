@@ -55,6 +55,80 @@ def _is_positional(usage: str, key: str) -> bool:
     return f"[{token}]" in usage or f"<{token}>" in usage
 
 
+def _resolve_ref(schema: dict[str, Any], defs: dict[str, Any]) -> dict[str, Any]:
+    ref = schema.get("$ref")
+    if isinstance(ref, str) and ref.startswith("#/$defs/"):
+        target = defs.get(ref[len("#/$defs/"):])
+        if isinstance(target, dict):
+            return target
+    return schema
+
+
+def _schema_example(
+    schema: dict[str, Any],
+    key: str,
+    command: str,
+    depth: int = 0,
+    defs: dict[str, Any] | None = None,
+) -> Any:
+    """Type-faithful placeholder from the JSON schema itself.
+
+    Names alone are not enough for nested shapes — a model shown
+    ``"flights": "flights"`` still has to invent the array-of-objects
+    structure, and small models invent it wrong. Enum picks the first
+    value, arrays render one example element, objects render their
+    required (else first few) properties. Depth-capped so recursive
+    schemas cannot explode the pinned block."""
+    if not isinstance(schema, dict) or depth > 2:
+        return _placeholder(key, command)
+    defs = defs if isinstance(defs, dict) else {}
+    schema = _resolve_ref(schema, defs)
+    enum = schema.get("enum")
+    if isinstance(enum, list) and enum:
+        return enum[0]
+    typ = schema.get("type")
+    if typ == "array":
+        items = schema.get("items")
+        item_schema: dict[str, Any] = {}
+        if isinstance(items, dict):
+            any_of = items.get("anyOf")
+            if isinstance(any_of, list) and any_of:
+                ref = next(
+                    (
+                        c
+                        for c in any_of
+                        if isinstance(c, dict)
+                        and (c.get("properties") or _resolve_ref(c, defs).get("properties"))
+                    ),
+                    None,
+                )
+                if isinstance(ref, dict):
+                    item_schema = _resolve_ref(ref, defs)
+            elif items.get("properties") or _resolve_ref(items, defs).get("properties"):
+                item_schema = _resolve_ref(items, defs)
+        if item_schema:
+            return [_schema_example({**item_schema, "type": "object"}, key, command, depth + 1, defs)]
+        placeholder = _placeholder(key, command)
+        # a list placeholder (argv) is already the array value; wrapping it
+        # again would stringify it into one argv token downstream
+        return placeholder if isinstance(placeholder, list) else [placeholder]
+    if typ == "object" or schema.get("properties"):
+        raw_props = schema.get("properties")
+        props: dict[str, Any] = raw_props if isinstance(raw_props, dict) else {}
+        keys = [str(k) for k in (schema.get("required") or [])] or list(props)[:3]
+        out: dict[str, Any] = {}
+        for prop_key in keys[:5]:
+            prop_schema = props.get(prop_key)
+            out[prop_key] = _schema_example(
+                prop_schema if isinstance(prop_schema, dict) else {}, prop_key, command, depth + 1, defs)
+        return out
+    if typ in ("integer", "number"):
+        return 1
+    if typ == "boolean":
+        return True
+    return _placeholder(key, command)
+
+
 def _example_arguments(name: str, spec: dict[str, Any]) -> dict[str, Any]:
     """Named arguments that ``cordis_tools._arguments_to_argv`` maps to argv.
 
@@ -68,10 +142,14 @@ def _example_arguments(name: str, spec: dict[str, Any]) -> dict[str, Any]:
     raw_props = params.get("properties")
     props: dict[str, Any] = raw_props if isinstance(raw_props, dict) else {}
     required = [str(item) for item in (params.get("required") or [])]
+    raw_defs = params.get("$defs")
+    defs: dict[str, Any] = raw_defs if isinstance(raw_defs, dict) else {}
     usage = str(spec.get("usage") or "")
     args: dict[str, Any] = {"command": name}
     for key in required:
-        args[key] = _placeholder(key, name)
+        key_schema = props.get(key)
+        args[key] = _schema_example(
+            key_schema if isinstance(key_schema, dict) else {}, key, name, defs=defs)
     for key, schema in props.items():
         if key in required or key in _META_KEYS:
             continue
@@ -82,7 +160,7 @@ def _example_arguments(name: str, spec: dict[str, Any]) -> dict[str, Any]:
             continue
         if _is_positional(usage, key):
             continue
-        args[key] = _placeholder(key, name)
+        args[key] = _schema_example(schema, key, name, defs=defs)
     return args
 
 
@@ -94,14 +172,19 @@ def _example_call(module_name: str, arguments: dict[str, Any]) -> str:
     )
 
 
-def pinned_entries() -> list[dict[str, Any]]:
+def pinned_entries(*, workspace: Any = None, channel: str = "") -> list[dict[str, Any]]:
     """One entry per pinned command, or an ``unavailable`` entry per module.
 
     A discovery failure is reported as a line instead of crashing or being
-    dropped silently.
+    dropped silently. Modules are scoped by the active toolset like every
+    other prompt surface — an out-of-scope pinned verb would leak its
+    module into a restricted deployment and eat the block's char cap.
     """
+    from .toolsets import filter_modules
+
     entries: list[dict[str, Any]] = []
-    for mod in list_modules():
+    rows = filter_modules(list_modules(workspace=workspace), channel=channel, workspace=workspace)
+    for mod in rows:
         if not mod.get("pin"):
             continue
         name = str(mod.get("name") or "")
@@ -209,12 +292,31 @@ def _render(entries: list[dict[str, Any]], limit: int) -> str:
     return text[:room].rstrip() + "\n" + CLIP_MARKER
 
 
-def pinned_verbs_prompt_block(limit: int = MAX_CHARS) -> str:
+def _char_cap() -> int:
+    """``AGENTS_PINNED_MAX_CHARS`` tunes the block budget per deployment.
+
+    The default keeps the prefix cache-friendly; a deployment whose hot
+    verbs carry nested schemas (the examples are type-faithful, so they
+    are not small) may raise it instead of losing verbs to clipping."""
+    raw = os.environ.get("AGENTS_PINNED_MAX_CHARS", "").strip()
+    if raw:
+        try:
+            return max(0, int(raw))
+        except ValueError:
+            pass
+    return MAX_CHARS
+
+
+def pinned_verbs_prompt_block(
+    limit: int = 0, *, workspace: Any = None, channel: str = ""
+) -> str:
     """System-prefix fragment. Empty when disabled or nothing is pinned."""
     if disabled():
         return ""
+    if not limit:
+        limit = _char_cap()
     try:
-        entries = pinned_entries()
+        entries = pinned_entries(workspace=workspace, channel=channel)
     except Exception as exc:  # noqa: BLE001 - a broken catalog must not kill the turn
         return f"pinned: unavailable ({type(exc).__name__}: {exc})"
     if not entries:

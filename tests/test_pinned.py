@@ -34,7 +34,7 @@ EXPECTED_ARGV = {
     "edit": ["edit", "notes.txt", "--old", "hello world", "--new", "hello there"],
     "run": ["run", "--", "python", "-m", "unittest"],
     "bg": ["bg", "--", "python", "-m", "unittest"],
-    "proc": ["proc", "action", "--id", "id", "--data", "data"],
+    "proc": ["proc", "list", "--id", "id", "--data", "data"],
 }
 
 
