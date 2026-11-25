@@ -122,9 +122,14 @@ class TestPersonaMemory(unittest.TestCase):
         with patch.dict(os.environ, ws_env, clear=True):
             with patch.object(delegate.subprocess, "Popen", FakePopen):
                 delegate.spawn("t", provider="echo", persona="cos")
+        # Canonicalize both sides: production resolves paths to their
+        # on-disk case (C:\Windows\Temp) while tempfile-derived strings keep
+        # the env-var case (C:\Windows\TEMP) — same directory on Windows.
+        import os as _os
+
         self.assertEqual(
-            captured.get("AGENTS_MEMORY_PATH"),
-            str(self.ws.personas / "cos" / "memory"),
+            _os.path.realpath(str(captured.get("AGENTS_MEMORY_PATH") or "")),
+            _os.path.realpath(str(self.ws.personas / "cos" / "memory")),
         )
 
 

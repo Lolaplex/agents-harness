@@ -143,7 +143,13 @@ def store_path(workspace: Any = None) -> Path | None:
     host_dir = getattr(host, "dir", None)
     if ws is not None and host_dir is not None:
         ws_id = str(getattr(ws, "id", "") or "").strip()
-        if ws_id:
+        # A legacy host resolves as its own workspace with the host dir name
+        # as a phantom id. There is no per-workspace trust boundary on an
+        # unmigrated host — and the pre-upgrade host-wide allowlist must keep
+        # applying — so only registered workspaces get a scoped store.
+        ws_dir = getattr(ws, "dir", None)
+        is_legacy_host = ws_dir is not None and Path(ws_dir) == Path(host_dir)
+        if ws_id and not is_legacy_host:
             return Path(host_dir) / "approvals" / f"ws-{ws_id}.allowlist.json"
     allowlist = getattr(host, "approval_allowlist", None)
     if allowlist is not None:

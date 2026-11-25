@@ -180,7 +180,7 @@ def _record_tool(
         pass
 
 
-def _augment_system(system: str, project: str = "", workspace=None) -> str:
+def _augment_system(system: str, project: str = "", workspace=None, channel: str = "") -> str:
     chunks = [system.strip()] if system and system.strip() else []
     chunks.append(FENCE_SYSTEM_NOTE)
     chunks.append(RETRIEVAL_NOTE)
@@ -193,7 +193,7 @@ def _augment_system(system: str, project: str = "", workspace=None) -> str:
     block = skills_prompt_block(workspace)
     if block:
         chunks.append(block)
-    pinned = pinned_verbs_prompt_block()
+    pinned = pinned_verbs_prompt_block(workspace=workspace, channel=channel)
     if pinned:
         chunks.append(pinned)
     line = recall_prompt_line(workspace)
@@ -377,6 +377,14 @@ def _run_tool_calls(
 
 
 _TOOL_TAG = re.compile(r"<tool_call>\s*(\{.*?\})\s*</tool_call>", re.DOTALL)
+_TOOL_FUNC = re.compile(
+    r"<tool_call>\s*<function=([A-Za-z0-9_.\-]+)>\s*(.*?)</function>\s*</tool_call>",
+    re.DOTALL,
+)
+_TOOL_PARAM = re.compile(
+    r"<parameter=([A-Za-z0-9_.\-]+)>(.*?)</parameter>",
+    re.DOTALL,
+)
 _TOOL_FENCE = re.compile(
     r"```(?:json|tool)?\s*(\{.*?\})\s*```",
     re.DOTALL,
@@ -405,17 +413,53 @@ def _json_tool_call(blob: str, call_id: str) -> dict[str, Any] | None:
     }
 
 
+def _func_tool_call(name: str, body: str, call_id: str) -> dict[str, Any] | None:
+    """qwen heretic variant: <function=NAME><parameter=K>V</parameter>…"""
+    name = name.strip()
+    if not name:
+        return None
+    args: dict[str, str] = {}
+    for m in _TOOL_PARAM.finditer(body):
+        key = m.group(1).strip()
+        if key:
+            args[key] = m.group(2).strip()
+    return {
+        "id": call_id,
+        "type": "function",
+        "function": {"name": name, "arguments": json.dumps(args, ensure_ascii=False)},
+    }
+
+
 def _parse_text_tool_calls(text: str) -> tuple[list[dict[str, Any]] | None, str]:
     """Local models sometimes emit a tool call as XML/JSON in content."""
     if not text:
         return None, text
-    match = _TOOL_TAG.search(text) or _TOOL_FENCE.search(text)
+    calls: list[dict[str, Any]] = []
+    rest = text
+    # Collect every <tool_call> block — JSON body or <function=…> body —
+    # in document order; leftover prose stays in text.
+    while True:
+        m_json = _TOOL_TAG.search(rest)
+        m_func = _TOOL_FUNC.search(rest)
+        match = min((m for m in (m_json, m_func) if m), key=lambda m: m.start(), default=None)
+        if match is None:
+            break
+        if match is m_func:
+            parsed = _func_tool_call(match.group(1), match.group(2), f"text_{len(calls)+1}")
+        else:
+            parsed = _json_tool_call(match.group(1), f"text_{len(calls)+1}")
+        rest = (rest[: match.start()] + rest[match.end() :]).strip()
+        if parsed is not None:
+            calls.append(parsed)
+    if calls:
+        return calls, rest
+    match = _TOOL_FENCE.search(rest)
     if not match:
         return None, text
     parsed = _json_tool_call(match.group(1), "text_1")
     if parsed is None:
         return None, text
-    rest = (text[: match.start()] + text[match.end() :]).strip()
+    rest = (rest[: match.start()] + rest[match.end() :]).strip()
     return [parsed], rest
 
 
@@ -466,7 +510,7 @@ def build_payload(
 
     Clock is last-before-user so it cannot invalidate the system prefix.
     """
-    system = _augment_system(system, project=project, workspace=workspace)
+    system = _augment_system(system, project=project, workspace=workspace, channel=channel)
     user_content = render_user_content(user_message, attachments, vision=vision)
     try:
         from agents_traces.prompt import PromptParts, clock_message, system_messages
@@ -521,7 +565,8 @@ def build_payload(
         session_id=session,
         start_date=start_date,
     )
-    messages: list[dict[str, Any]] = list(system_messages(parts))
+    messages: list[dict[str, Any]] = list(
+        system_messages(parts, template=_prompt_template(workspace)))
     messages.extend(_assemble(session, limit=limit))
     if include_clock:
         messages.append(clock_message(timezone_name=timezone_name))
@@ -531,6 +576,30 @@ def build_payload(
     if user_content:
         messages.append({"role": "user", "content": user_content})
     return messages
+
+
+def _prompt_template(workspace) -> str:
+    """Workspace frame override: ``<ws>/prompts/system_prompt.txt`` wins,
+    then ``AGENTS_PROMPT_TEMPLATE_FILE``, then inline
+    ``AGENTS_PROMPT_TEMPLATE``. Empty means the built-in layout."""
+    if workspace is not None:
+        try:
+            from pathlib import Path
+
+            p = Path(workspace.dir) / "prompts" / "system_prompt.txt"
+            if p.is_file():
+                return p.read_text(encoding="utf-8")
+        except Exception:
+            pass
+    path = os.environ.get("AGENTS_PROMPT_TEMPLATE_FILE", "").strip()
+    if path:
+        try:
+            from pathlib import Path
+
+            return Path(path).read_text(encoding="utf-8")
+        except OSError:
+            pass
+    return os.environ.get("AGENTS_PROMPT_TEMPLATE", "")
 
 
 def _legacy_detached_session(session: str) -> bool:
@@ -672,7 +741,14 @@ def _resolve_identity(args: argparse.Namespace):
 
 
 def _complete_once(provider: Any, req: CompletionRequest) -> CompletionResult:
-    return _coerce_tool_calls(provider.complete(req))
+    result = provider.complete(req)
+    if not req.tools:
+        # Terminal rounds (round-cap synthesis, empty-reply nudge) offer no
+        # tools: a coerced call could not execute, so coercion would silently
+        # eat the only text the model produced. Raw markup in the reply is
+        # visible noise; an empty reply is a dead end the user cannot react to.
+        return result
+    return _coerce_tool_calls(result)
 
 
 def _main_impl(argv: list[str] | None = None) -> int:
@@ -907,18 +983,23 @@ def _main_impl(argv: list[str] | None = None) -> int:
 
         system = persona_system_append(persona_id, base=system, workspace=ws)
 
+    _clock_on = os.environ.get("AGENTS_CLOCK", "1").strip().lower() not in (
+        "0", "false", "no", "off")
     messages = build_payload(
         session,
         user_text,
         limit=args.limit,
         system=system,
+        include_clock=_clock_on,
         user_id=resolved.user.id,
         user_display=profile.get("display", ""),
         work=profile.get("work", ""),
         project=project,
         timezone_name=timezone_name,
         aliases=resolved.user.aliases,
-        start_date=resolved.session.start_date,
+        # AGENTS_CLOCK=0 suppresses every real-time leak for frozen/replay
+        # worlds: the <clock> message AND the session start_date stamp.
+        start_date=resolved.session.start_date if _clock_on else "",
         attachments=attachments,
         vision=vision,
         workspace=ws,
@@ -1155,6 +1236,31 @@ def _main_impl(argv: list[str] | None = None) -> int:
             last_scratch = result.text.strip()
 
     final_text = (result.text or "").strip() or last_scratch
+    if not final_text and not turn_clarifies:
+        # Reasoning models can end a turn on reasoning alone — empty content,
+        # no tool calls. Ask once for the visible reply before giving up.
+        messages.append(
+            {
+                "role": "user",
+                "content": "[System Notice: Respond to the user now with your answer.]",
+            }
+        )
+        try:
+            result = _complete_once(
+                provider,
+                CompletionRequest(
+                    model=model_override,
+                    messages=messages,
+                    tools=None,
+                    on_status=on_status,
+                    on_delta=on_delta,
+                    on_thought=on_thought,
+                ),
+            )
+        except Exception:
+            result = None
+        if result is not None and (result.text or "").strip():
+            final_text = result.text.strip()
     response_flags: list[str] = []
     if turn_clarifies:
         # The turn ends with the question; channels render options where they can.
