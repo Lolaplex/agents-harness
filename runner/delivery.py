@@ -6,11 +6,26 @@ only ack that the prompt was received (thinking / typing).
 
 from __future__ import annotations
 
+import json
 import sys
-from typing import Callable, TextIO
+from typing import Any, Callable, TextIO
+
+SIDEBAND_PREFIX = "__KLANKER_EVT__ "
 
 BUFFERED_CHANNELS = frozenset({"telegram", "http", "gateway"})
 STREAM_OK_CHANNELS = frozenset({"local", "cli", "tty"})
+
+
+def emit_sideband(
+    event_type: str,
+    stream: TextIO | None = None,
+    **fields: Any,
+) -> None:
+    """Emit one newline-terminated JSON sideband event for relay/web consumers."""
+    target = stream if stream is not None else sys.stderr
+    payload = {"type": event_type, **fields}
+    target.write(f"{SIDEBAND_PREFIX}{json.dumps(payload, ensure_ascii=False)}\n")
+    target.flush()
 
 
 def delivery_for(channel: str, *, stdout_tty: bool | None = None, override: str = "") -> str:
@@ -52,8 +67,7 @@ def bind_delivery(
 
     def on_thought(piece: str) -> None:
         if piece:
-            err.write(piece)
-            err.flush()
+            emit_sideband("thought", err, text=piece)
 
     on_delta: Callable[[str], None] | None = None
     if mode == "stream":

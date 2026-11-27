@@ -227,6 +227,32 @@ def is_allowed(tool: str, args: Any, *, workspace: Any = None) -> bool:
     )
 
 
+def _write_patterns(path: Path, patterns: list[str]) -> bool:
+    import os
+    import tempfile
+
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        fd, tmp_name = tempfile.mkstemp(prefix=".allowlist_", suffix=".tmp", dir=str(path.parent))
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                fh.write(json.dumps({"patterns": patterns}, indent=2, ensure_ascii=False))
+            try:
+                os.chmod(tmp_name, 0o600)
+            except OSError:
+                pass
+            os.replace(tmp_name, path)
+        except Exception:
+            try:
+                os.unlink(tmp_name)
+            except OSError:
+                pass
+            raise
+    except OSError:
+        return False
+    return True
+
+
 def remember(tool: str, args: Any, pattern: str = "", *, workspace: Any = None) -> str | None:
     """Persist ``pattern`` (default: the exact signature). Returns it, or None."""
     path = store_path(workspace)
@@ -236,11 +262,32 @@ def remember(tool: str, args: Any, pattern: str = "", *, workspace: Any = None) 
     patterns = _read_patterns(path)
     if pat not in patterns:
         patterns.append(pat)
-        try:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            tmp = path.with_suffix(".tmp")
-            tmp.write_text(json.dumps({"patterns": patterns}, indent=2, ensure_ascii=False), encoding="utf-8")
-            tmp.replace(path)
-        except OSError:
+        if not _write_patterns(path, patterns):
             return None
     return pat
+
+
+def remove_pattern(pattern: str, *, workspace: Any = None) -> bool:
+    """Remove ``pattern`` from workspace and/or host allowlist. Returns True if removed."""
+    pat = (pattern or "").strip()
+    if not pat:
+        return False
+    path = store_path(workspace)
+    if path is None:
+        return False
+    candidates: list[Path] = [path]
+    if path.name != "approval-allowlist.json":
+        host, _ = _resolve_host(workspace)
+        host_dir = getattr(host, "dir", None) if host is not None else None
+        if host_dir:
+            legacy = Path(host_dir) / "approval-allowlist.json"
+            if legacy != path:
+                candidates.append(legacy)
+    removed = False
+    for target in candidates:
+        existing = _read_patterns(target)
+        if pat in existing:
+            updated = [p for p in existing if p != pat]
+            if _write_patterns(target, updated):
+                removed = True
+    return removed
