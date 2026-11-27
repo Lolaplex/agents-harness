@@ -75,6 +75,41 @@ class CompletionResult:
     text: str
     tool_calls: list[Any] | None = None
     raw: dict[str, Any] | None = None
+    usage: dict[str, Any] | None = None
+
+
+def _non_neg_int(val: Any) -> int | None:
+    if isinstance(val, bool):
+        return None
+    if isinstance(val, int) and val >= 0:
+        return val
+    return None
+
+
+def normalize_usage(raw_usage: Any, *, model: str = "") -> dict[str, Any] | None:
+    """Normalize OpenAI / Anthropic usage dicts into a unified shape."""
+    if not isinstance(raw_usage, dict):
+        return None
+    tokens_in = _non_neg_int(raw_usage.get("prompt_tokens"))
+    if tokens_in is None:
+        tokens_in = _non_neg_int(raw_usage.get("input_tokens"))
+    tokens_out = _non_neg_int(raw_usage.get("completion_tokens"))
+    if tokens_out is None:
+        tokens_out = _non_neg_int(raw_usage.get("output_tokens"))
+    if tokens_in is None and tokens_out is None:
+        return None
+    raw_cost = raw_usage.get("est_cost_usd")
+    if raw_cost is None:
+        raw_cost = raw_usage.get("cost")
+    est_cost: float | None = None
+    if isinstance(raw_cost, (int, float)) and not isinstance(raw_cost, bool) and raw_cost >= 0:
+        est_cost = float(raw_cost)
+    return {
+        "tokens_in": tokens_in or 0,
+        "tokens_out": tokens_out or 0,
+        "est_cost_usd": est_cost,
+        "model": model or str(raw_usage.get("model") or ""),
+    }
 
 
 # Transient upstream statuses retried before the first byte. Nothing has
@@ -322,6 +357,7 @@ def consume_sse(
     """
     text_parts: list[str] = []
     tools: dict[int, dict[str, Any]] = {}
+    usage_raw: dict[str, Any] | None = None
     n = 0
     for raw in lines:
         line = raw.decode("utf-8", errors="replace") if isinstance(raw, bytes) else raw
@@ -338,6 +374,8 @@ def consume_sse(
         except json.JSONDecodeError:
             continue
         n += 1
+        if isinstance(chunk.get("usage"), dict) and chunk["usage"]:
+            usage_raw = chunk["usage"]
         choice = (chunk.get("choices") or [{}])[0]
         delta = choice.get("delta") or {}
         reasoning = delta.get("reasoning") or delta.get("reasoning_content")
@@ -354,7 +392,10 @@ def consume_sse(
             text_parts.append(str(msg["content"]))
         _accumulate_tool_calls(tools, msg.get("tool_calls"))
     tool_list = [tools[i] for i in sorted(tools)] or None
-    return "".join(text_parts).strip(), tool_list, {"sse_chunks": n}
+    meta: dict[str, Any] = {"sse_chunks": n}
+    if usage_raw is not None:
+        meta["usage"] = usage_raw
+    return "".join(text_parts).strip(), tool_list, meta
 
 
 def _set_socket_timeout(resp: Any, seconds: float) -> None:
@@ -478,7 +519,12 @@ class OpenAICompatProvider:
                         on_delta=req.on_delta,
                         on_thought=req.on_thought,
                     )
-                    return CompletionResult(text=text, tool_calls=tool_calls, raw=meta)
+                    return CompletionResult(
+                        text=text,
+                        tool_calls=tool_calls,
+                        raw=meta,
+                        usage=normalize_usage(meta.get("usage"), model=model),
+                    )
                 data = json.loads(resp.read().decode("utf-8"))
         except urllib.error.HTTPError as e:
             err = e.read().decode("utf-8", errors="replace")[:400]
@@ -500,6 +546,7 @@ class OpenAICompatProvider:
             text=str(msg.get("content") or "").strip(),
             tool_calls=msg.get("tool_calls") or None,
             raw=data,
+            usage=normalize_usage(data.get("usage"), model=model),
         )
 
 

@@ -13,13 +13,14 @@ import json
 import os
 import re
 import sys
+import time
 import uuid
 from typing import Any, Callable
 
 from .attachments import render_user_content, vision_enabled
 from .cordis_tools import is_cordis_tool, receipt_for, run_cordis_tool
 from .fence import FENCE_SYSTEM_NOTE, HarnessError, HarnessMessage, fence_untrusted, present_tool_result
-from .delivery import bind_delivery
+from .delivery import bind_delivery, emit_sideband
 from .executor import execute_job, list_schedules
 from .modules import (
     find_module,
@@ -27,7 +28,7 @@ from .modules import (
     openai_tool_name,
     openai_tools,
 )
-from .providers import CompletionRequest, CompletionResult, find_provider, get_provider, list_providers
+from .providers import CompletionRequest, CompletionResult, find_provider, get_provider, list_providers, normalize_usage
 from .pre_pr import PRE_PR_NOTE
 from .project_context import project_context_block
 from .receipts import GROUNDING_NOTE, final_check_findings, format_receipt_context
@@ -151,6 +152,9 @@ def _record_tool(
     args: Any,
     result: Any,
     status: str = "ok",
+    *,
+    duration_ms: float | None = None,
+    error: str | None = None,
 ) -> None:
     if not session:
         return
@@ -173,7 +177,49 @@ def _record_tool(
             tool=tool,
             args=parsed_args,
             result=result,
+            duration_ms=duration_ms,
             status=status,
+            error=error,
+        )
+        TraceStore().append(event)
+    except Exception:
+        pass
+
+
+def _record_llm_usage(
+    session: str,
+    usage: dict[str, Any] | None,
+    *,
+    model: str = "",
+    duration_ms: float | None = None,
+) -> None:
+    if not isinstance(usage, dict):
+        return
+    eff_model = str(usage.get("model") or model or "")
+    tokens_in = int(usage.get("tokens_in") or 0)
+    tokens_out = int(usage.get("tokens_out") or 0)
+    est_cost = usage.get("est_cost_usd")
+    emit_sideband(
+        "usage",
+        tokens_in=tokens_in,
+        tokens_out=tokens_out,
+        est_cost_usd=est_cost,
+        model=eff_model,
+    )
+    if not session:
+        return
+    try:
+        from agents_traces.models import TraceEvent
+        from agents_traces.store import TraceStore
+
+        event = TraceEvent(
+            session=session,
+            type="llm_call",
+            model=eff_model or None,
+            tokens_in=tokens_in,
+            tokens_out=tokens_out,
+            cost_usd=est_cost,
+            duration_ms=duration_ms,
         )
         TraceStore().append(event)
     except Exception:
@@ -303,6 +349,10 @@ def _run_tool_calls(
             label = f"{name} ({args_hint[:30]})" if args_hint else name
             on_status(f"running {label}...")
 
+        emit_sideband("tool_start", id=call_id, tool=name, args_preview=str(raw_args)[:300])
+        t0 = time.perf_counter()
+        outcome_ok = True
+
         if is_cordis_tool(name):
             # Loop protection: check identical call in same turn without mutators
             args_str = ""
@@ -338,6 +388,7 @@ def _run_tool_calls(
                 )
                 content = outcome.text
                 notice = outcome.notice
+                outcome_ok = bool(getattr(outcome, "success", True))
                 if outcome.clarify and clarifies is not None:
                     clarifies.append(outcome.clarify)
                 receipt = receipt_for(outcome)
@@ -366,14 +417,29 @@ def _run_tool_calls(
         else:
             content = HarnessError(f"refused: unknown tool {name} (use call_job with a catalog name)")
             notice = ""
+            outcome_ok = False
 
+        duration_ms = round((time.perf_counter() - t0) * 1000.0, 1)
+        ok = outcome_ok and not str(content).startswith("refused")
         recorded = content if not notice else notice + "\n" + content
+        err_str = None if ok else str(content)[:200]
+        emit_sideband(
+            "tool_end",
+            id=call_id,
+            tool=name,
+            ok=ok,
+            duration_ms=duration_ms,
+            result_preview=str(recorded)[:400],
+            error=err_str,
+        )
         _record_tool(
             session=session,
             tool=name,
             args=raw_args,
             result=recorded,
-            status="ok" if not str(content).startswith("refused") else "error",
+            status="ok" if ok else "error",
+            duration_ms=duration_ms,
+            error=err_str,
         )
         presented = present_tool_result(source if is_cordis_tool(name) else name, content)
         if notice:
@@ -792,8 +858,17 @@ def _resolve_identity(args: argparse.Namespace):
     return resolve_identity_store(IdentityStore(), args)
 
 
-def _complete_once(provider: Any, req: CompletionRequest) -> CompletionResult:
+def _complete_once(
+    provider: Any, req: CompletionRequest, *, session: str = ""
+) -> CompletionResult:
+    t0 = time.perf_counter()
     result = provider.complete(req)
+    duration_ms = round((time.perf_counter() - t0) * 1000.0, 1)
+    usage = getattr(result, "usage", None)
+    if usage is None and isinstance(getattr(result, "raw", None), dict):
+        usage = normalize_usage(result.raw.get("usage"), model=req.model)
+    if usage is not None:
+        _record_llm_usage(session, usage, model=req.model, duration_ms=duration_ms)
     if not req.tools:
         # Terminal rounds (round-cap synthesis, empty-reply nudge) offer no
         # tools: a coerced call could not execute, so coercion would silently
@@ -1129,7 +1204,7 @@ def _main_impl(argv: list[str] | None = None) -> int:
         )
         return 0
     try:
-        result = _complete_once(provider, req)
+        result = _complete_once(provider, req, session=session)
     except Exception as e:
         err_msg = str(e).strip() or e.__class__.__name__
         print(f"Turn error: {err_msg}", file=sys.stderr)
@@ -1204,6 +1279,7 @@ def _main_impl(argv: list[str] | None = None) -> int:
                                 on_delta=on_delta,
                                 on_thought=on_thought,
                             ),
+                            session=session,
                         )
                     except Exception:
                         break
@@ -1265,6 +1341,7 @@ def _main_impl(argv: list[str] | None = None) -> int:
                     on_delta=on_delta,
                     on_thought=on_thought,
                 ),
+                session=session,
             )
         except Exception as e:
             err_msg = str(e).strip() or e.__class__.__name__
@@ -1320,6 +1397,7 @@ def _main_impl(argv: list[str] | None = None) -> int:
                     on_delta=on_delta,
                     on_thought=on_thought,
                 ),
+                session=session,
             )
         except Exception as e:
             err_msg = str(e).strip() or e.__class__.__name__
@@ -1359,6 +1437,7 @@ def _main_impl(argv: list[str] | None = None) -> int:
                     on_delta=on_delta,
                     on_thought=on_thought,
                 ),
+                session=session,
             )
         except Exception:
             result = None
@@ -1398,6 +1477,7 @@ def _main_impl(argv: list[str] | None = None) -> int:
                         on_delta=on_delta,
                         on_thought=on_thought,
                     ),
+                    session=session,
                 )
             except Exception as exc:
                 err_msg = str(exc).strip() or exc.__class__.__name__
