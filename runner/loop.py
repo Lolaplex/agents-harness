@@ -18,6 +18,7 @@ import uuid
 from typing import Any, Callable
 
 from .attachments import render_user_content, vision_enabled
+from .catalog import catalog_full_enabled, compact_catalog_rows
 from .cordis_tools import is_cordis_tool, receipt_for, run_cordis_tool
 from .fence import FENCE_SYSTEM_NOTE, HarnessError, HarnessMessage, fence_untrusted, present_tool_result
 from .delivery import bind_delivery, emit_sideband
@@ -38,6 +39,7 @@ from .skills import skills_prompt_block
 from .memory_rules import memory_rules_prompt_block
 from .pinned import pinned_verbs_prompt_block
 from .recall import recall_message, recall_prompt_line
+from .router import classify_turn
 
 
 def _assemble(session: str, limit: int) -> list[dict[str, Any]]:
@@ -86,6 +88,11 @@ def _record(
 
 
 LOOP_TRAILER_MARKER = "---agents-loop-trailer---"
+FAST_TIER_NOTE = (
+    "Tools are available via list_catalog/call_job if genuinely needed; for simple "
+    "conversation or greetings, reply directly in 1-2 sentences without calling tools.\n"
+    "If a task truly requires action, call list_catalog first, then load_schema, then call_job."
+)
 
 
 def _interrupted() -> bool:
@@ -192,6 +199,7 @@ def _record_llm_usage(
     *,
     model: str = "",
     duration_ms: float | None = None,
+    metadata: dict[str, Any] | None = None,
 ) -> None:
     if not isinstance(usage, dict):
         return
@@ -220,13 +228,20 @@ def _record_llm_usage(
             tokens_out=tokens_out,
             cost_usd=est_cost,
             duration_ms=duration_ms,
+            metadata=dict(metadata) if metadata else None,
         )
         TraceStore().append(event)
     except Exception:
         pass
 
 
-def _augment_system(system: str, project: str = "", workspace=None, channel: str = "") -> str:
+def _augment_system(
+    system: str,
+    project: str = "",
+    workspace=None,
+    channel: str = "",
+    turn_tier: str = "agent",
+) -> str:
     chunks = [system.strip()] if system and system.strip() else []
     chunks.append(FENCE_SYSTEM_NOTE)
     chunks.append(RETRIEVAL_NOTE)
@@ -236,19 +251,25 @@ def _augment_system(system: str, project: str = "", workspace=None, channel: str
     rules = memory_rules_prompt_block(project, workspace=workspace)
     if rules:
         chunks.append(rules)
-    block = skills_prompt_block(workspace)
-    if block:
-        chunks.append(block)
-    pinned = pinned_verbs_prompt_block(workspace=workspace, channel=channel)
-    if pinned:
-        chunks.append(pinned)
+    fast = turn_tier == "fast"
+    if fast:
+        chunks.append(FAST_TIER_NOTE)
+    else:
+        block = skills_prompt_block(workspace)
+        if block:
+            chunks.append(block)
+        pinned = pinned_verbs_prompt_block(workspace=workspace, channel=channel)
+        if pinned:
+            chunks.append(pinned)
     line = recall_prompt_line(workspace)
     if line:
         chunks.append(line)
-    try:
-        project_block = project_context_block(workspace)
-    except Exception:
-        project_block = ""
+    project_block = ""
+    if not fast:
+        try:
+            project_block = project_context_block(workspace)
+        except Exception:
+            project_block = ""
     if project_block:
         chunks.append(project_block)
     return "\n\n".join(chunks)
@@ -592,13 +613,21 @@ def _coerce_tool_calls(result: CompletionResult) -> CompletionResult:
     return result
 
 
-def _skills_for_prompt(workspace=None, channel: str = "") -> list[tuple[str, str]]:
+def _skills_for_prompt(
+    workspace=None,
+    channel: str = "",
+    *,
+    compact: bool = False,
+) -> list[tuple[str, str]]:
     from .toolsets import filter_modules
 
-    rows = []
-    for m in filter_modules(
+    modules = filter_modules(
         list_modules(workspace=workspace), channel=channel, workspace=workspace
-    ):
+    )
+    if compact and not catalog_full_enabled():
+        return compact_catalog_rows(modules)
+    rows = []
+    for m in modules:
         summary = str(m.get("rests_on") or m.get("verb") or "")
         rows.append((str(m["name"]), summary))
     return rows
@@ -623,12 +652,19 @@ def build_payload(
     vision: bool = False,
     workspace=None,
     channel: str = "",
+    turn_tier: str = "agent",
 ) -> list[dict[str, Any]]:
     """system (cached) → history → clock → new user turn.
 
     Clock is last-before-user so it cannot invalidate the system prefix.
     """
-    system = _augment_system(system, project=project, workspace=workspace, channel=channel)
+    system = _augment_system(
+        system,
+        project=project,
+        workspace=workspace,
+        channel=channel,
+        turn_tier=turn_tier,
+    )
     user_content = render_user_content(user_message, attachments, vision=vision)
     try:
         from agents_traces.prompt import PromptParts, clock_message, system_messages
@@ -671,9 +707,16 @@ def build_payload(
             messages.append({"role": "user", "content": user_content})
         return messages
 
+    skills: list[tuple[str, str]] = []
+    if include_modules and turn_tier != "fast":
+        skills = _skills_for_prompt(
+            workspace,
+            channel=channel,
+            compact=turn_tier in ("agent", "deep"),
+        )
     parts = PromptParts(
         instructions=system,
-        skills=_skills_for_prompt(workspace, channel=channel) if include_modules else [],
+        skills=skills,
         user_id=user_id,
         user_display=user_display,
         work=work,
@@ -858,6 +901,20 @@ def _resolve_identity(args: argparse.Namespace):
     return resolve_identity_store(IdentityStore(), args)
 
 
+def _history_has_tools(session: str, *, limit: int = 24) -> bool:
+    """Whether the recent reconstructed session tail already contains tool work."""
+    if not session:
+        return False
+    try:
+        from agents_traces.store import TraceStore
+
+        events = TraceStore().get_events_for_session(session)
+    except Exception:
+        return False
+    tail = events[-max(12, int(limit or 24) * 2) :]
+    return any(getattr(event, "type", "") == "tool_call" for event in tail)
+
+
 def _reasoning_extra(level: str) -> dict[str, Any]:
     """Per-turn reasoning override for provider request bodies.
 
@@ -873,7 +930,11 @@ def _reasoning_extra(level: str) -> dict[str, Any]:
 
 
 def _complete_once(
-    provider: Any, req: CompletionRequest, *, session: str = ""
+    provider: Any,
+    req: CompletionRequest,
+    *,
+    session: str = "",
+    metadata: dict[str, Any] | None = None,
 ) -> CompletionResult:
     t0 = time.perf_counter()
     result = provider.complete(req)
@@ -882,7 +943,13 @@ def _complete_once(
     if usage is None and isinstance(getattr(result, "raw", None), dict):
         usage = normalize_usage(result.raw.get("usage"), model=req.model)
     if usage is not None:
-        _record_llm_usage(session, usage, model=req.model, duration_ms=duration_ms)
+        _record_llm_usage(
+            session,
+            usage,
+            model=req.model,
+            duration_ms=duration_ms,
+            metadata=metadata,
+        )
     if not req.tools:
         # Terminal rounds (round-cap synthesis, empty-reply nudge) offer no
         # tools: a coerced call could not execute, so coercion would silently
@@ -931,6 +998,12 @@ def _main_impl(argv: list[str] | None = None) -> int:
         choices=("auto", "off", "low", "medium", "high"),
         help="Per-turn reasoning override (default: HARNESS_REASONING or auto). auto keeps the provider manifest; off/low/medium/high override it.",
     )
+    parser.add_argument(
+        "--turn-mode",
+        default=(os.environ.get("HARNESS_TURN_MODE", "auto").strip().lower() or "auto"),
+        choices=("auto", "fast", "agent", "deep"),
+        help="Adaptive turn router override (default: HARNESS_TURN_MODE or auto). auto conservatively picks fast/agent/deep.",
+    )
     parser.add_argument("--persona", default="", help="Persona id (<ws>/personas/<id> first, package fallback; default: AGENTS_PERSONA or the workspace default)")
     parser.add_argument(
         "--toolset",
@@ -969,6 +1042,9 @@ def _main_impl(argv: list[str] | None = None) -> int:
     args.reasoning = str(getattr(args, "reasoning", "auto") or "auto").strip().lower()
     if args.reasoning not in ("auto", "off", "low", "medium", "high"):
         parser.error("--reasoning must be one of: auto, off, low, medium, high")
+    args.turn_mode = str(getattr(args, "turn_mode", "auto") or "auto").strip().lower()
+    if args.turn_mode not in ("auto", "fast", "agent", "deep"):
+        parser.error("--turn-mode must be one of: auto, fast, agent, deep")
 
     if args.complete:
         emit_sideband("status", stage="context", text="loading context...")
@@ -1113,6 +1189,14 @@ def _main_impl(argv: list[str] | None = None) -> int:
         user_text = ""
 
     attachments = [str(item) for item in (args.attach or []) if str(item).strip()]
+    history_has_tools = _history_has_tools(session, limit=args.limit)
+    turn_tier = classify_turn(
+        user_text,
+        mode=args.turn_mode,
+        has_attachments=bool(attachments),
+        history_has_tools=history_has_tools,
+    )
+    emit_sideband("tier", tier=turn_tier, mode=args.turn_mode)
     provider_name = args.provider
     if not provider_name:
         try:
@@ -1160,6 +1244,7 @@ def _main_impl(argv: list[str] | None = None) -> int:
         vision=vision,
         workspace=ws,
         channel=args.channel,
+        turn_tier=turn_tier,
     )
     if args.assemble_only or not args.complete:
         print(
@@ -1169,6 +1254,7 @@ def _main_impl(argv: list[str] | None = None) -> int:
                     "user_id": resolved.user.id,
                     "alias": resolved.alias,
                     "start_date": resolved.session.start_date,
+                    "turn_tier": turn_tier,
                     "messages": messages,
                     "tools": openai_tools(workspace=ws),
                 },
@@ -1209,6 +1295,9 @@ def _main_impl(argv: list[str] | None = None) -> int:
         except Exception:
             model_override = ""
     completion_extra = _reasoning_extra(args.reasoning)
+    if turn_tier == "fast" and args.reasoning == "auto":
+        completion_extra = _reasoning_extra("off")
+    turn_trace_metadata = {"turn_tier": turn_tier}
 
     def turn_request(
         request_messages: list[dict[str, Any]],
@@ -1239,7 +1328,7 @@ def _main_impl(argv: list[str] | None = None) -> int:
         )
         return 0
     try:
-        result = _complete_once(provider, req, session=session)
+        result = _complete_once(provider, req, session=session, metadata=turn_trace_metadata)
     except Exception as e:
         err_msg = str(e).strip() or e.__class__.__name__
         print(f"Turn error: {err_msg}", file=sys.stderr)
@@ -1308,6 +1397,7 @@ def _main_impl(argv: list[str] | None = None) -> int:
                             provider,
                             turn_request(messages, tools),
                             session=session,
+                            metadata=turn_trace_metadata,
                         )
                     except Exception:
                         break
@@ -1363,6 +1453,7 @@ def _main_impl(argv: list[str] | None = None) -> int:
                 provider,
                 turn_request(messages, round_tools),
                 session=session,
+                metadata=turn_trace_metadata,
             )
         except Exception as e:
             err_msg = str(e).strip() or e.__class__.__name__
@@ -1412,6 +1503,7 @@ def _main_impl(argv: list[str] | None = None) -> int:
                 provider,
                 turn_request(messages, None),
                 session=session,
+                metadata=turn_trace_metadata,
             )
         except Exception as e:
             err_msg = str(e).strip() or e.__class__.__name__
@@ -1445,6 +1537,7 @@ def _main_impl(argv: list[str] | None = None) -> int:
                 provider,
                 turn_request(messages, None),
                 session=session,
+                metadata=turn_trace_metadata,
             )
         except Exception:
             result = None
@@ -1478,6 +1571,7 @@ def _main_impl(argv: list[str] | None = None) -> int:
                     provider,
                     turn_request(messages, None),
                     session=session,
+                    metadata=turn_trace_metadata,
                 )
             except Exception as exc:
                 err_msg = str(exc).strip() or exc.__class__.__name__

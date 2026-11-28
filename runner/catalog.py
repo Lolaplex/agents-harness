@@ -284,3 +284,217 @@ def cached_catalog_modules(
         _CACHE_MEM["modules"] = snapshot
         _write_disk_cache(path, key, snapshot)
     return modules
+
+
+COMPACT_SUMMARY_MAX_CHARS = 4000
+_COMPACT_DOMAIN_VERB_LIMIT = 12
+_COMPACT_VERB_CHARS = 220
+_COMPACT_HEADER = (
+    "Capability index (summary only; use list_catalog for full rows and "
+    "load_schema for exact parameters):"
+)
+_COMPACT_CLIPPED = "[catalog summary clipped: use list_catalog for the full catalog]"
+
+
+def catalog_full_enabled() -> bool:
+    """Escape hatch for deployments that want the raw per-module prompt dump."""
+    return os.environ.get("HARNESS_CATALOG_FULL", "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    )
+
+
+def _row_name(row: Any) -> str:
+    if isinstance(row, dict):
+        return str(row.get("name") or "").strip()
+    if isinstance(row, (list, tuple)) and row:
+        return str(row[0] or "").strip()
+    return str(row or "").strip()
+
+
+def _server_domain(server: Any) -> str:
+    token = str(server or "").strip().lower().replace("_", "-")
+    for prefix in ("mcp.", "agents-"):
+        if token.startswith(prefix):
+            token = token[len(prefix):]
+    return f"mcp.{token}" if token else "mcp"
+
+
+def _domain_for(row: dict[str, Any], names: set[str]) -> str:
+    name = _row_name(row)
+    if row.get("mcp_server"):
+        return _server_domain(row.get("mcp_server"))
+    exposed_from = str(row.get("exposed_from") or "").strip()
+    if exposed_from:
+        return exposed_from
+    if not name:
+        return "catalog"
+    parts = name.split(".")
+    if parts[0] == "mcp":
+        if len(parts) <= 2:
+            return name
+        second = parts[1].replace("_", "-")
+        if second.startswith("agents-"):
+            return "mcp." + second[len("agents-"):]
+        bases = sorted(
+            (
+                candidate
+                for candidate in names
+                if candidate.startswith("mcp.")
+                and candidate.count(".") == 1
+                and name.startswith(candidate + ".")
+            ),
+            key=len,
+            reverse=True,
+        )
+        if bases:
+            return bases[0]
+        return ".".join(parts[:2])
+    if parts[0] in {"a2a", "persona", "skill"}:
+        return parts[0]
+    return parts[0]
+
+
+def catalog_domain(row: dict[str, Any], names: set[str] | None = None) -> str:
+    """Canonical capability-domain key for one catalog module row."""
+    if not isinstance(row, dict):
+        return "catalog"
+    return _domain_for(row, names or {_row_name(row)})
+
+
+def _row_verbs(row: dict[str, Any], domain: str) -> list[str]:
+    out: list[str] = []
+    commands = row.get("commands")
+    prompt_commands = row.get("_prompt_commands")
+    for mapping in (commands, prompt_commands):
+        if isinstance(mapping, dict):
+            out.extend(str(key).strip() for key in mapping if str(key).strip())
+    command_pin = str(row.get("command_pin") or "").strip()
+    if command_pin:
+        out.append(command_pin)
+    mcp_tool = str(row.get("mcp_tool") or "").strip()
+    if mcp_tool:
+        out.append(mcp_tool)
+    name = _row_name(row)
+    if domain and name.startswith(domain + "."):
+        suffix = name[len(domain) + 1 :].strip()
+        if suffix:
+            out.append(suffix.replace(".", " "))
+    seen: set[str] = set()
+    verbs: list[str] = []
+    for verb in out:
+        if verb not in seen:
+            seen.add(verb)
+            verbs.append(verb)
+    return verbs
+
+
+def _group_catalog(catalog: Iterable[dict[str, Any]]) -> dict[str, list[str]]:
+    rows = [row for row in catalog if isinstance(row, dict) and _row_name(row)]
+    names = {_row_name(row) for row in rows}
+    grouped: dict[str, set[str]] = {}
+    for row in rows:
+        domain = _domain_for(row, names)
+        grouped.setdefault(domain, set()).update(_row_verbs(row, domain))
+    return {
+        domain: sorted(verbs) if verbs else ["call"]
+        for domain, verbs in sorted(grouped.items())
+    }
+
+
+def _compact_verb_text(verbs: list[str]) -> str:
+    shown: list[str] = []
+    used = 0
+    for verb in verbs[:_COMPACT_DOMAIN_VERB_LIMIT]:
+        cost = len(verb) + (2 if shown else 0)
+        if shown and used + cost > _COMPACT_VERB_CHARS:
+            break
+        shown.append(verb)
+        used += cost
+    if not shown and verbs:
+        shown = [verbs[0][:_COMPACT_VERB_CHARS]]
+    hidden = len(verbs) - len(shown)
+    text = ", ".join(shown)
+    if hidden > 0:
+        text += f", +{hidden} more"
+    return text
+
+
+def compact_catalog_rows(
+    catalog: Iterable[dict[str, Any]],
+    *,
+    max_chars: int = COMPACT_SUMMARY_MAX_CHARS,
+) -> list[tuple[str, str]]:
+    """One compact prompt row per capability domain, globally budgeted."""
+    rows: list[tuple[str, str]] = []
+    for domain, verbs in _group_catalog(catalog).items():
+        verb_text = _compact_verb_text(verbs)
+        rows.append(
+            (
+                domain,
+                f'{len(verbs)} verbs: {verb_text} — call list_catalog("{domain}") for schemas',
+            )
+        )
+    if not rows or max_chars <= 0:
+        return []
+
+    def size(items: list[tuple[str, str]]) -> int:
+        return sum(len(domain) + len(summary) + 2 for domain, summary in items)
+
+    if size(rows) <= max_chars:
+        return rows
+    clipped = ("catalog", _COMPACT_CLIPPED)
+    kept = list(rows)
+    while kept and size(kept + [clipped]) > max_chars:
+        kept.pop()
+    kept.append(clipped)
+    if size(kept) <= max_chars:
+        return kept
+    return [clipped]
+
+
+def render_compact_catalog_summary(
+    catalog: Iterable[dict[str, Any]],
+    *,
+    max_chars: int = COMPACT_SUMMARY_MAX_CHARS,
+) -> str:
+    """Render the progressive-disclosure capability index.
+
+    The full catalog remains available through ``list_catalog`` and every exact
+    parameter schema through ``load_schema``; the prompt only carries domain
+    names and representative verbs. Output is bounded to ``max_chars`` so a
+    large MCP fleet cannot crowd out the reasoning prefix.
+    """
+    grouped = _group_catalog(catalog)
+    if not grouped or max_chars <= 0:
+        return ""
+    lines = [_COMPACT_HEADER]
+    for domain, verbs in grouped.items():
+        lines.append(
+            f'{domain} ({len(verbs)} verbs): {_compact_verb_text(verbs)} — '
+            f'call list_catalog("{domain}") for schemas'
+        )
+
+    def build(domain_lines: list[str], clipped: bool) -> str:
+        parts = [lines[0], *domain_lines]
+        if clipped:
+            parts.append(_COMPACT_CLIPPED)
+        return "\n".join(parts)
+
+    domain_lines = lines[1:]
+    text = build(domain_lines, False)
+    if len(text) <= max_chars:
+        return text
+    kept = list(domain_lines)
+    while kept:
+        kept.pop()
+        text = build(kept, True)
+        if len(text) <= max_chars:
+            return text
+    text = build([], True)
+    if len(text) <= max_chars:
+        return text
+    room = max(0, max_chars - len(_COMPACT_CLIPPED) - 1)
+    return text[:room].rstrip() + "\n" + _COMPACT_CLIPPED
