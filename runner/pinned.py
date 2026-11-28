@@ -6,8 +6,9 @@ rendered as compact ``call_job`` examples so a model does not spend a
 stays: the built-in Cordis tools are unchanged.
 
 ``AGENTS_PINNED_VERBS=0`` disables the block. Help-json discovery is cached
-per process by ``helpjson.load_help_json``; there is no disk cache. The
-block is capped at ``MAX_CHARS`` so it cannot blow up the prompt cache.
+per process by ``helpjson.load_help_json`` and across loop processes in the
+module-catalog snapshot. The block is capped at ``MAX_CHARS`` so it cannot
+blow up the prompt cache.
 """
 
 from __future__ import annotations
@@ -189,7 +190,12 @@ def pinned_entries(*, workspace: Any = None, channel: str = "") -> list[dict[str
             continue
         name = str(mod.get("name") or "")
         try:
-            discovered = with_discovered_commands(mod)
+            prompt_commands = mod.get("_prompt_commands")
+            if isinstance(prompt_commands, dict):
+                discovered = dict(mod)
+                discovered["commands"] = prompt_commands
+            else:
+                discovered = with_discovered_commands(mod)
         except Exception as exc:  # noqa: BLE001 - one bad module must not kill the prompt
             entries.append({"module": name, "unavailable": f"{type(exc).__name__}: {exc}"})
             continue

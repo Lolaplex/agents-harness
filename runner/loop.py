@@ -858,6 +858,20 @@ def _resolve_identity(args: argparse.Namespace):
     return resolve_identity_store(IdentityStore(), args)
 
 
+def _reasoning_extra(level: str) -> dict[str, Any]:
+    """Per-turn reasoning override for provider request bodies.
+
+    ``auto`` intentionally returns no key so the provider manifest keeps its
+    existing behavior byte-for-byte. Explicit levels always win over it.
+    """
+    token = str(level or "auto").strip().lower()
+    if token == "off":
+        return {"reasoning": {"enabled": False}}
+    if token in ("low", "medium", "high"):
+        return {"reasoning": {"enabled": True, "effort": token}}
+    return {}
+
+
 def _complete_once(
     provider: Any, req: CompletionRequest, *, session: str = ""
 ) -> CompletionResult:
@@ -911,6 +925,12 @@ def _main_impl(argv: list[str] | None = None) -> int:
     parser.add_argument("--system", default="", help="Optional instructions blob (stable prefix)")
     parser.add_argument("--provider", default="", help="Provider name (openai.default, echo, …)")
     parser.add_argument("--model", default="", help="Model id override (default: LLM_MODEL env or provider manifest model)")
+    parser.add_argument(
+        "--reasoning",
+        default=(os.environ.get("HARNESS_REASONING", "auto").strip().lower() or "auto"),
+        choices=("auto", "off", "low", "medium", "high"),
+        help="Per-turn reasoning override (default: HARNESS_REASONING or auto). auto keeps the provider manifest; off/low/medium/high override it.",
+    )
     parser.add_argument("--persona", default="", help="Persona id (<ws>/personas/<id> first, package fallback; default: AGENTS_PERSONA or the workspace default)")
     parser.add_argument(
         "--toolset",
@@ -946,6 +966,12 @@ def _main_impl(argv: list[str] | None = None) -> int:
         help="Cryptographically seal session tool calls and emit seal digest in trailer",
     )
     args = parser.parse_args(argv)
+    args.reasoning = str(getattr(args, "reasoning", "auto") or "auto").strip().lower()
+    if args.reasoning not in ("auto", "off", "low", "medium", "high"):
+        parser.error("--reasoning must be one of: auto, off, low, medium, high")
+
+    if args.complete:
+        emit_sideband("status", stage="context", text="loading context...")
 
     ws = None
     if args.workspace:
@@ -1182,14 +1208,23 @@ def _main_impl(argv: list[str] | None = None) -> int:
             model_override = selected_model()
         except Exception:
             model_override = ""
-    req = CompletionRequest(
-        model=model_override,
-        messages=messages,
-        tools=tools or None,
-        on_status=on_status,
-        on_delta=on_delta,
-        on_thought=on_thought,
-    )
+    completion_extra = _reasoning_extra(args.reasoning)
+
+    def turn_request(
+        request_messages: list[dict[str, Any]],
+        request_tools: list[dict[str, Any]] | None,
+    ) -> CompletionRequest:
+        return CompletionRequest(
+            model=model_override,
+            messages=request_messages,
+            tools=request_tools,
+            extra=dict(completion_extra),
+            on_status=on_status,
+            on_delta=on_delta,
+            on_thought=on_thought,
+        )
+
+    req = turn_request(messages, tools or None)
     max_rounds = max(1, getattr(args, "max_tool_rounds", 12))
     last_scratch = ""
     if _interrupted():
@@ -1271,14 +1306,7 @@ def _main_impl(argv: list[str] | None = None) -> int:
                     try:
                         result = _complete_once(
                             provider,
-                            CompletionRequest(
-                                model=model_override,
-                                messages=messages,
-                                tools=tools,
-                                on_status=on_status,
-                                on_delta=on_delta,
-                                on_thought=on_thought,
-                            ),
+                            turn_request(messages, tools),
                             session=session,
                         )
                     except Exception:
@@ -1333,14 +1361,7 @@ def _main_impl(argv: list[str] | None = None) -> int:
         try:
             result = _complete_once(
                 provider,
-                CompletionRequest(
-                    model=model_override,
-                    messages=messages,
-                    tools=round_tools,
-                    on_status=on_status,
-                    on_delta=on_delta,
-                    on_thought=on_thought,
-                ),
+                turn_request(messages, round_tools),
                 session=session,
             )
         except Exception as e:
@@ -1389,14 +1410,7 @@ def _main_impl(argv: list[str] | None = None) -> int:
         try:
             result = _complete_once(
                 provider,
-                CompletionRequest(
-                    model=model_override,
-                    messages=messages,
-                    tools=None,
-                    on_status=on_status,
-                    on_delta=on_delta,
-                    on_thought=on_thought,
-                ),
+                turn_request(messages, None),
                 session=session,
             )
         except Exception as e:
@@ -1429,14 +1443,7 @@ def _main_impl(argv: list[str] | None = None) -> int:
         try:
             result = _complete_once(
                 provider,
-                CompletionRequest(
-                    model=model_override,
-                    messages=messages,
-                    tools=None,
-                    on_status=on_status,
-                    on_delta=on_delta,
-                    on_thought=on_thought,
-                ),
+                turn_request(messages, None),
                 session=session,
             )
         except Exception:
@@ -1469,14 +1476,7 @@ def _main_impl(argv: list[str] | None = None) -> int:
             try:
                 revised = _complete_once(
                     provider,
-                    CompletionRequest(
-                        model=model_override,
-                        messages=messages,
-                        tools=None,
-                        on_status=on_status,
-                        on_delta=on_delta,
-                        on_thought=on_thought,
-                    ),
+                    turn_request(messages, None),
                     session=session,
                 )
             except Exception as exc:

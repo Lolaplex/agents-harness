@@ -63,12 +63,28 @@ def list_modules(
     modules_dir: Path | None = None,
     workspace: "Workspace | None" = None,
 ) -> List[Dict[str, Any]]:
-    seen: dict[str, Dict[str, Any]] = {}
     dirs = (
         [modules_dir]
         if modules_dir is not None
         else _module_dirs(workspace=workspace)
     )
+    if modules_dir is not None:
+        return _list_modules_live(dirs, discover=False)
+    try:
+        from .catalog import cached_catalog_modules
+
+        return cached_catalog_modules(
+            module_dirs=dirs,
+            loader=lambda: _list_modules_live(dirs, discover=True),
+            workspace=workspace,
+            probed_packages=_auto_package_names(),
+        )
+    except Exception:
+        return _list_modules_live(dirs, discover=True)
+
+
+def _list_modules_live(dirs: list[Path], *, discover: bool) -> List[Dict[str, Any]]:
+    seen: dict[str, Dict[str, Any]] = {}
     for folder in dirs:
         if folder is None or not folder.exists():
             continue
@@ -77,11 +93,39 @@ def list_modules(
                 continue
             row = load_module(p)
             seen[str(row["name"])] = row
-    if modules_dir is None:
+    if discover:
         _merge_remote_modules(seen)
         _auto_mount(seen)
+        _prepare_hot_commands(seen)
         _expand_exposed(seen)
     return list(seen.values())
+
+
+def _prepare_hot_commands(seen: dict[str, Dict[str, Any]]) -> None:
+    """Resolve pin/expose help-json rows before the catalog is snapshotted.
+
+    The warm disk snapshot then carries the command specs needed by the system
+    prompt, so a fresh loop process does not respawn every suite package just
+    to render pinned verbs. A failed probe is cached as an empty command map
+    for the snapshot TTL; ``pinned_entries`` renders its usual unavailable row.
+    """
+    from .helpjson import with_discovered_commands
+
+    for name, row in list(seen.items()):
+        source = str(row.get("commands_from") or "").strip().lower().replace("_", "-")
+        if source != "help-json":
+            continue
+        if not (row.get("pin") or row.get("expose_commands")):
+            continue
+        merged = with_discovered_commands(row)
+        commands = merged.get("commands") if isinstance(merged, dict) else None
+        command_map = commands if isinstance(commands, dict) else {}
+        prepared = dict(row)
+        prepared["_prompt_commands"] = command_map
+        if row.get("expose_commands"):
+            prepared["commands"] = command_map
+            prepared["_commands_resolved"] = True
+        seen[name] = prepared
 
 
 # Suite packages probed for cordis_expose auto-mount. Checked-in manifests and
@@ -98,6 +142,14 @@ _AUTO_PKGS = (
 )
 
 
+def _auto_package_names() -> list[str]:
+    pkgs = list(_AUTO_PKGS)
+    extra = os.environ.get("AGENTS_CORDIS_PKGS", "").strip()
+    if extra:
+        pkgs.extend(p.strip() for p in extra.split(",") if p.strip())
+    return pkgs
+
+
 def _auto_mount(seen: dict[str, Dict[str, Any]]) -> None:
     """Synthesize manifests for installed suite packages whose ``--help-json``
     doc sets ``cordis_expose: true``. ``AGENTS_CORDIS_PKGS`` (comma list) adds
@@ -108,11 +160,7 @@ def _auto_mount(seen: dict[str, Dict[str, Any]]) -> None:
 
     from .helpjson import load_help_json
 
-    pkgs = list(_AUTO_PKGS)
-    extra = os.environ.get("AGENTS_CORDIS_PKGS", "").strip()
-    if extra:
-        pkgs.extend(p.strip() for p in extra.split(",") if p.strip())
-    for pkg in pkgs:
+    for pkg in _auto_package_names():
         if importlib.util.find_spec(pkg) is None:
             continue
         doc = load_help_json(f"python -m {pkg}")

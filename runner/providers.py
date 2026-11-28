@@ -491,8 +491,13 @@ class OpenAICompatProvider:
             if "tool_choice" not in extra:
                 choice = self.manifest.get("tool_choice")
                 body["tool_choice"] = "auto" if choice is None else choice
-        if "reasoning" not in extra and "reasoning" in self.manifest:
+        if "reasoning" in extra:
+            body["reasoning"] = extra.pop("reasoning")
+        elif "reasoning" in self.manifest:
             body["reasoning"] = self.manifest["reasoning"]
+        reasoning = body.get("reasoning")
+        if isinstance(reasoning, dict) and reasoning.get("enabled") is False:
+            extra.pop("thinking", None)
         if extra:
             body.update(extra)
         payload = json.dumps(body).encode("utf-8")

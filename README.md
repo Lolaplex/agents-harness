@@ -232,7 +232,7 @@ Configuration rule: one variable carries one decision. A value never implies enf
 
 Each server tool is a catalog module `mcp.<server>.<tool>` (`kind: mcp_remote`) with the server's `inputSchema`. Side effects follow `side_effects`, then `mutates`, then `readOnlyHint`. Anything without those fields is a mutator for the approval gate. Hand-written modules of the same name win.
 
-The loop process is new every turn. Schemas are cached for `AGENTS_MCP_CACHE_SEC` (default 60) in `AGENTS_MCP_CACHE_FILE` (default `<host>/cache/mcp-tools-cache.json`, alias `AGENTS_MCP_CACHE`). `AGENTS_MCP_CONNECT_TIMEOUT` (default 10 s) bounds each listing or call session, connect included. Each call connects, initializes, calls one tool, and disconnects (stdio, streamable HTTP, or SSE). Install the SDK with `pip install "agents-harness[mcp]"`. OAuth is out of scope.
+The loop process is new every turn. Schemas are cached for `AGENTS_MCP_CACHE_SEC` (default 300) in `AGENTS_MCP_CACHE_FILE` (default `<host>/cache/mcp-tools-cache.json`, alias `AGENTS_MCP_CACHE`). The resolved module catalog is likewise snapshot-cached for `AGENTS_CATALOG_CACHE_SEC` (default 300) in `<host>/cache/catalog-cache[-<ws>].json`; module-manifest, MCP-config, `active_skills.json`, and probed-package mtimes invalidate it. A warm snapshot performs no help-json or MCP server discovery during prompt assembly. `AGENTS_MCP_CONNECT_TIMEOUT` (default 10 s) bounds each listing or call session, connect included. Each call connects, initializes, calls one tool, and disconnects (stdio, streamable HTTP, or SSE). Install the SDK with `pip install "agents-harness[mcp]"`. OAuth is out of scope.
 
 ## MCP Server Integration
 
