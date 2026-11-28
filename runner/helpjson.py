@@ -368,7 +368,9 @@ def with_discovered_commands(mod: dict[str, Any]) -> dict[str, Any]:
     Embedded ``commands`` win and no process is started. Any fetch failure
     leaves the module unchanged (callers keep ``mutates`` and the other flags).
     """
-    if isinstance(mod.get("commands"), dict) and mod.get("commands"):
+    if isinstance(mod.get("commands"), dict) and (
+        mod.get("commands") or mod.get("_commands_resolved")
+    ):
         return mod
     source = str(mod.get("commands_from") or "").strip().lower().replace("_", "-")
     if source not in {"help-json"}:

@@ -13,7 +13,7 @@ OAuth is out of scope.
 
 Session strategy: each ``runner.loop`` turn is a new process, so there is no
 cross-turn MCP session. Tool *schemas* are cached in memory and in
-``<host>/cache/mcp-tools-cache.json`` (TTL ``AGENTS_MCP_CACHE_SEC``, default 60s;
+``<host>/cache/mcp-tools-cache.json`` (TTL ``AGENTS_MCP_CACHE_SEC``, default 300s;
 ``0`` refreshes every list). Each ``call_job`` opens a short-lived session,
 initializes, calls one tool, and closes it. Stdio and streamable HTTP are
 supported. SSE is used when ``transport`` is ``sse`` or the URL path ends with
@@ -116,11 +116,11 @@ def mcp_cache_path() -> Path:
 def _cache_ttl() -> float:
     raw = os.environ.get("AGENTS_MCP_CACHE_SEC", "").strip()
     if not raw:
-        return 60.0
+        return 300.0
     try:
         return max(0.0, float(raw))
     except ValueError:
-        return 60.0
+        return 300.0
 
 
 def _connect_timeout() -> float:

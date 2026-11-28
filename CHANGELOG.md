@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - Provider overlays layered package < `<host>/providers` < `AGENTS_PROVIDERS_DIR` (later wins), `<ws>/config.json` `approval.mode` resolution, approval allowlists at `Host.approval_allowlist` with legacy path fallback and workspace-path rejection, per-workspace `mcp-tools-cache-<ws>.json` via `_resolve_ws_no_create()` (#37).
+- Per-turn reasoning override: `runner.loop --reasoning auto|off|low|medium|high` (`HARNESS_REASONING` sets the default). `auto` preserves provider-manifest behavior; explicit turns send `reasoning.enabled` plus optional `effort` on every completion request in the turn.
+- Persistent module-catalog snapshots in `<host>/cache/catalog-cache[-<ws>].json` (`AGENTS_CATALOG_CACHE_SEC`, default 300). The key tracks module manifests, MCP config layers, `active_skills.json`, probed package origins, and catalog env switches; a warm snapshot skips help-json and MCP discovery processes during prompt assembly. External MCP schema cache default TTL is now 300 seconds.
+- Early structured `status` sideband (`loading context...`) at the start of completion turns, before provider/catalog/prompt assembly, so streaming clients show activity instead of a frozen cold start.
+
+### Removed
+- Obsolete bundled `acp.cursor` provider stub. Hosts no longer see an uneditable fake Cursor provider in provider pickers; the `AcpProvider` class remains for direct manifests/tests.
 
 ### Added
 - `_parse_text_tool_calls` coerces the `<tool_call><function=name><parameter=k>v</parameter></function></tool_call>` emission shape (taught by qwen-family chat templates) in addition to the JSON-body shape, including multi-call blocks. LM Studio's OpenAI-compat parser does not recognize the `<function=` variant and falls back to `content`; the app layer now catches what the endpoint misses. Terminal rounds (`tools=None`) never coerce: a coerced call cannot execute there, so coercion would silently eat the only reply text.
