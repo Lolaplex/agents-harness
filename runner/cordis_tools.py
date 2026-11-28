@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from .approval import call_is_mutator, gate_module
+from .catalog import catalog_domain
 from .fence import HarnessError, HarnessMessage
 from .executor import execute_job
 from .helpjson import declared_argv, select_command, with_discovered_commands
@@ -31,7 +32,11 @@ _LIST_CATALOG_SCHEMA = {
         "kind": {
             "type": "string",
             "description": "Optional filter: mcp, skill, a2a, schedule",
-        }
+        },
+        "query": {
+            "type": "string",
+            "description": "Optional module/domain filter (for example mcp.memory or mcp.browser)",
+        },
     },
 }
 
@@ -611,11 +616,22 @@ def run_cordis_tool(
         )
     if tool == "list_catalog":
         kind = str(args.get("kind") or "").strip().lower()
+        query = str(args.get("query") or args.get("domain") or "").strip().lower()
         rows = filter_modules(
             list_modules(), channel=default_channel, workspace=workspace
         )
         if kind:
             rows = [m for m in rows if str(m.get("kind") or "").lower() == kind]
+        if query:
+            names = {str(m.get("name") or "") for m in rows}
+            rows = [
+                m
+                for m in rows
+                if query in str(m.get("name") or "").lower()
+                or catalog_domain(m, names).lower() == query
+                or query in catalog_domain(m, names).lower()
+                or query in str(m.get("mcp_server") or "").lower()
+            ]
         lines = [
             f"{m['name']}\tkind={m.get('kind')}\twhen={m.get('when')}\t{m.get('rests_on', '')}"
             for m in rows
